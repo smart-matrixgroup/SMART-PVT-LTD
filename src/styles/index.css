@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-page: #FFFFFF;
+    --bg-surface: #FFFFFF;
+    --bg-soft: #F4F8FC;
+    --bg-card: #FFFFFF;
+    --text-main: #0A1E3F;
+    --text-muted: #5B6E88;
+    --brand-primary: #0066FF;
+    --brand-dark: #0047B3;
+    --border-color: #E2EAF4;
+    --badge-bg: #E8F2FF;
+    --badge-text: #0066FF;
+  }
+
+  .dark {
+    --bg-page: #06112B;
+    --bg-surface: #0A1838;
+    --bg-soft: #0A1838;
+    --bg-card: rgba(14, 33, 75, 0.75);
+    --text-main: #FFFFFF;
+    --text-muted: #91A0BC;
+    --brand-primary: #1787FF;
+    --brand-dark: #126BFF;
+    --border-color: #20345D;
+    --badge-bg: rgba(23, 135, 255, 0.15);
+    --badge-text: #00D9FF;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    overflow-x: hidden;
+  }
+}
+
+.font-script {
+  font-family: 'Caveat', cursive, sans-serif;
+}
+
+/* Modern corporate cards */
+.smart-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px -2px rgba(10, 30, 63, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.smart-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -5px rgba(0, 102, 255, 0.12);
+  border-color: #B8D5FF;
+}
+
+.dark .smart-card {
+  box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.35);
+}
+
+.dark .smart-card:hover {
+  border-color: rgba(0, 217, 255, 0.4);
+  box-shadow: 0 12px 35px -5px rgba(23, 135, 255, 0.25);
+}
+
+/* Glass Header matching top bar */
+.smart-navbar {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(226, 234, 244, 0.85);
+}
+
+.dark .smart-navbar {
+  background: rgba(6, 17, 43, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(32, 52, 93, 0.6);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F4F8FC;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #06112B;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C4D6ED;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0066FF;
+}
+
+/* Public-page light theme: keeps every route in the same calm, blue corporate
+   visual language as the home page while retaining the original dark theme. */
+.public-page {
+  background: #fff;
+  color: #0A1E3F;
+}
+
+.public-page .text-white { color: #0A1E3F; }
+.public-page .text-text-light, .public-page .text-text-soft { color: #29405E; }
+.public-page .text-text-muted { color: #5B6E88; }
+.public-page .text-primary-cyan { color: #0066FF; }
+.public-page .bg-navy-950,
+.public-page .bg-navy-900,
+.public-page .bg-navy-900\/95,
+.public-page .bg-navy-900\/90,
+.public-page .bg-navy-900\/80,
+.public-page .bg-navy-800,
+.public-page .bg-navy-800\/80,
+.public-page .bg-surface-card,
+.public-page .bg-surface-card\/80 {
+  background-color: #fff;
+}
+.public-page .glass-card {
+  background: #fff;
+  border-color: #DCE6F2;
+  box-shadow: 0 10px 30px rgba(10, 30, 63, .07);
+}
+.public-page .from-navy-900,
+.public-page .via-surface-card,
+.public-page .to-navy-900 {
+  --tw-gradient-from: #F7FAFE var(--tw-gradient-from-position);
+  --tw-gradient-via: #FFFFFF var(--tw-gradient-via-position);
+  --tw-gradient-to: #EEF6FF var(--tw-gradient-to-position);
+}
+.public-page input, .public-page textarea, .public-page select {
+  background: #fff !important;
+  border-color: #D8E4F0 !important;
+  color: #0A1E3F !important;
+}
+.public-page input::placeholder, .public-page textarea::placeholder { color: #8B9AAF; }
+
+.dark .public-page { background: #06112B; color: #fff; }
+.dark .public-page .text-white { color: #fff; }
+.dark .public-page .text-text-light, .dark .public-page .text-text-soft { color: #EAF1FF; }
+.dark .public-page .text-text-muted { color: #91A0BC; }
+.dark .public-page .text-primary-cyan { color: #00D9FF; }
+.dark .public-page .bg-navy-950, .dark .public-page .bg-navy-900, .dark .public-page .bg-navy-900\/95, .dark .public-page .bg-navy-900\/90, .dark .public-page .bg-navy-900\/80 { background-color: #06112B; }
+.dark .public-page .bg-navy-800, .dark .public-page .bg-navy-800\/80 { background-color: #0A1838; }
+.dark .public-page .glass-card { background: rgba(14, 33, 75, .75); border-color: #20345D; }
+.dark .public-page input, .dark .public-page textarea, .dark .public-page select { background: #0A1838 !important; border-color: #20345D !important; color: #fff !important; }
