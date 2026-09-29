@@ -24,7 +24,7 @@ export default function InsightDetailPage({ onOpenQuote }) {
         {/* Back Link */}
         <Link 
           to="/insights" 
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-primary-cyan transition-colors mb-6"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B6E88] dark:text-text-muted hover:text-primary transition-colors mb-6"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to insights
         </Link>
@@ -33,27 +33,27 @@ export default function InsightDetailPage({ onOpenQuote }) {
         <article className="glass-card rounded-3xl p-8 sm:p-12 border border-surface-border bg-navy-900/90 space-y-8">
           
           {/* Header */}
-          <div className="space-y-4 border-b border-surface-border pb-6">
+          <div className="space-y-4 border-b border-[#DCE6F2] dark:border-surface-border pb-6">
             <div className="flex items-center gap-3 text-xs">
-              <span className="font-bold uppercase tracking-wider text-primary-cyan bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">
+              <span className="font-bold uppercase tracking-wider text-primary dark:text-primary-cyan bg-primary/10 dark:bg-cyan-500/10 px-3 py-1 rounded-full border border-primary/20 dark:border-cyan-500/20">
                 {article.category}
               </span>
-              <span className="text-text-muted flex items-center gap-1">
+              <span className="text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5" /> {article.date}
               </span>
-              <span className="text-text-muted">•</span>
-              <span className="text-text-muted flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-amber-400" /> {article.readTime}
+              <span className="text-[#5B6E88] dark:text-text-muted">•</span>
+              <span className="text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" /> {article.readTime}
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight leading-tight">
               {article.title}
             </h1>
           </div>
 
           {/* Body Paragraphs */}
-          <div className="space-y-4 text-sm sm:text-base text-text-light/90 leading-relaxed font-normal">
+          <div className="space-y-4 text-sm sm:text-base text-[#3E526C] dark:text-text-light/90 leading-relaxed font-normal">
             {article.content.map((p, i) => (
               <p key={i} className="leading-relaxed">
                 {p}
@@ -62,10 +62,10 @@ export default function InsightDetailPage({ onOpenQuote }) {
           </div>
 
           {/* CTA Box */}
-          <div className="pt-8 border-t border-surface-border p-6 rounded-2xl bg-navy-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="pt-8 border-t border-[#DCE6F2] dark:border-surface-border p-6 rounded-2xl bg-[#F0F6FF] dark:bg-navy-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h4 className="text-sm font-bold text-white">Ready to implement this for your business?</h4>
-              <p className="text-xs text-text-muted mt-0.5">Let's talk with our technical consultants today.</p>
+              <h4 className="text-sm font-bold text-[#0A1E3F] dark:text-white">Ready to implement this for your business?</h4>
+              <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">Let's talk with our technical consultants today.</p>
             </div>
             <button
               onClick={() => onOpenQuote()}
@@ -81,4 +81,3 @@ export default function InsightDetailPage({ onOpenQuote }) {
     </div>
   );
 }
-

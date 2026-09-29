@@ -6,11 +6,11 @@ import { CheckCircle2, ArrowRight, Sparkles, Utensils, ShoppingBag, Building2, B
 export default function SolutionsPage({ onOpenQuote }) {
   const getSolutionIcon = (id) => {
     switch (id) {
-      case 'restaurants': return <Utensils className="w-6 h-6 text-amber-400" />;
-      case 'retail': return <ShoppingBag className="w-6 h-6 text-emerald-400" />;
-      case 'sme': return <Building2 className="w-6 h-6 text-primary-cyan" />;
-      case 'professional-services': return <Briefcase className="w-6 h-6 text-indigo-400" />;
-      default: return <Sparkles className="w-6 h-6 text-primary-electric" />;
+      case 'restaurants': return <Utensils className="w-6 h-6 text-amber-500 dark:text-amber-400" />;
+      case 'retail': return <ShoppingBag className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />;
+      case 'sme': return <Building2 className="w-6 h-6 text-primary dark:text-primary-cyan" />;
+      case 'professional-services': return <Briefcase className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />;
+      default: return <Sparkles className="w-6 h-6 text-primary dark:text-primary-electric" />;
     }
   };
 
@@ -26,10 +26,10 @@ export default function SolutionsPage({ onOpenQuote }) {
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary-cyan text-xs font-bold uppercase tracking-wider mb-4">
           Tailored Stacks
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight max-w-4xl mx-auto">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight max-w-4xl mx-auto">
           Solutions Built for <span className="gradient-text-blue">Your Industry.</span>
         </h1>
-        <p className="text-sm sm:text-base text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
+        <p className="text-sm sm:text-base text-[#5B6E88] dark:text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
           One size never fits all. Explore how SMART Pvt Ltd packages software, hardware integrations, and compliance tools specifically for your sector.
         </p>
       </section>
@@ -46,27 +46,35 @@ export default function SolutionsPage({ onOpenQuote }) {
               
               {/* Left Column */}
               <div className="lg:col-span-5 space-y-4">
-                <div className="p-3.5 rounded-2xl bg-navy-800 border border-surface-border inline-block">
+
+                {/* Icon Box */}
+                <div className="p-3.5 rounded-2xl bg-[#EBF3FC] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border inline-block">
                   {getSolutionIcon(sol.id)}
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
+
+                {/* Title */}
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0A1E3F] dark:text-white">
                   {sol.title}
                 </h2>
-                <p className="text-xs sm:text-sm font-semibold text-primary-cyan">
+
+                {/* Headline */}
+                <p className="text-xs sm:text-sm font-semibold text-primary dark:text-primary-cyan">
                   {sol.headline}
                 </p>
-                <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
+
+                {/* Short Description */}
+                <p className="text-xs sm:text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed">
                   {sol.shortDesc}
                 </p>
 
                 {/* Recommended Stack Box */}
-                <div className="p-4 rounded-2xl bg-navy-800/80 border border-surface-border space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-light">
+                <div className="p-4 rounded-2xl bg-[#F0F6FF] dark:bg-navy-800/80 border border-[#C8D8EE] dark:border-surface-border space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#29405E] dark:text-text-light">
                     Recommended Tech Stack:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {sol.recommendedStack.map((st, i) => (
-                      <span key={i} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-navy-700 text-primary-cyan border border-primary/20">
+                      <span key={i} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-[#E0EEFF] dark:bg-navy-700 text-primary dark:text-primary-cyan border border-primary/20">
                         {st}
                       </span>
                     ))}
@@ -88,13 +96,13 @@ export default function SolutionsPage({ onOpenQuote }) {
                 
                 {/* Solved Challenges */}
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
                     Industry Bottlenecks Solved:
                   </h4>
-                  <ul className="space-y-1.5 text-xs text-text-muted">
+                  <ul className="space-y-1.5 text-xs text-[#5B6E88] dark:text-text-muted">
                     {sol.keyChallenges.map((ch, i) => (
                       <li key={i} className="flex items-start gap-2">
-                        <span className="text-red-400 font-bold">•</span>
+                        <span className="text-red-500 dark:text-red-400 font-bold">•</span>
                         <span>{ch}</span>
                       </li>
                     ))}
@@ -104,12 +112,12 @@ export default function SolutionsPage({ onOpenQuote }) {
                 {/* Key Features Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   {sol.features.map((feat, i) => (
-                    <div key={i} className="p-4 rounded-2xl bg-navy-800/50 border border-surface-border/60 space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-white text-xs">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <div key={i} className="p-4 rounded-2xl bg-[#F4F8FC] dark:bg-navy-800/50 border border-[#DCE6F2] dark:border-surface-border/60 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[#0A1E3F] dark:text-white text-xs">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         <span>{feat.title}</span>
                       </div>
-                      <p className="text-[11px] text-text-muted leading-relaxed pl-5">
+                      <p className="text-[11px] text-[#5B6E88] dark:text-text-muted leading-relaxed pl-5">
                         {feat.desc}
                       </p>
                     </div>
@@ -126,4 +134,3 @@ export default function SolutionsPage({ onOpenQuote }) {
     </div>
   );
 }
-

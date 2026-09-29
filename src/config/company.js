@@ -35,6 +35,7 @@ export const company = {
     address: "No. 123, Main Street, Trincomalee, Sri Lanka",
     country: "Sri Lanka",
     currency: "LKR",
+    businessHours: "Mon – Fri: 8:30 AM – 6:00 PM | Sat: 9:00 AM – 1:00 PM",
   },
 
   social: {
@@ -49,5 +50,54 @@ export const company = {
     lightMode: "/logos/SMART_LOGO_LM_WTHOT_BG.png",
     headOnly: "/logos/SMART_LOGO_ONLY_HEAD.png",
     fullLight: "/logos/SMART_LOGO_LM.png",
-  }
+  },
+
+  // 9-Step Delivery Standard — used by ProcessTimeline component in About page
+  processSteps: [
+    {
+      step: 1,
+      title: "Discovery & Requirement Analysis",
+      desc: "We meet with your team to understand your business operations, pain points, existing systems, and goals before writing a single line of code."
+    },
+    {
+      step: 2,
+      title: "Scope Definition & Proposal",
+      desc: "A detailed project scope document is prepared covering modules, timelines, milestone structure, and transparent pricing — no hidden costs."
+    },
+    {
+      step: 3,
+      title: "UI/UX Blueprint & Wireframing",
+      desc: "Screen-by-screen wireframes and design blueprints are created and reviewed with your team to ensure the product fits your workflow."
+    },
+    {
+      step: 4,
+      title: "Database & Architecture Design",
+      desc: "We design the data models, API structure, and system architecture to ensure scalability, security, and performance from day one."
+    },
+    {
+      step: 5,
+      title: "Agile Development & Sprints",
+      desc: "Development is executed in structured sprints with regular progress updates, demo sessions, and client feedback loops throughout."
+    },
+    {
+      step: 6,
+      title: "Quality Assurance & Testing",
+      desc: "Thorough functional, performance, and security testing is carried out across all devices and browsers before any deployment."
+    },
+    {
+      step: 7,
+      title: "Client Review & Acceptance",
+      desc: "You review the complete system in a staging environment. All change requests are addressed before final sign-off and go-live."
+    },
+    {
+      step: 8,
+      title: "Production Deployment & Handover",
+      desc: "The system is deployed to your live environment with full documentation, admin credentials, and a staff training walkthrough session."
+    },
+    {
+      step: 9,
+      title: "Ongoing Support & Maintenance",
+      desc: "Post-launch warranty support, SLA maintenance packages, and continuous improvement options ensure your system evolves with your business."
+    }
+  ]
 };

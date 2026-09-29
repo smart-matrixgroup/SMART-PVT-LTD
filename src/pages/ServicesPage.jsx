@@ -31,10 +31,10 @@ export default function ServicesPage({ onOpenQuote }) {
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary-cyan text-xs font-bold uppercase tracking-wider mb-4">
           Complete Capabilities
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight max-w-4xl mx-auto">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight max-w-4xl mx-auto">
           Intelligent Technology & <span className="gradient-text-blue">Business Services.</span>
         </h1>
-        <p className="text-sm sm:text-base text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
+        <p className="text-sm sm:text-base text-[#5B6E88] dark:text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
           From quick-start portfolio websites to full-scale multi-branch enterprise ERPs and tax compliance schedules, discover our end-to-end solutions.
         </p>
 
@@ -47,7 +47,7 @@ export default function ServicesPage({ onOpenQuote }) {
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
                 selectedCategory === cat
                   ? 'bg-primary text-white shadow-glow-sm'
-                  : 'bg-navy-900 text-text-muted hover:text-white border border-surface-border hover:border-surface-borderHighlight'
+                  : 'bg-[#F0F6FF] dark:bg-navy-900 text-[#3E526C] dark:text-text-muted hover:bg-primary hover:text-white border border-[#C8D8EE] dark:border-surface-border hover:border-primary dark:hover:border-surface-borderHighlight'
               }`}
             >
               {cat}
@@ -73,13 +73,13 @@ export default function ServicesPage({ onOpenQuote }) {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="p-8 sm:p-10 rounded-3xl glass-card border border-surface-borderHighlight/30 bg-gradient-to-r from-navy-900 via-surface-card to-navy-900 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2 text-center md:text-left">
-            <span className="text-xs font-bold uppercase tracking-wider text-primary-cyan">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary dark:text-primary-cyan">
               Need a Custom Solution?
             </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-white">
+            <h3 className="text-xl sm:text-2xl font-bold text-[#0A1E3F] dark:text-white">
               Don't see your exact requirement listed?
             </h3>
-            <p className="text-xs sm:text-sm text-text-muted max-w-xl">
+            <p className="text-xs sm:text-sm text-[#5B6E88] dark:text-text-muted max-w-xl">
               We specialize in tailor-made software architecture, custom database designs, and bespoke business automations.
             </p>
           </div>

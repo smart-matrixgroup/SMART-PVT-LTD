@@ -17,36 +17,36 @@ export default function BranchMapSection() {
               onClick={() => setSelectedBranch(branch)}
               className={`glass-card rounded-3xl p-6 cursor-pointer border transition-all ${
                 isSelected
-                  ? 'border-primary-cyan/60 bg-navy-900/95 shadow-glow-sm'
-                  : 'border-surface-border bg-navy-900/60 hover:bg-navy-900/80 hover:border-surface-borderHighlight'
+                  ? 'border-primary/60 dark:border-primary-cyan/60 bg-[#EBF3FC] dark:bg-navy-900/95 shadow-glow-sm'
+                  : 'border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-900/60 hover:bg-[#F4F8FC] dark:hover:bg-navy-900/80 hover:border-primary/40 dark:hover:border-surface-borderHighlight'
               }`}
             >
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-primary/20 text-primary-cyan border border-primary/30">
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan border border-primary/30">
                   {branch.badge}
                 </span>
-                <span className="text-[11px] text-text-muted font-mono">{branch.branchId}</span>
+                <span className="text-[11px] text-[#5B6E88] dark:text-text-muted font-mono">{branch.branchId}</span>
               </div>
 
-              <h4 className="text-base font-bold text-white">
+              <h4 className="text-base font-bold text-[#0A1E3F] dark:text-white">
                 {branch.name}
               </h4>
 
-              <div className="mt-4 space-y-2.5 text-xs text-text-muted">
+              <div className="mt-4 space-y-2.5 text-xs text-[#5B6E88] dark:text-text-muted">
                 <div className="flex items-start gap-2.5">
-                  <MapPin className="w-4 h-4 text-primary-cyan shrink-0 mt-0.5" />
+                  <MapPin className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0 mt-0.5" />
                   <span>{branch.address}</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <Phone className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <span>{branch.phone}</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <Mail className="w-4 h-4 text-primary-electric shrink-0" />
+                  <Mail className="w-4 h-4 text-primary dark:text-primary-electric shrink-0" />
                   <span>{branch.email}</span>
                 </div>
-                <div className="flex items-center gap-2.5 pt-1 text-[11px] text-text-muted/80">
-                  <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <div className="flex items-center gap-2.5 pt-1 text-[11px]">
+                  <Clock className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
                   <span>Mon-Sat: {branch.businessHours.weekdays}</span>
                 </div>
               </div>
@@ -67,10 +67,10 @@ export default function BranchMapSection() {
         />
         
         {/* Overlay Badge */}
-        <div className="absolute bottom-4 left-4 right-4 sm:right-auto glass-card p-3 rounded-2xl border border-surface-border flex items-center justify-between gap-4 bg-navy-950/85 backdrop-blur-md">
+        <div className="absolute bottom-4 left-4 right-4 sm:right-auto p-3 rounded-2xl border border-[#DCE6F2] dark:border-surface-border flex items-center justify-between gap-4 bg-white/90 dark:bg-navy-950/85 backdrop-blur-md">
           <div className="text-xs">
-            <p className="font-bold text-white">{selectedBranch.name}</p>
-            <p className="text-[11px] text-text-muted">{selectedBranch.city}</p>
+            <p className="font-bold text-[#0A1E3F] dark:text-white">{selectedBranch.name}</p>
+            <p className="text-[11px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
           </div>
           <a
             href="https://maps.google.com"
@@ -86,4 +86,3 @@ export default function BranchMapSection() {
     </div>
   );
 }
-

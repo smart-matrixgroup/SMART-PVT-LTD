@@ -109,7 +109,7 @@ export default function Navbar({ onOpenQuote }) {
               aria-label="Toggle Theme"
               className="p-2.5 text-[#64748B] transition-colors hover:text-[#C59A5C] dark:text-text-muted dark:hover:text-[#F2C98D]"
             >
-              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-[#5B6E88] hover:text-[#C59A5C]" />}
+              {isDark ? <Moon className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-[#5B6E88] hover:text-[#C59A5C]" />}
             </button>
 
             {/* Client Portal Button (Pill with User icon) */}
@@ -136,7 +136,7 @@ export default function Navbar({ onOpenQuote }) {
               onClick={toggleTheme}
               className="p-2.5 text-[#5B6E88] hover:text-[#C59A5C] dark:text-text-muted"
             >
-              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-[#8A6235]" />}
+              {isDark ? <Moon className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-[#8A6235]" />}
             </button>
             <button
               onClick={() => setIsOpen(!isOpen)}

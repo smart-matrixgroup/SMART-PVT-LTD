@@ -22,10 +22,10 @@ export default function ProjectsPage({ onOpenQuote }) {
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary-cyan text-xs font-bold uppercase tracking-wider mb-4">
           Verified Portfolio
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight max-w-4xl mx-auto">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight max-w-4xl mx-auto">
           Case Studies & <span className="gradient-text-blue">Delivered Systems.</span>
         </h1>
-        <p className="text-sm sm:text-base text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
+        <p className="text-sm sm:text-base text-[#5B6E88] dark:text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
           Real business challenges solved through robust engineering, modern design systems, and measurable operational results.
         </p>
 
@@ -38,7 +38,7 @@ export default function ProjectsPage({ onOpenQuote }) {
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
                 selectedCategory === cat
                   ? 'bg-primary text-white shadow-glow-sm'
-                  : 'bg-navy-900 text-text-muted hover:text-white border border-surface-border hover:border-surface-borderHighlight'
+                  : 'bg-[#F0F6FF] dark:bg-navy-900 text-[#3E526C] dark:text-text-muted hover:bg-primary hover:text-white border border-[#C8D8EE] dark:border-surface-border hover:border-primary dark:hover:border-surface-borderHighlight'
               }`}
             >
               {cat}
@@ -60,8 +60,8 @@ export default function ProjectsPage({ onOpenQuote }) {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="p-8 sm:p-10 rounded-3xl glass-card border border-surface-border bg-navy-900/90 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div>
-            <h3 className="text-xl sm:text-2xl font-bold text-white">Have a project you want to build?</h3>
-            <p className="text-xs sm:text-sm text-text-muted mt-1">
+            <h3 className="text-xl sm:text-2xl font-bold text-[#0A1E3F] dark:text-white">Have a project you want to build?</h3>
+            <p className="text-xs sm:text-sm text-[#5B6E88] dark:text-text-muted mt-1">
               Let's analyze your requirement and prepare a milestone-based architecture and quote.
             </p>
           </div>
@@ -77,4 +77,3 @@ export default function ProjectsPage({ onOpenQuote }) {
     </div>
   );
 }
-

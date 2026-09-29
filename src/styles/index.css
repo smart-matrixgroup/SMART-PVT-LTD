@@ -46,6 +46,62 @@
   font-family: 'Caveat', cursive, sans-serif;
 }
 
+/* ============================================================
+   MISSING GLOBAL UTILITY CLASSES — used across all components
+   ============================================================ */
+
+/* Glass Card — light mode: clean white card, dark mode: navy translucent with blur */
+.glass-card {
+  background: #ffffff;
+  border: 1px solid #DCE6F2;
+  box-shadow: 0 4px 20px rgba(10, 30, 63, 0.06);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: #B8D0EE;
+  box-shadow: 0 8px 30px rgba(10, 30, 63, 0.1);
+}
+
+.dark .glass-card {
+  background: rgba(14, 33, 75, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(32, 52, 93, 0.8);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.dark .glass-card:hover {
+  border-color: rgba(0, 217, 255, 0.25);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* Gradient Text — Blue (primary blue to electric blue) */
+.gradient-text-blue {
+  background: linear-gradient(135deg, #1787FF 0%, #00D9FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Gradient Text — Cyan (cyan to light blue) */
+.gradient-text-cyan {
+  background: linear-gradient(135deg, #00D9FF 0%, #7DD3FC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow on Hover — blue glow shadow effect */
+.glow-on-hover {
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.glow-on-hover:hover {
+  box-shadow: 0 0 20px rgba(23, 135, 255, 0.35), 0 8px 32px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
 /* Modern corporate cards */
 .smart-card {
   background-color: var(--bg-card);
@@ -127,11 +183,6 @@
 .public-page .bg-surface-card,
 .public-page .bg-surface-card\/80 {
   background-color: #fff;
-}
-.public-page .glass-card {
-  background: #fff;
-  border-color: #DCE6F2;
-  box-shadow: 0 10px 30px rgba(10, 30, 63, .07);
 }
 .public-page .from-navy-900,
 .public-page .via-surface-card,

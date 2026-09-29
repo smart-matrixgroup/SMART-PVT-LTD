@@ -36,21 +36,21 @@ export default function FAQAccordion({ items = [] }) {
         return (
           <div
             key={idx}
-            className="glass-card rounded-2xl border border-surface-border overflow-hidden transition-all bg-navy-900/70"
+            className="glass-card rounded-2xl border border-[#DCE6F2] dark:border-surface-border overflow-hidden transition-all bg-white dark:bg-navy-900/70"
           >
             <button
               onClick={() => setOpenIdx(isOpen ? -1 : idx)}
               className="w-full p-5 text-left flex items-center justify-between gap-4 focus:outline-none"
             >
-              <span className="text-sm sm:text-base font-bold text-white flex items-center gap-3">
-                <HelpCircle className="w-4 h-4 text-primary-cyan shrink-0" />
+              <span className="text-sm sm:text-base font-bold text-[#0A1E3F] dark:text-white flex items-center gap-3">
+                <HelpCircle className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0" />
                 {item.q}
               </span>
-              <ChevronDown className={`w-4 h-4 text-text-muted shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180 text-primary-electric' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-[#5B6E88] dark:text-text-muted shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180 text-primary dark:text-primary-electric' : ''}`} />
             </button>
 
             {isOpen && (
-              <div className="px-5 pb-5 pt-1 text-xs sm:text-sm text-text-muted leading-relaxed border-t border-surface-border/40 animate-in fade-in duration-200">
+              <div className="px-5 pb-5 pt-1 text-xs sm:text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed border-t border-[#DCE6F2] dark:border-surface-border/40 animate-in fade-in duration-200">
                 {item.a}
               </div>
             )}
@@ -60,4 +60,3 @@ export default function FAQAccordion({ items = [] }) {
     </div>
   );
 }
-

@@ -10,6 +10,7 @@ export default {
       colors: {
         midnight: '#06112B',
         navy: {
+          950: '#040D1F',
           900: '#06112B',
           800: '#0A1838',
           700: '#0E214B',

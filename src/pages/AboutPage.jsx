@@ -24,15 +24,16 @@ export default function AboutPage({ onOpenQuote }) {
           <div className="relative inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary-cyan text-xs font-bold uppercase tracking-wider mb-4">
             Corporate Profile
           </div>
-          <h1 className="relative text-4xl sm:text-5xl md:text-6xl font-extrabold text-white tracking-tight max-w-4xl mx-auto">
+          <h1 className="relative text-4xl sm:text-5xl md:text-6xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight max-w-4xl mx-auto">
             Technology Engineered Around <span className="gradient-text-blue">Real Operations.</span>
           </h1>
-          <p className="relative text-sm sm:text-base text-text-muted max-w-3xl mx-auto mt-6 leading-relaxed">
+          <p className="relative text-sm sm:text-base text-[#5B6E88] dark:text-text-muted max-w-3xl mx-auto mt-6 leading-relaxed">
             {company.mission}
           </p>
         </div>
       </section>
 
+      {/* 4 Value Pillars */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           {[
@@ -42,9 +43,11 @@ export default function AboutPage({ onOpenQuote }) {
             { icon: Award, value: 'Long-term', label: 'Support beyond the launch date' },
           ].map(({ icon: Icon, value, label }) => (
             <div key={value} className="smart-card rounded-2xl p-4 sm:p-5 text-center">
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EBF3FC] text-[#0066FF] dark:bg-primary/20 dark:text-primary-cyan"><Icon className="h-5 w-5" /></div>
-              <p className="text-sm font-extrabold text-white">{value}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-text-muted">{label}</p>
+              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#EBF3FC] text-[#0066FF] dark:bg-primary/20 dark:text-primary-cyan">
+                <Icon className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-extrabold text-[#0A1E3F] dark:text-white">{value}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#5B6E88] dark:text-text-muted">{label}</p>
             </div>
           ))}
         </div>
@@ -55,38 +58,39 @@ export default function AboutPage({ onOpenQuote }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           
           <div className="space-y-6">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#0A1E3F] dark:text-white">
               Who We Are & What Drives Us
             </h2>
-            <p className="text-sm text-text-muted leading-relaxed">
+            <p className="text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed">
               SMART Pvt Ltd was established with a clear mission: to bridge the gap between technical software development and actual business management. Many companies receive software that looks flashy but fails to adapt to their real-world billing, inventory bottlenecks, or accounting compliance needs.
             </p>
-            <p className="text-sm text-text-muted leading-relaxed">
+            <p className="text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed">
               We design and implement custom systems, cloud ERPs, and automation pipelines that are inherently practical, secure, and built to scale alongside your organization's growth.
             </p>
 
             <div className="grid grid-cols-2 gap-4 pt-4">
-              <div className="p-4 rounded-2xl bg-navy-800/80 border border-surface-border">
-                <Target className="w-6 h-6 text-primary-cyan mb-2" />
-                <h4 className="text-sm font-bold text-white">Our Vision</h4>
-                <p className="text-xs text-text-muted mt-1">
+              <div className="p-4 rounded-2xl bg-[#F0F6FF] dark:bg-navy-800/80 border border-[#C8D8EE] dark:border-surface-border">
+                <Target className="w-6 h-6 text-primary dark:text-primary-cyan mb-2" />
+                <h4 className="text-sm font-bold text-[#0A1E3F] dark:text-white">Our Vision</h4>
+                <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-1">
                   To be the most trusted technology and business automation partner for enterprises and entrepreneurs.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-navy-800/80 border border-surface-border">
-                <Lightbulb className="w-6 h-6 text-primary-electric mb-2" />
-                <h4 className="text-sm font-bold text-white">Our Approach</h4>
-                <p className="text-xs text-text-muted mt-1">
+              <div className="p-4 rounded-2xl bg-[#F0F6FF] dark:bg-navy-800/80 border border-[#C8D8EE] dark:border-surface-border">
+                <Lightbulb className="w-6 h-6 text-primary dark:text-primary-electric mb-2" />
+                <h4 className="text-sm font-bold text-[#0A1E3F] dark:text-white">Our Approach</h4>
+                <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-1">
                   Understand first, blueprint carefully, code cleanly, deploy securely, and support long-term.
                 </p>
               </div>
             </div>
           </div>
 
+          {/* SMART Commitment Card */}
           <div className="glass-card rounded-3xl p-8 border border-surface-borderHighlight/40 shadow-2xl bg-gradient-to-br from-navy-900 to-surface-card space-y-6">
-            <h3 className="text-xl font-bold text-white">The SMART Commitment</h3>
-            <ul className="space-y-4 text-xs text-text-light">
+            <h3 className="text-xl font-bold text-[#0A1E3F] dark:text-white">The SMART Commitment</h3>
+            <ul className="space-y-4 text-xs">
               {[
                 { title: "No Invented Claims", desc: "We pride ourselves on transparent scopes, verified case studies, and honest pricing." },
                 { title: "Enterprise Grade Reliability", desc: "Built with modern frameworks (React, PostgreSQL, Spring Boot, Firebase) and zero bloat." },
@@ -98,15 +102,15 @@ export default function AboutPage({ onOpenQuote }) {
                     <CheckCircle2 className="w-4 h-4" />
                   </span>
                   <div>
-                    <strong className="text-white block">{item.title}</strong>
-                    <span className="text-text-muted">{item.desc}</span>
+                    <strong className="text-[#0A1E3F] dark:text-white block">{item.title}</strong>
+                    <span className="text-[#5B6E88] dark:text-text-muted">{item.desc}</span>
                   </div>
                 </li>
               ))}
             </ul>
 
-            <div className="pt-4 border-t border-surface-border flex items-center justify-between">
-              <span className="text-xs text-text-muted">Want to discuss your requirements?</span>
+            <div className="pt-4 border-t border-[#DCE6F2] dark:border-surface-border flex items-center justify-between">
+              <span className="text-xs text-[#5B6E88] dark:text-text-muted">Want to discuss your requirements?</span>
               <button
                 onClick={onOpenQuote}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm"
@@ -119,6 +123,7 @@ export default function AboutPage({ onOpenQuote }) {
         </div>
       </section>
 
+      {/* 3 Core Value Cards */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {[
@@ -127,26 +132,27 @@ export default function AboutPage({ onOpenQuote }) {
             { icon: Sparkles, title: 'Clear partnership', text: 'Honest communication, transparent scopes and support that stays with you as your business grows.' },
           ].map(({ icon: Icon, title, text }) => (
             <div key={title} className="smart-card rounded-3xl p-6">
-              <div className="mb-4 inline-flex rounded-2xl bg-[#EBF3FC] p-3 text-[#0066FF] dark:bg-primary/20 dark:text-primary-cyan"><Icon className="h-5 w-5" /></div>
-              <h3 className="text-lg font-bold text-white">{title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-text-muted">{text}</p>
+              <div className="mb-4 inline-flex rounded-2xl bg-[#EBF3FC] p-3 text-[#0066FF] dark:bg-primary/20 dark:text-primary-cyan">
+                <Icon className="h-5 w-5" />
+              </div>
+              <h3 className="text-lg font-bold text-[#0A1E3F] dark:text-white">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[#5B6E88] dark:text-text-muted">{text}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* 9-Step Transformation Process */}
-      <section className="bg-navy-950 py-16 border-y border-surface-border">
+      <section className="bg-[#F4F8FC] dark:bg-navy-900 py-16 border-y border-[#DCE6F2] dark:border-surface-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#0A1E3F] dark:text-white">
               Our 9-Step Delivery Standard
             </h2>
-            <p className="text-xs sm:text-sm text-text-muted mt-2">
+            <p className="text-xs sm:text-sm text-[#5B6E88] dark:text-text-muted mt-2">
               How we take your idea from initial requirement discovery to production deployment and ongoing support.
             </p>
           </div>
-
           <ProcessTimeline />
         </div>
       </section>

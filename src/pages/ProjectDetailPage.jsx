@@ -26,7 +26,7 @@ export default function ProjectDetailPage({ onOpenQuote }) {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link 
           to="/projects" 
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-primary-cyan transition-colors mb-6"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5B6E88] dark:text-text-muted hover:text-primary transition-colors mb-6"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to case studies
         </Link>
@@ -42,20 +42,20 @@ export default function ProjectDetailPage({ onOpenQuote }) {
               </span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white tracking-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight">
               {project.name}
             </h1>
-            <p className="text-sm font-semibold text-primary-electric">
+            <p className="text-sm font-semibold text-primary dark:text-primary-electric">
               Client Profile: {project.clientType}
             </p>
-            <p className="text-base text-text-muted leading-relaxed">
+            <p className="text-base text-[#5B6E88] dark:text-text-muted leading-relaxed">
               {project.tagline}
             </p>
 
             {/* Tech Stack Pills */}
             <div className="pt-2 flex flex-wrap gap-2">
               {project.techStack.map((tech) => (
-                <span key={tech} className="px-3 py-1 rounded-lg bg-navy-800 text-xs font-medium text-white border border-surface-border">
+                <span key={tech} className="px-3 py-1 rounded-lg bg-[#EBF3FC] dark:bg-navy-800 text-xs font-medium text-[#29405E] dark:text-white border border-[#C8D8EE] dark:border-surface-border">
                   {tech}
                 </span>
               ))}
@@ -72,16 +72,16 @@ export default function ProjectDetailPage({ onOpenQuote }) {
             
             {/* The Challenge */}
             <div className="glass-card rounded-3xl p-8 border border-surface-border bg-navy-900/80 space-y-3">
-              <h3 className="text-lg font-bold text-amber-400">The Challenge & Operational Problem</h3>
-              <p className="text-sm text-text-muted leading-relaxed">
+              <h3 className="text-lg font-bold text-amber-600 dark:text-amber-400">The Challenge & Operational Problem</h3>
+              <p className="text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed">
                 {project.challenge}
               </p>
             </div>
 
             {/* The Solution */}
             <div className="glass-card rounded-3xl p-8 border border-surface-border bg-navy-900/80 space-y-3">
-              <h3 className="text-lg font-bold text-primary-cyan">The SMART Engineered Solution</h3>
-              <p className="text-sm text-text-muted leading-relaxed">
+              <h3 className="text-lg font-bold text-primary dark:text-primary-cyan">The SMART Engineered Solution</h3>
+              <p className="text-sm text-[#5B6E88] dark:text-text-muted leading-relaxed">
                 {project.solution}
               </p>
             </div>
@@ -89,13 +89,13 @@ export default function ProjectDetailPage({ onOpenQuote }) {
             {/* Modules Implemented */}
             {project.modules && (
               <div className="glass-card rounded-3xl p-8 border border-surface-border bg-navy-900/80 space-y-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-primary-electric" /> Modules & Features Implemented
+                <h3 className="text-lg font-bold text-[#0A1E3F] dark:text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-primary dark:text-primary-electric" /> Modules & Features Implemented
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {project.modules.map((mod, i) => (
-                    <div key={i} className="p-3 rounded-xl bg-navy-800 border border-surface-border/60 text-xs font-semibold text-text-light flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-primary-cyan shrink-0" />
+                    <div key={i} className="p-3 rounded-xl bg-[#F0F6FF] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border/60 text-xs font-semibold text-[#29405E] dark:text-text-light flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-primary dark:bg-primary-cyan shrink-0" />
                       <span>{mod}</span>
                     </div>
                   ))}
@@ -108,15 +108,15 @@ export default function ProjectDetailPage({ onOpenQuote }) {
           {/* Results Sidebar */}
           <div className="lg:col-span-4 space-y-6">
             <div className="glass-card rounded-3xl p-7 border border-primary/30 bg-navy-900/90 shadow-glow-sm space-y-5">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
                 <Trophy className="w-5 h-5" />
                 <span>Measurable Results</span>
               </div>
-              <ul className="space-y-3 text-xs text-text-light">
+              <ul className="space-y-3 text-xs">
                 {project.results.map((res, i) => (
-                  <li key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-navy-800/80 border border-surface-border">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <span className="leading-relaxed">{res}</span>
+                  <li key={i} className="flex items-start gap-2.5 p-3 rounded-xl bg-[#F4F8FC] dark:bg-navy-800/80 border border-[#DCE6F2] dark:border-surface-border">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed text-[#29405E] dark:text-text-light">{res}</span>
                   </li>
                 ))}
               </ul>
@@ -136,4 +136,3 @@ export default function ProjectDetailPage({ onOpenQuote }) {
     </div>
   );
 }
-

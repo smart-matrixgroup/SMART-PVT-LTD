@@ -17,10 +17,10 @@ export default function InsightsPage() {
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary-cyan text-xs font-bold uppercase tracking-wider mb-4">
           Knowledge Base
         </div>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight max-w-4xl mx-auto">
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-[#0A1E3F] dark:text-white tracking-tight max-w-4xl mx-auto">
           Technology & Business <span className="gradient-text-blue">Insights.</span>
         </h1>
-        <p className="text-sm sm:text-base text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
+        <p className="text-sm sm:text-base text-[#5B6E88] dark:text-text-muted max-w-2xl mx-auto mt-4 leading-relaxed">
           Practical articles on choosing business systems, automating workflows, and building a high-credibility digital brand.
         </p>
       </section>
@@ -34,31 +34,31 @@ export default function InsightsPage() {
               className="glass-card rounded-3xl p-6 sm:p-7 glow-on-hover flex flex-col justify-between bg-navy-900/80 border border-surface-border group"
             >
               <div>
-                <div className="flex items-center justify-between text-xs text-text-muted mb-4">
-                  <span className="font-bold uppercase tracking-wider text-primary-cyan bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20">
+                <div className="flex items-center justify-between text-xs mb-4">
+                  <span className="font-bold uppercase tracking-wider text-primary dark:text-primary-cyan bg-primary/10 dark:bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-primary/20 dark:border-cyan-500/20">
                     {item.category}
                   </span>
-                  <span className="flex items-center gap-1 text-[11px]">
-                    <Clock className="w-3 h-3 text-amber-400" />
+                  <span className="flex items-center gap-1 text-[11px] text-[#5B6E88] dark:text-text-muted">
+                    <Clock className="w-3 h-3 text-amber-500 dark:text-amber-400" />
                     {item.readTime}
                   </span>
                 </div>
 
-                <h2 className="text-lg font-bold text-white group-hover:text-primary-electric transition-colors leading-snug">
+                <h2 className="text-lg font-bold text-[#0A1E3F] dark:text-white group-hover:text-primary dark:group-hover:text-primary-electric transition-colors leading-snug">
                   {item.title}
                 </h2>
-                <p className="text-xs text-text-muted mt-3 leading-relaxed line-clamp-3">
+                <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-3 leading-relaxed line-clamp-3">
                   {item.summary}
                 </p>
               </div>
 
-              <div className="pt-6 mt-4 border-t border-surface-border/50 flex items-center justify-between">
-                <span className="text-[11px] text-text-muted flex items-center gap-1">
+              <div className="pt-6 mt-4 border-t border-[#DCE6F2] dark:border-surface-border/50 flex items-center justify-between">
+                <span className="text-[11px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
                   <Calendar className="w-3 h-3" /> {item.date}
                 </span>
                 <Link
                   to={`/insights/${item.slug}`}
-                  className="text-xs font-bold text-primary-electric group-hover:text-primary-cyan flex items-center gap-1 transition-colors"
+                  className="text-xs font-bold text-primary dark:text-primary-electric group-hover:text-primary-hover dark:group-hover:text-primary-cyan flex items-center gap-1 transition-colors"
                 >
                   Read Article <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
@@ -71,4 +71,3 @@ export default function InsightsPage() {
     </div>
   );
 }
-
