@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin-panel
+Disallow: /erp-system
+Disallow: /client-dashboard
+
+Sitemap: https://smartpvtltd.com/sitemap.xml
