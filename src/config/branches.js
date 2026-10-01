@@ -1,3 +1,8 @@
+// ⚠️ CONFIGURE_OFFICIAL_ADDRESSES — the addresses/phone numbers below are
+// unverified placeholders, not SMART's actual registered branch details.
+// Master plan section 21 explicitly says: "Do not hard-code unverified
+// addresses." Replace every field with the real, Google Business Profile
+// confirmed branch data before this goes live.
 export const branches = [
   {
     branchId: "BR-TRINCO",

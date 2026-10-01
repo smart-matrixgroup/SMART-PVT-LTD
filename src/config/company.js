@@ -10,22 +10,28 @@ export const company = {
   vision: "To be the most trusted and innovative business solutions provider in Sri Lanka and beyond.",
   values: "Integrity, Innovation, Client Success, Continuous Improvement.",
   
-  // Stats from reference
+  // ⚠️ CONFIGURE_REAL_NUMBERS — these were placeholder marketing figures
+  // (500+, 98%, etc.) that cannot be substantiated. Master plan section 39
+  // explicitly forbids publishing unverified stats. Replace `value` with a
+  // real, provable number once available, or leave the capability-based
+  // copy below as-is — it makes no quantitative claim.
   stats: [
-    { value: "500+", label: "Happy Clients" },
-    { value: "250+", label: "Projects Delivered" },
-    { value: "5+", label: "Years of Excellence" },
+    { value: "Multi-Industry", label: "Client Base" },
+    { value: "End-to-End", label: "Project Delivery" },
+    { value: "Dedicated", label: "Ongoing Support" },
     { value: "3", label: "Branch Locations" },
   ],
 
   trustMetrics: [
-    { value: "500+", label: "Happy Clients" },
-    { value: "98%", label: "Client Satisfaction" },
-    { value: "250+", label: "Projects Delivered" },
-    { value: "60%", label: "Repeat Business" },
+    { value: "Multi-Industry", label: "Clients Served" },
+    { value: "Transparent", label: "Pricing & Scope" },
+    { value: "End-to-End", label: "Project Delivery" },
+    { value: "Dedicated", label: "Post-Launch Support" },
   ],
 
-  // Contact details
+  // ⚠️ CONFIGURE_OFFICIAL_DETAILS — phone/address below are unverified
+  // placeholders (see master plan section 21). Replace with SMART's actual
+  // registered business details before launch.
   contact: {
     phone: "+94 26 222 1234",
     phoneDisplay: "+94 26 222 1234",

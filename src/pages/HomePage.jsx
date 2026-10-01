@@ -194,42 +194,42 @@ export default function HomePage({ onOpenQuote }) {
 
               <div className="grid grid-cols-2 gap-2.5 pt-5 sm:grid-cols-4">
                 
-                {/* 1. Happy Clients */}
+                {/* 1. Client Base */}
                 <div className="p-3.5 rounded-2xl bg-white/95 dark:bg-navy-900/90 backdrop-blur-md border border-[#E2EAF4] dark:border-surface-border shadow-sm flex flex-col items-center justify-center text-center">
                   <div className="w-7 h-7 rounded-full bg-[#EBF3FC] dark:bg-primary/20 flex items-center justify-center text-[#0066FF] dark:text-primary-cyan mb-1.5">
                     <Users className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xl font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
-                    500+
+                  <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
+                    Multi-Industry
                   </span>
                   <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
-                    Happy Clients
+                    Client Base
                   </span>
                 </div>
 
-                {/* 2. Projects Delivered */}
+                {/* 2. Project Delivery */}
                 <div className="p-3.5 rounded-2xl bg-white/95 dark:bg-navy-900/90 backdrop-blur-md border border-[#E2EAF4] dark:border-surface-border shadow-sm flex flex-col items-center justify-center text-center">
                   <div className="w-7 h-7 rounded-full bg-[#EBF3FC] dark:bg-primary/20 flex items-center justify-center text-[#0066FF] dark:text-primary-cyan mb-1.5">
                     <FileText className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xl font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
-                    250+
+                  <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
+                    End-to-End
                   </span>
                   <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
-                    Projects Delivered
+                    Project Delivery
                   </span>
                 </div>
 
-                {/* 3. Years of Excellence */}
+                {/* 3. Ongoing Support */}
                 <div className="p-3.5 rounded-2xl bg-white/95 dark:bg-navy-900/90 backdrop-blur-md border border-[#E2EAF4] dark:border-surface-border shadow-sm flex flex-col items-center justify-center text-center">
                   <div className="w-7 h-7 rounded-full bg-[#EBF3FC] dark:bg-primary/20 flex items-center justify-center text-[#0066FF] dark:text-primary-cyan mb-1.5">
                     <Award className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-xl font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
-                    5+
+                  <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
+                    Dedicated
                   </span>
                   <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
-                    Years of Excellence
+                    Ongoing Support
                   </span>
                 </div>
 
@@ -254,8 +254,12 @@ export default function HomePage({ onOpenQuote }) {
             <div className="relative mx-auto w-full max-w-[660px] lg:col-span-6 lg:max-w-none">
               <div className="relative aspect-[1.18/1] overflow-hidden rounded-[2rem] border border-[#B9D9FA] bg-[#DDEFFF] shadow-[0_22px_55px_rgba(37,104,176,.22)]">
                 <img
-                  src="/images/SMART-BANNER-BG.png"
+                  src="/images/SMART-BANNER-BG.webp"
                   alt="SMART Pvt Ltd corporate headquarters"
+                  width="660"
+                  height="559"
+                  loading="eager"
+                  fetchpriority="high"
                   className="absolute inset-0 h-full w-full scale-[1.15] object-cover object-[72%_50%]"
                 />
                 <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#061D46]/90 via-[#061D46]/20 to-transparent" />
@@ -348,7 +352,7 @@ export default function HomePage({ onOpenQuote }) {
                   {[
                     "Experienced & professional team",
                     "Modern technology & secure systems",
-                    "Trusted by 500+ clients across industries",
+                    "Trusted across multiple industries",
                     "End-to-end business solutions"
                   ].map((item, idx) => (
                     <div key={idx} className="flex items-start gap-2 text-xs font-semibold text-[#0A1E3F] dark:text-text-light">
@@ -371,9 +375,10 @@ export default function HomePage({ onOpenQuote }) {
 
             {/* Center: Team Picture with Quote Overlay */}
             <div className="lg:col-span-4 rounded-3xl overflow-hidden shadow-xl border border-[#E2EAF4] dark:border-surface-border relative group min-h-[320px]">
-              <img 
-                src="/images/team_collaboration.jpg" 
-                alt="SMART Team collaboration" 
+              <img
+                src="/images/team_collaboration.webp"
+                alt="SMART Team collaboration"
+                loading="lazy"
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#06112B]/90 via-[#06112B]/20 to-transparent" />
@@ -632,9 +637,10 @@ export default function HomePage({ onOpenQuote }) {
                 >
                   <div>
                     <div className="h-32 overflow-hidden relative">
-                      <img 
-                        src={srv.image} 
-                        alt={srv.title} 
+                      <img
+                        src={srv.image}
+                        alt={srv.title}
+                        loading="lazy"
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
@@ -763,9 +769,10 @@ export default function HomePage({ onOpenQuote }) {
                   >
                     <div>
                       <div className="h-24 overflow-hidden relative">
-                        <img 
-                          src={proj.image} 
-                          alt={proj.name} 
+                        <img
+                          src={proj.image}
+                          alt={proj.name}
+                          loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         />
                       </div>
@@ -789,23 +796,23 @@ export default function HomePage({ onOpenQuote }) {
                 CLIENT SUCCESS
               </span>
               
-              {/* Stats 4-Box */}
+              {/* Trust 4-Box — capability claims only, no fabricated metrics */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
-                  <span className="text-lg font-extrabold text-[#0066FF]">500+</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Happy Clients</span>
+                  <span className="text-sm font-extrabold text-[#0066FF]">Multi-Industry</span>
+                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Clients Served</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
-                  <span className="text-lg font-extrabold text-emerald-500">98%</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Satisfaction</span>
+                  <span className="text-sm font-extrabold text-emerald-500">Transparent</span>
+                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Pricing & Scope</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
-                  <span className="text-lg font-extrabold text-[#0066FF]">250+</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Delivered</span>
+                  <span className="text-sm font-extrabold text-[#0066FF]">End-to-End</span>
+                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Delivery</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
-                  <span className="text-lg font-extrabold text-amber-500">60%</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Repeat Clients</span>
+                  <span className="text-sm font-extrabold text-amber-500">Dedicated</span>
+                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Support</span>
                 </div>
               </div>
 
@@ -1004,9 +1011,10 @@ export default function HomePage({ onOpenQuote }) {
             </button>
             <h3 className="text-lg font-bold">SMART [PVT] LTD — Corporate Showcase</h3>
             <div className="aspect-video bg-black rounded-2xl flex items-center justify-center relative overflow-hidden">
-              <img 
-                src="/images/SMART-BANNER-BG.png" 
-                alt="Video placeholder" 
+              <img
+                src="/images/SMART-BANNER-BG.webp"
+                alt="Video placeholder"
+                loading="lazy"
                 className="w-full h-full object-cover opacity-60"
               />
               <div className="absolute flex flex-col items-center justify-center text-center p-4">

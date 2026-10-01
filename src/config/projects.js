@@ -1,3 +1,10 @@
+// ⚠️ CONTENT REVIEW NEEDED — the `results` figures in these case studies
+// (e.g. "35% faster", "100/100 Lighthouse", specific lead/SKU counts) are
+// illustrative placeholders, not verified client outcomes. Master plan
+// section 39 ("Never invent company facts") and section 41/42 (only
+// publish genuine, permission-cleared results) require these to be
+// replaced with real, client-approved figures — or softened to
+// non-quantitative language — before publishing live.
 export const projectCategories = [
   "All",
   "ERP & POS",
