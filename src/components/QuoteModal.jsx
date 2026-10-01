@@ -268,7 +268,7 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
                   <label className="block text-xs font-semibold text-text-light mb-1">
                     What is your approximate estimated budget?
                   </label>
-                  <p className="text-[11px] text-text-muted mb-2">
+                  <p className="text-[13px] text-text-muted mb-2">
                     This helps us structure the right technology stack and phased delivery plan for you.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -303,7 +303,7 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
                     placeholder="E.g., We run a restaurant with 15 tables and need POS billing + inventory. Or, I need a personal portfolio with 4 projects and WhatsApp link..."
                     className="w-full p-3.5 rounded-xl bg-navy-800 border border-surface-border text-white text-sm focus:outline-none focus:border-primary-electric transition-colors resize-none"
                   />
-                  <div className="flex items-center gap-2 text-[11px] text-text-muted">
+                  <div className="flex items-center gap-2 text-[13px] text-text-muted">
                     <HelpCircle className="w-3.5 h-3.5 text-primary-cyan" />
                     <span>Include any deadlines, reference links, or existing software you use.</span>
                   </div>
@@ -396,7 +396,7 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
                 Your reference ID is <strong className="text-white bg-navy-800 px-2 py-0.5 rounded border border-surface-border">{leadId}</strong>. A SMART solutions specialist will review your requirements and reach out via {formData.preferredContact}.
               </p>
               {submitError && (
-                <p className="text-[11px] text-amber-400 max-w-md mx-auto mt-2">{submitError}</p>
+                <p className="text-[13px] text-amber-400 max-w-md mx-auto mt-2">{submitError}</p>
               )}
             </div>
 

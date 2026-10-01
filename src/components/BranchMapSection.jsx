@@ -25,7 +25,7 @@ export default function BranchMapSection() {
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan border border-primary/30">
                   {branch.badge}
                 </span>
-                <span className="text-[11px] text-[#5B6E88] dark:text-text-muted font-mono">{branch.branchId}</span>
+                <span className="text-[13px] text-[#5B6E88] dark:text-text-muted font-mono">{branch.branchId}</span>
               </div>
 
               <h4 className="text-base font-bold text-[#0A1E3F] dark:text-white">
@@ -45,7 +45,7 @@ export default function BranchMapSection() {
                   <Mail className="w-4 h-4 text-primary dark:text-primary-electric shrink-0" />
                   <span>{branch.email}</span>
                 </div>
-                <div className="flex items-center gap-2.5 pt-1 text-[11px]">
+                <div className="flex items-center gap-2.5 pt-1 text-[13px]">
                   <Clock className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
                   <span>Mon-Sat: {branch.businessHours.weekdays}</span>
                 </div>
@@ -70,7 +70,7 @@ export default function BranchMapSection() {
         <div className="absolute bottom-4 left-4 right-4 sm:right-auto p-3 rounded-2xl border border-[#DCE6F2] dark:border-surface-border flex items-center justify-between gap-4 bg-white/90 dark:bg-navy-950/85 backdrop-blur-md">
           <div className="text-xs">
             <p className="font-bold text-[#0A1E3F] dark:text-white">{selectedBranch.name}</p>
-            <p className="text-[11px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
+            <p className="text-[13px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
           </div>
           <a
             href="https://maps.google.com"

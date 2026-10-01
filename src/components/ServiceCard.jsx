@@ -36,7 +36,7 @@ export default function ServiceCard({ service, onOpenQuote }) {
             {getIcon(service.icon)}
           </div>
           {service.badge && (
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 text-primary dark:text-primary-cyan border border-primary/25">
+            <span className="text-[12px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 text-primary dark:text-primary-cyan border border-primary/25">
               {service.badge}
             </span>
           )}
@@ -57,7 +57,7 @@ export default function ServiceCard({ service, onOpenQuote }) {
 
         {/* Starting price tag */}
         <div className="mt-4 pt-3 border-t border-[#DCE6F2] dark:border-surface-border/60 flex items-baseline justify-between text-xs">
-          <span className="text-[#5B6E88] dark:text-text-muted text-[11px]">Investment:</span>
+          <span className="text-[#5B6E88] dark:text-text-muted text-[13px]">Investment:</span>
           <span className="font-bold text-[#0A1E3F] dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
             {service.startingPrice}
           </span>
@@ -74,7 +74,7 @@ export default function ServiceCard({ service, onOpenQuote }) {
         </Link>
         <button
           onClick={() => onOpenQuote(service.title)}
-          className="px-3 py-1.5 rounded-xl text-[11px] font-semibold text-[#29405E] dark:text-text-light hover:text-white bg-[#F0F6FF] dark:bg-surface-card hover:bg-primary border border-[#C8D8EE] dark:border-surface-border transition-colors"
+          className="px-3 py-1.5 rounded-xl text-[13px] font-semibold text-[#29405E] dark:text-text-light hover:text-white bg-[#F0F6FF] dark:bg-surface-card hover:bg-primary border border-[#C8D8EE] dark:border-surface-border transition-colors"
         >
           Inquire
         </button>

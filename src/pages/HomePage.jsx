@@ -156,7 +156,7 @@ export default function HomePage({ onOpenQuote }) {
             <div className="space-y-5 text-left lg:col-span-6 lg:pt-1">
               
               {/* Category Pill Tag */}
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#CDE0FF] bg-[#EBF3FC] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0066FF] shadow-sm dark:border-[#2C639C] dark:bg-[#0D315B] dark:text-[#65B5FF]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#CDE0FF] bg-[#EBF3FC] px-3.5 py-1.5 text-[13px] font-bold uppercase tracking-wider text-[#0066FF] shadow-sm dark:border-[#2C639C] dark:bg-[#0D315B] dark:text-[#65B5FF]">
                 <span>SOFTWARE | ACCOUNTING | AUDIT | BUSINESS SOLUTIONS</span>
               </div>
 
@@ -202,7 +202,7 @@ export default function HomePage({ onOpenQuote }) {
                   <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
                     Multi-Industry
                   </span>
-                  <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
+                  <span className="text-[13px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
                     Client Base
                   </span>
                 </div>
@@ -215,7 +215,7 @@ export default function HomePage({ onOpenQuote }) {
                   <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
                     End-to-End
                   </span>
-                  <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
+                  <span className="text-[13px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
                     Project Delivery
                   </span>
                 </div>
@@ -228,7 +228,7 @@ export default function HomePage({ onOpenQuote }) {
                   <span className="text-sm font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
                     Dedicated
                   </span>
-                  <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
+                  <span className="text-[13px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
                     Ongoing Support
                   </span>
                 </div>
@@ -241,7 +241,7 @@ export default function HomePage({ onOpenQuote }) {
                   <span className="text-xl font-black text-[#0066FF] dark:text-primary-cyan block leading-none">
                     3
                   </span>
-                  <span className="text-[11px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
+                  <span className="text-[13px] font-semibold text-[#5B6E88] dark:text-text-muted block mt-1">
                     Branch Locations
                   </span>
                 </div>
@@ -265,7 +265,7 @@ export default function HomePage({ onOpenQuote }) {
                 <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#061D46]/90 via-[#061D46]/20 to-transparent" />
 
                 <div className="absolute bottom-5 left-5 text-white sm:bottom-7 sm:left-7">
-                  <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#086DFF] px-3 py-1.5 text-[10px] font-bold tracking-wide shadow-lg sm:text-xs">
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#086DFF] px-3 py-1.5 text-[12px] font-bold tracking-wide shadow-lg sm:text-xs">
                     <MapPin className="h-3.5 w-3.5 fill-white" /> CORPORATE HEADQUARTERS
                   </div>
                   <p className="text-base font-bold sm:text-lg">SMART [PVT] LTD Commercial Center</p>
@@ -315,7 +315,7 @@ export default function HomePage({ onOpenQuote }) {
                   <div className="p-2.5 rounded-xl bg-white dark:bg-navy-700 text-[#0066FF] dark:text-primary-cyan shadow-2xs group-hover:scale-110 transition-transform">
                     <Icon className="w-4 h-4" />
                   </div>
-                  <span className="text-[11px] font-bold text-[#0A1E3F] dark:text-text-light group-hover:text-[#0066FF] dark:group-hover:text-primary-cyan transition-colors mt-2 line-clamp-2 leading-tight">
+                  <span className="text-[13px] font-bold text-[#0A1E3F] dark:text-text-light group-hover:text-[#0066FF] dark:group-hover:text-primary-cyan transition-colors mt-2 line-clamp-2 leading-tight">
                     {svc.title}
                   </span>
                 </Link>
@@ -336,7 +336,7 @@ export default function HomePage({ onOpenQuote }) {
             {/* Left: About Text & 4 Checkpoints */}
             <div className="lg:col-span-5 space-y-5 flex flex-col justify-between text-left">
               <div>
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#0066FF] dark:text-primary-cyan">
+                <span className="text-[13px] font-extrabold uppercase tracking-wider text-[#0066FF] dark:text-primary-cyan">
                   ABOUT SMART PVT LTD
                 </span>
                 <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-extrabold text-[#0A1E3F] dark:text-white tracking-tight mt-1 leading-tight">
@@ -388,7 +388,7 @@ export default function HomePage({ onOpenQuote }) {
                 <p className="text-xs font-bold text-[#0A1E3F] dark:text-white italic">
                   “People + Technology = A Smarter Tomorrow”
                 </p>
-                <span className="text-[10px] font-bold text-[#0066FF] dark:text-primary-cyan mt-0.5 block">
+                <span className="text-[12px] font-bold text-[#0066FF] dark:text-primary-cyan mt-0.5 block">
                   — SMART Pvt Ltd
                 </span>
               </div>
@@ -460,7 +460,7 @@ export default function HomePage({ onOpenQuote }) {
             
             {/* Left Header & Features */}
             <div className="lg:col-span-4 space-y-4 text-left">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-cyan-400/20 text-[#00D9FF] border border-cyan-400/30">
+              <span className="text-[13px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-cyan-400/20 text-[#00D9FF] border border-cyan-400/30">
                 OUR PRODUCT
               </span>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
@@ -513,11 +513,11 @@ export default function HomePage({ onOpenQuote }) {
                     <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                    <span className="text-[11px] font-bold text-slate-300 ml-2">
+                    <span className="text-[13px] font-bold text-slate-300 ml-2">
                       SMARTORIX Live Dashboard
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                  <span className="text-[12px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
                     Online • POS Terminal #01
                   </span>
                 </div>
@@ -525,22 +525,22 @@ export default function HomePage({ onOpenQuote }) {
                 {/* Dashboard Metrics Cards */}
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[10px] text-slate-400 block">Today's Sales</span>
+                    <span className="text-[12px] text-slate-400 block">Today's Sales</span>
                     <strong className="text-xs sm:text-sm text-emerald-400 font-bold">LKR 184,500</strong>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[10px] text-slate-400 block">Orders</span>
+                    <span className="text-[12px] text-slate-400 block">Orders</span>
                     <strong className="text-xs sm:text-sm text-white font-bold">92 Bills</strong>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                    <span className="text-[10px] text-slate-400 block">Low Stock</span>
+                    <span className="text-[12px] text-slate-400 block">Low Stock</span>
                     <strong className="text-xs sm:text-sm text-amber-400 font-bold">1 Alert</strong>
                   </div>
                 </div>
 
                 {/* Simulated Chart Bars */}
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
-                  <div className="flex justify-between text-[11px] font-semibold text-slate-300">
+                  <div className="flex justify-between text-[13px] font-semibold text-slate-300">
                     <span>Revenue Velocity</span>
                     <span className="text-emerald-400 font-bold">+18.4%</span>
                   </div>
@@ -551,7 +551,7 @@ export default function HomePage({ onOpenQuote }) {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-300 pt-1">
+                <div className="flex items-center justify-between text-[13px] text-slate-300 pt-1">
                   <span>ESC/POS Thermal Connected</span>
                   <span className="text-[#00D9FF]">Multi-branch Sync</span>
                 </div>
@@ -610,7 +610,7 @@ export default function HomePage({ onOpenQuote }) {
           
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 text-left">
             <div>
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#0066FF] dark:text-primary-cyan">
+              <span className="text-[13px] font-extrabold uppercase tracking-wider text-[#0066FF] dark:text-primary-cyan">
                 OUR SERVICES
               </span>
               <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-extrabold text-[#0A1E3F] dark:text-white tracking-tight mt-1">
@@ -649,7 +649,7 @@ export default function HomePage({ onOpenQuote }) {
                       <h3 className="text-xs font-extrabold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] transition-colors line-clamp-1">
                         {srv.title}
                       </h3>
-                      <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-1 leading-relaxed line-clamp-2">
+                      <p className="text-[13px] text-[#5B6E88] dark:text-text-muted mt-1 leading-relaxed line-clamp-2">
                         {srv.desc}
                       </p>
                     </div>
@@ -671,7 +671,7 @@ export default function HomePage({ onOpenQuote }) {
                   <h3 className="text-lg font-extrabold text-[#0A1E3F] dark:text-white">
                     Why Choose SMART?
                   </h3>
-                  <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-0.5">
+                  <p className="text-[13px] text-[#5B6E88] dark:text-text-muted mt-0.5">
                     Your complete technology & business growth partner.
                   </p>
                 </div>
@@ -722,7 +722,7 @@ export default function HomePage({ onOpenQuote }) {
             
             {/* Left 3 Cols: Industries We Serve */}
             <div className="lg:col-span-3 space-y-4 text-left">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0066FF]">
+              <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#0066FF]">
                 INDUSTRIES WE SERVE
               </span>
               <div className="grid grid-cols-2 gap-2">
@@ -734,7 +734,7 @@ export default function HomePage({ onOpenQuote }) {
                       className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center flex flex-col items-center justify-center shadow-2xs hover:border-[#0066FF] transition-colors"
                     >
                       <Icon className="w-4 h-4 text-[#0066FF] mb-1.5" />
-                      <span className="text-[10px] font-bold text-[#0A1E3F] dark:text-text-light line-clamp-2">
+                      <span className="text-[12px] font-bold text-[#0A1E3F] dark:text-text-light line-clamp-2">
                         {ind.name}
                       </span>
                     </div>
@@ -747,14 +747,14 @@ export default function HomePage({ onOpenQuote }) {
             <div className="lg:col-span-6 space-y-4 text-left">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0066FF]">
+                  <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#0066FF]">
                     FEATURED PROJECTS
                   </span>
                   <h3 className="text-xl font-extrabold text-[#0A1E3F] dark:text-white">
                     Real Projects. Real Results.
                   </h3>
                 </div>
-                <Link to="/projects" className="text-[11px] font-bold text-[#0066FF] hover:underline">
+                <Link to="/projects" className="text-[13px] font-bold text-[#0066FF] hover:underline">
                   View All Projects →
                 </Link>
               </div>
@@ -777,10 +777,10 @@ export default function HomePage({ onOpenQuote }) {
                         />
                       </div>
                       <div className="p-2.5">
-                        <h4 className="text-[11px] font-bold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] line-clamp-1">
+                        <h4 className="text-[13px] font-bold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] line-clamp-1">
                           {proj.name}
                         </h4>
-                        <span className="text-[9px] text-[#5B6E88] dark:text-text-muted block">
+                        <span className="text-[13px] text-[#5B6E88] dark:text-text-muted block">
                           {proj.category}
                         </span>
                       </div>
@@ -792,7 +792,7 @@ export default function HomePage({ onOpenQuote }) {
 
             {/* Right 3 Cols: Client Success Stats & Review */}
             <div className="lg:col-span-3 space-y-4 text-left">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0066FF]">
+              <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#0066FF]">
                 CLIENT SUCCESS
               </span>
               
@@ -800,19 +800,19 @@ export default function HomePage({ onOpenQuote }) {
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
                   <span className="text-sm font-extrabold text-[#0066FF]">Multi-Industry</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Clients Served</span>
+                  <span className="text-[12px] text-[#5B6E88] dark:text-text-muted block">Clients Served</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
                   <span className="text-sm font-extrabold text-emerald-500">Transparent</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Pricing & Scope</span>
+                  <span className="text-[12px] text-[#5B6E88] dark:text-text-muted block">Pricing & Scope</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
                   <span className="text-sm font-extrabold text-[#0066FF]">End-to-End</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Delivery</span>
+                  <span className="text-[12px] text-[#5B6E88] dark:text-text-muted block">Delivery</span>
                 </div>
                 <div className="p-3 rounded-2xl bg-white dark:bg-navy-800 border border-[#E2EAF4] dark:border-surface-border text-center">
                   <span className="text-sm font-extrabold text-amber-500">Dedicated</span>
-                  <span className="text-[10px] text-[#5B6E88] dark:text-text-muted block">Support</span>
+                  <span className="text-[12px] text-[#5B6E88] dark:text-text-muted block">Support</span>
                 </div>
               </div>
 
@@ -823,16 +823,16 @@ export default function HomePage({ onOpenQuote }) {
                     <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
                   ))}
                 </div>
-                <p className="text-[11px] text-[#4A5E78] dark:text-text-light italic leading-relaxed">
+                <p className="text-[13px] text-[#4A5E78] dark:text-text-light italic leading-relaxed">
                   “SMART helped us digitize our operations with a custom ERP. Their support and service are exceptional!”
                 </p>
                 <div className="flex items-center gap-2 pt-1 border-t border-[#E2EAF4] dark:border-surface-border">
-                  <div className="w-6 h-6 rounded-full bg-[#0066FF] text-white text-[10px] font-bold flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-full bg-[#0066FF] text-white text-[12px] font-bold flex items-center justify-center">
                     M
                   </div>
                   <div>
-                    <strong className="text-[11px] text-[#0A1E3F] dark:text-white block">Mehala T.</strong>
-                    <span className="text-[9px] text-[#5B6E88]">Business Owner</span>
+                    <strong className="text-[13px] text-[#0A1E3F] dark:text-white block">Mehala T.</strong>
+                    <span className="text-[13px] text-[#5B6E88]">Business Owner</span>
                   </div>
                 </div>
               </div>
@@ -854,7 +854,7 @@ export default function HomePage({ onOpenQuote }) {
             
             {/* Left 3 Cols: Our Branches */}
             <div className="lg:col-span-3 space-y-4 text-left">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0066FF]">
+              <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#0066FF]">
                 OUR BRANCHES
               </span>
               <h3 className="text-xl font-extrabold text-[#0A1E3F] dark:text-white">
@@ -870,7 +870,7 @@ export default function HomePage({ onOpenQuote }) {
                   <button
                     key={b.branchId}
                     onClick={() => setActiveBranch(b)}
-                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all ${
+                    className={`px-3 py-1 rounded-full text-[13px] font-bold transition-all ${
                       activeBranch.branchId === b.branchId
                         ? 'bg-[#0066FF] text-white shadow-2xs'
                         : 'bg-[#F0F6FD] text-[#4A5E78] hover:bg-[#E2EAF4]'
@@ -895,10 +895,10 @@ export default function HomePage({ onOpenQuote }) {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <strong className="text-[#0A1E3F] dark:text-white font-bold">{b.name}</strong>
-                      <span className="text-[9px] font-bold text-[#0066FF]">{b.badge}</span>
+                      <span className="text-[13px] font-bold text-[#0066FF]">{b.badge}</span>
                     </div>
-                    <p className="text-[#5B6E88] text-[11px]">{b.address}</p>
-                    <p className="text-[#0066FF] font-bold text-[11px] mt-1">{b.phone}</p>
+                    <p className="text-[#5B6E88] text-[13px]">{b.address}</p>
+                    <p className="text-[#0066FF] font-bold text-[13px] mt-1">{b.phone}</p>
                   </div>
                 ))}
               </div>
@@ -914,8 +914,8 @@ export default function HomePage({ onOpenQuote }) {
               />
               <div className="absolute bottom-3 left-3 right-3 p-2.5 rounded-xl bg-white/95 dark:bg-navy-900/95 backdrop-blur-md text-xs flex items-center justify-between shadow-md">
                 <div>
-                  <p className="font-bold text-[#0A1E3F] dark:text-white text-[11px]">{activeBranch.city}</p>
-                  <p className="text-[10px] text-[#5B6E88]">{activeBranch.address}</p>
+                  <p className="font-bold text-[#0A1E3F] dark:text-white text-[13px]">{activeBranch.city}</p>
+                  <p className="text-[12px] text-[#5B6E88]">{activeBranch.address}</p>
                 </div>
                 <a
                   href="https://maps.google.com"
@@ -945,11 +945,11 @@ export default function HomePage({ onOpenQuote }) {
                         onClick={() => setOpenFaq(isOpen ? -1 : idx)}
                         className="w-full text-left font-bold text-[#0A1E3F] dark:text-white flex items-center justify-between gap-2"
                       >
-                        <span className="text-[11px]">{faq.q}</span>
+                        <span className="text-[13px]">{faq.q}</span>
                         <ChevronDown className={`w-3.5 h-3.5 text-[#0066FF] shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                       </button>
                       {isOpen && (
-                        <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-2 pt-2 border-t border-[#E2EAF4] dark:border-surface-border leading-relaxed animate-in fade-in">
+                        <p className="text-[13px] text-[#5B6E88] dark:text-text-muted mt-2 pt-2 border-t border-[#E2EAF4] dark:border-surface-border leading-relaxed animate-in fade-in">
                           {faq.a}
                         </p>
                       )}
@@ -962,7 +962,7 @@ export default function HomePage({ onOpenQuote }) {
             {/* Far Right 3 Cols: Let's Build Something Great Together CTA Box */}
             <div className="lg:col-span-3 p-5 rounded-3xl bg-gradient-to-br from-[#0A2540] to-[#0066FF] text-white shadow-xl space-y-4 text-left">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-200">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-cyan-200">
                   LET'S CONNECT
                 </span>
                 <h3 className="text-lg sm:text-xl font-extrabold mt-1 leading-tight">
@@ -1022,7 +1022,7 @@ export default function HomePage({ onOpenQuote }) {
                   <Play className="w-8 h-8 fill-white ml-1" />
                 </div>
                 <p className="text-xs text-white font-semibold">SMART Pvt Ltd Corporate Video</p>
-                <span className="text-[10px] text-slate-300">Intelligent Solutions. Smarter Future.</span>
+                <span className="text-[12px] text-slate-300">Intelligent Solutions. Smarter Future.</span>
               </div>
             </div>
           </div>

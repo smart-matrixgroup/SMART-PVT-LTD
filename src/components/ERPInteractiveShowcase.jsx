@@ -120,7 +120,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                     <span className="text-xs font-bold text-text-light uppercase tracking-wider">
                       Item Catalog / Fast Touch Menu
                     </span>
-                    <span className="text-[11px] text-text-muted">Click any item to add</span>
+                    <span className="text-[13px] text-text-muted">Click any item to add</span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -131,7 +131,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                         className="p-3.5 rounded-2xl bg-navy-800/80 hover:bg-primary/20 border border-surface-border hover:border-primary/50 text-left transition-all group flex flex-col justify-between h-24"
                       >
                         <div>
-                          <span className="text-[10px] font-semibold text-primary-cyan uppercase">
+                          <span className="text-[12px] font-semibold text-primary-cyan uppercase">
                             {prod.cat}
                           </span>
                           <p className="text-xs font-bold text-white group-hover:text-primary-electric transition-colors line-clamp-1 mt-0.5">
@@ -164,9 +164,9 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                     <div className="flex items-center justify-between pb-3 border-b border-surface-border">
                       <div>
                         <h4 className="text-xs font-bold text-white">Current Dine-In Ticket</h4>
-                        <p className="text-[11px] text-text-muted">Table #04 • Server: Suresh</p>
+                        <p className="text-[13px] text-text-muted">Table #04 • Server: Suresh</p>
                       </div>
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-primary/20 text-primary-cyan border border-primary/30">
+                      <span className="text-[13px] font-bold px-2 py-0.5 rounded bg-primary/20 text-primary-cyan border border-primary/30">
                         Order #1042
                       </span>
                     </div>
@@ -176,7 +176,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                       {cart.map((item) => (
                         <div key={item.id} className="flex items-center justify-between text-xs py-1 border-b border-surface-border/40">
                           <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded bg-navy-800 text-text-light font-bold flex items-center justify-center text-[10px]">
+                            <span className="w-5 h-5 rounded bg-navy-800 text-text-light font-bold flex items-center justify-center text-[12px]">
                               {item.qty}x
                             </span>
                             <span className="text-white font-medium">{item.name}</span>
@@ -263,7 +263,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-base font-extrabold text-white">{table.id}</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          <span className={`text-[12px] font-bold px-2 py-0.5 rounded-full ${
                             isAvail ? 'bg-emerald-500/20 text-emerald-400' :
                             isOcc ? 'bg-amber-500/20 text-amber-400' :
                             'bg-primary/20 text-primary-cyan'
@@ -272,7 +272,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                           </span>
                         </div>
                         <p className="text-xs text-text-muted mt-2">{table.seats}</p>
-                        <p className="text-[11px] text-text-muted mt-0.5">Duration: <strong className="text-white">{table.time}</strong></p>
+                        <p className="text-[13px] text-text-muted mt-0.5">Duration: <strong className="text-white">{table.time}</strong></p>
                       </div>
                     );
                   })}
@@ -299,7 +299,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                     <div key={kot.ticket} className="p-4 rounded-2xl bg-navy-900 border border-surface-border space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-bold text-white">{kot.ticket}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        <span className={`text-[12px] font-bold px-2 py-0.5 rounded ${
                           kot.status === 'Cooking' ? 'bg-amber-500/20 text-amber-400' :
                           kot.status === 'Ready to Serve' ? 'bg-emerald-500/20 text-emerald-400' :
                           'bg-navy-800 text-text-muted'
@@ -335,7 +335,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
-                    <thead className="bg-navy-800/80 text-text-muted uppercase text-[10px] tracking-wider">
+                    <thead className="bg-navy-800/80 text-text-muted uppercase text-[12px] tracking-wider">
                       <tr>
                         <th className="p-3">SKU / Item</th>
                         <th className="p-3">Category</th>
@@ -352,12 +352,12 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                         { sku: 'PKG-005', name: 'Eco Delivery Takeaway Boxes', cat: 'Packaging', current: '840 Units', min: '200 Units', status: 'Healthy' },
                       ].map((row) => (
                         <tr key={row.sku} className="hover:bg-navy-800/40">
-                          <td className="p-3 font-semibold text-white">{row.name} <span className="text-[10px] text-text-muted font-normal block">{row.sku}</span></td>
+                          <td className="p-3 font-semibold text-white">{row.name} <span className="text-[12px] text-text-muted font-normal block">{row.sku}</span></td>
                           <td className="p-3 text-text-muted">{row.cat}</td>
                           <td className="p-3 font-bold text-white">{row.current}</td>
                           <td className="p-3 text-text-muted">{row.min}</td>
                           <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            <span className={`px-2 py-0.5 rounded text-[12px] font-bold ${
                               row.status === 'Low Stock' 
                                 ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
                                 : 'bg-emerald-500/20 text-emerald-400'
@@ -378,31 +378,31 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
               <div className="space-y-4 animate-in fade-in duration-200">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3.5 rounded-2xl bg-navy-800/80 border border-surface-border">
-                    <span className="text-[10px] text-text-muted uppercase font-bold">Today's Gross Sales</span>
+                    <span className="text-[12px] text-text-muted uppercase font-bold">Today's Gross Sales</span>
                     <p className="text-lg sm:text-xl font-extrabold text-white mt-0.5">LKR 184,500</p>
-                    <span className="text-[10px] text-emerald-400 font-bold">+18.4% vs last week</span>
+                    <span className="text-[12px] text-emerald-400 font-bold">+18.4% vs last week</span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-navy-800/80 border border-surface-border">
-                    <span className="text-[10px] text-text-muted uppercase font-bold">Orders Processed</span>
+                    <span className="text-[12px] text-text-muted uppercase font-bold">Orders Processed</span>
                     <p className="text-lg sm:text-xl font-extrabold text-white mt-0.5">92 Bills</p>
-                    <span className="text-[10px] text-text-muted">Avg ticket LKR 2,005</span>
+                    <span className="text-[12px] text-text-muted">Avg ticket LKR 2,005</span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-navy-800/80 border border-surface-border">
-                    <span className="text-[10px] text-text-muted uppercase font-bold">Net Margin Ratio</span>
+                    <span className="text-[12px] text-text-muted uppercase font-bold">Net Margin Ratio</span>
                     <p className="text-lg sm:text-xl font-extrabold text-emerald-400 mt-0.5">64.2%</p>
-                    <span className="text-[10px] text-text-muted">Food cost tracked</span>
+                    <span className="text-[12px] text-text-muted">Food cost tracked</span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-navy-800/80 border border-surface-border">
-                    <span className="text-[10px] text-text-muted uppercase font-bold">Cash Drawer Balance</span>
+                    <span className="text-[12px] text-text-muted uppercase font-bold">Cash Drawer Balance</span>
                     <p className="text-lg sm:text-xl font-extrabold text-primary-cyan mt-0.5">LKR 72,400</p>
-                    <span className="text-[10px] text-emerald-400">Reconciled</span>
+                    <span className="text-[12px] text-emerald-400">Reconciled</span>
                   </div>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-navy-900 border border-surface-border flex items-center justify-between text-xs">
                   <div>
                     <h4 className="font-bold text-white">Top 3 Bestselling Items Today</h4>
-                    <p className="text-text-muted text-[11px]">1. Signature Burger Meal (48 sold) • 2. Iced Cappuccino (34 sold) • 3. Crispy Sub (22 sold)</p>
+                    <p className="text-text-muted text-[13px]">1. Signature Burger Meal (48 sold) • 2. Iced Cappuccino (34 sold) • 3. Crispy Sub (22 sold)</p>
                   </div>
                   <button 
                     onClick={() => alert("Downloading PDF Financial Summary...")}

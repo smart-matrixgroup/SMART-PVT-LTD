@@ -79,7 +79,7 @@ export default function Navbar({ onOpenQuote }) {
                 <Link
                   key={link.name}
                   to={link.path}
-                  className={`relative mx-1 shrink-0 whitespace-nowrap px-2 py-2 text-[11px] font-medium tracking-[0.01em] transition-colors duration-300 after:absolute after:bottom-0 after:left-2 after:h-0.5 after:rounded-full after:transition-all after:duration-300 ${
+                  className={`relative mx-1 shrink-0 whitespace-nowrap px-2 py-2 text-[13px] font-medium tracking-[0.01em] transition-colors duration-300 after:absolute after:bottom-0 after:left-2 after:h-0.5 after:rounded-full after:transition-all after:duration-300 ${
                     isActive 
                       ? 'text-[#0A1E3F] after:w-[calc(100%-1rem)] after:bg-[#C59A5C] dark:text-[#F2C98D]' 
                       : 'text-[#53657C] after:w-0 after:bg-[#C59A5C] hover:text-[#0A1E3F] hover:after:w-[calc(100%-1rem)] dark:text-text-muted dark:hover:text-white'

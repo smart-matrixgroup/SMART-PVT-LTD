@@ -151,7 +151,7 @@ export default function Footer({ onOpenQuote }) {
         {/* Bottom Bar: Copyright */}
         <div className="flex flex-col items-center justify-between gap-3 pt-7 text-xs text-[#8FA8C6] sm:flex-row">
           <p>© 2026 SMART Pvt Ltd. All rights reserved.</p>
-          <p className="flex items-center gap-1 text-[11px]">
+          <p className="flex items-center gap-1 text-[13px]">
             Built with <Heart className="inline h-3.5 w-3.5 fill-[#E3B977] text-[#E3B977]" /> for a Smarter Future.
           </p>
         </div>

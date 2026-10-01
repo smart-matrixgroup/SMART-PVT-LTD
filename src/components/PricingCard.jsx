@@ -13,7 +13,7 @@ export default function PricingCard({ tier, onOpenQuote }) {
       {/* Popular Badge */}
       {tier.badge && (
         <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-          <span className="px-3.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider text-white bg-gradient-to-r from-primary to-primary-electric shadow-glow-sm flex items-center gap-1">
+          <span className="px-3.5 py-1 rounded-full text-[13px] font-bold uppercase tracking-wider text-white bg-gradient-to-r from-primary to-primary-electric shadow-glow-sm flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-cyan-200" />
             {tier.badge}
           </span>
@@ -23,7 +23,7 @@ export default function PricingCard({ tier, onOpenQuote }) {
       <div>
         <div className="mb-6">
           {/* Category */}
-          <span className="text-[11px] font-bold uppercase tracking-wider text-primary-cyan dark:text-primary-cyan">
+          <span className="text-[13px] font-bold uppercase tracking-wider text-primary-cyan dark:text-primary-cyan">
             {tier.category}
           </span>
           {/* Title */}
@@ -46,7 +46,7 @@ export default function PricingCard({ tier, onOpenQuote }) {
               {tier.price}
             </span>
           </div>
-          <span className="text-[11px] text-[#5B6E88] dark:text-text-muted font-medium mt-0.5 block">
+          <span className="text-[13px] text-[#5B6E88] dark:text-text-muted font-medium mt-0.5 block">
             {tier.period}
           </span>
         </div>

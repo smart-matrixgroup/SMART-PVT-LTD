@@ -47,7 +47,7 @@ export default function AboutPage({ onOpenQuote }) {
                 <Icon className="h-5 w-5" />
               </div>
               <p className="text-sm font-extrabold text-[#0A1E3F] dark:text-white">{value}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-[#5B6E88] dark:text-text-muted">{label}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-[#5B6E88] dark:text-text-muted">{label}</p>
             </div>
           ))}
         </div>

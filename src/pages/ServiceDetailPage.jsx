@@ -70,7 +70,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
               <div className="p-3 rounded-xl bg-[#F0F6FF] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <div>
-                  <span className="text-[#5B6E88] dark:text-text-muted block text-[10px]">Starting Investment</span>
+                  <span className="text-[#5B6E88] dark:text-text-muted block text-[12px]">Starting Investment</span>
                   <strong className="text-[#0A1E3F] dark:text-white">{service.startingPrice}</strong>
                 </div>
               </div>
@@ -78,7 +78,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
               <div className="p-3 rounded-xl bg-[#F0F6FF] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <div>
-                  <span className="text-[#5B6E88] dark:text-text-muted block text-[10px]">Estimated Timeline</span>
+                  <span className="text-[#5B6E88] dark:text-text-muted block text-[12px]">Estimated Timeline</span>
                   <strong className="text-[#0A1E3F] dark:text-white">{service.timeline}</strong>
                 </div>
               </div>
@@ -169,14 +169,14 @@ export default function ServiceDetailPage({ onOpenQuote }) {
                 <span className="text-xs text-[#5B6E88] dark:text-text-muted">Pricing Baseline:</span>
                 <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">{service.startingPrice}</span>
               </div>
-              <p className="text-[11px] text-[#5B6E88] dark:text-text-muted leading-relaxed">
+              <p className="text-[13px] text-[#5B6E88] dark:text-text-muted leading-relaxed">
                 {service.priceNote}
               </p>
             </div>
 
             <div className="text-xs space-y-2">
               <p className="font-semibold text-[#0A1E3F] dark:text-white">What Factors Affect Final Cost?</p>
-              <ul className="list-disc list-inside space-y-1 text-[11px] text-[#5B6E88] dark:text-text-muted">
+              <ul className="list-disc list-inside space-y-1 text-[13px] text-[#5B6E88] dark:text-text-muted">
                 <li>Number of custom workflow roles & approval levels</li>
                 <li>Third-party API connectors and hardware integrations</li>
                 <li>Initial data migration volume (items, past ledgers)</li>
@@ -220,7 +220,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
               to={`/services/${rel.slug}`}
               className="p-5 rounded-2xl glass-card border border-surface-border hover:border-primary-cyan/50 transition-all group bg-navy-900/80"
             >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-primary dark:text-primary-cyan">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-primary dark:text-primary-cyan">
                 {rel.category}
               </span>
               <h4 className="text-sm font-bold text-[#0A1E3F] dark:text-white group-hover:text-primary dark:group-hover:text-primary-electric transition-colors mt-1">

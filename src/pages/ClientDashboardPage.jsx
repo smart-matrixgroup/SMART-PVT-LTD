@@ -23,7 +23,7 @@ const StatusBadge = ({ status, size = 'sm' }) => {
     'Medium':      'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30',
     'Low':         'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-500/15 dark:text-slate-300 dark:border-slate-500/30',
   };
-  const base = size === 'sm' ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1';
+  const base = size === 'sm' ? 'text-[12px] px-2 py-0.5' : 'text-xs px-2.5 py-1';
   return (
     <span className={`${base} font-bold rounded-full border ${map[status] || map['Low']}`}>
       {status}
@@ -75,7 +75,7 @@ export default function ClientDashboardPage() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-[#0A1E3F] dark:text-white truncate">{client.name}</p>
-              <p className="text-[10px] text-[#5B6E88] dark:text-text-muted truncate">{client.company}</p>
+              <p className="text-[12px] text-[#5B6E88] dark:text-text-muted truncate">{client.company}</p>
             </div>
           </div>
         </div>
@@ -147,7 +147,7 @@ export default function ClientDashboardPage() {
               <Icon className={`w-4 h-4 ${color}`} />
             </div>
             <p className="text-2xl font-extrabold text-[#0A1E3F] dark:text-white">{value}</p>
-            <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-0.5">{label}</p>
+            <p className="text-[13px] text-[#5B6E88] dark:text-text-muted mt-0.5">{label}</p>
           </div>
         ))}
       </div>
@@ -196,7 +196,7 @@ export default function ClientDashboardPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {proj.milestones.map((m, i) => (
-                <span key={i} className={`flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md border ${
+                <span key={i} className={`flex items-center gap-1 text-[12px] font-medium px-2 py-0.5 rounded-md border ${
                   m.done
                     ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/20'
                     : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#5B6E88] dark:text-text-muted border-[#DCE6F2] dark:border-surface-border'
@@ -218,13 +218,13 @@ export default function ClientDashboardPage() {
         <div className="rounded-2xl p-4 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-[#0A1E3F] dark:text-white">Latest Invoice</h3>
-            <button onClick={() => setTab('invoices')} className="text-[10px] text-primary dark:text-primary-cyan hover:underline">View all</button>
+            <button onClick={() => setTab('invoices')} className="text-[12px] text-primary dark:text-primary-cyan hover:underline">View all</button>
           </div>
           {client.invoices.slice(0, 1).map(inv => (
             <div key={inv.id} className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold text-[#0A1E3F] dark:text-white">{inv.id}</p>
-                <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">{inv.description}</p>
+                <p className="text-[12px] text-[#5B6E88] dark:text-text-muted">{inv.description}</p>
                 <p className="text-xs font-bold text-[#0A1E3F] dark:text-white mt-1">{inv.amount}</p>
               </div>
               <StatusBadge status={inv.status} />
@@ -238,12 +238,12 @@ export default function ClientDashboardPage() {
         <div className="rounded-2xl p-4 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-[#0A1E3F] dark:text-white">Latest Support Ticket</h3>
-            <button onClick={() => setTab('support')} className="text-[10px] text-primary dark:text-primary-cyan hover:underline">View all</button>
+            <button onClick={() => setTab('support')} className="text-[12px] text-primary dark:text-primary-cyan hover:underline">View all</button>
           </div>
           {client.tickets.slice(0, 1).map(t => (
             <div key={t.id}>
               <p className="text-xs font-semibold text-[#0A1E3F] dark:text-white">{t.id}</p>
-              <p className="text-[10px] text-[#5B6E88] dark:text-text-muted mt-0.5 line-clamp-2">{t.subject}</p>
+              <p className="text-[12px] text-[#5B6E88] dark:text-text-muted mt-0.5 line-clamp-2">{t.subject}</p>
               <div className="flex gap-2 mt-2">
                 <StatusBadge status={t.status} />
                 <StatusBadge status={t.priority} />
@@ -270,9 +270,9 @@ export default function ClientDashboardPage() {
         <div key={proj.id} className="rounded-2xl p-5 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 space-y-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-[10px] text-[#5B6E88] dark:text-text-muted font-mono">{proj.id}</p>
+              <p className="text-[12px] text-[#5B6E88] dark:text-text-muted font-mono">{proj.id}</p>
               <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white mt-0.5">{proj.name}</h3>
-              <div className="flex gap-3 text-[11px] text-[#5B6E88] dark:text-text-muted mt-1">
+              <div className="flex gap-3 text-[13px] text-[#5B6E88] dark:text-text-muted mt-1">
                 <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Started: {proj.startDate}</span>
                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Due: {proj.expectedDelivery}</span>
               </div>
@@ -282,7 +282,7 @@ export default function ClientDashboardPage() {
 
           {/* Progress bar */}
           <div className="space-y-1.5">
-            <div className="flex justify-between text-[11px]">
+            <div className="flex justify-between text-[13px]">
               <span className="text-[#5B6E88] dark:text-text-muted">Overall Completion</span>
               <span className="font-bold text-primary dark:text-primary-cyan">{proj.completion}%</span>
             </div>
@@ -296,7 +296,7 @@ export default function ClientDashboardPage() {
 
           {/* Milestones */}
           <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Milestones</p>
+            <p className="text-[12px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Milestones</p>
             {proj.milestones.map((m, i) => (
               <div key={i} className="flex items-center gap-2.5 text-xs">
                 {m.done
@@ -305,7 +305,7 @@ export default function ClientDashboardPage() {
                 <span className={m.done ? 'text-[#0A1E3F] dark:text-white line-through opacity-60' : 'text-[#0A1E3F] dark:text-white'}>
                   {m.title}
                 </span>
-                {m.done && <span className="text-[10px] text-green-600 dark:text-green-400 font-semibold">Done</span>}
+                {m.done && <span className="text-[12px] text-green-600 dark:text-green-400 font-semibold">Done</span>}
               </div>
             ))}
           </div>
@@ -325,7 +325,7 @@ export default function ClientDashboardPage() {
       ) : (
       <div className="rounded-2xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 overflow-hidden">
         {/* Table header */}
-        <div className="grid grid-cols-12 gap-2 px-5 py-3 bg-[#F4F8FC] dark:bg-navy-700 border-b border-[#DCE6F2] dark:border-surface-border text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">
+        <div className="grid grid-cols-12 gap-2 px-5 py-3 bg-[#F4F8FC] dark:bg-navy-700 border-b border-[#DCE6F2] dark:border-surface-border text-[12px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">
           <span className="col-span-2">Invoice</span>
           <span className="col-span-2">Date</span>
           <span className="col-span-4">Description</span>
@@ -339,10 +339,10 @@ export default function ClientDashboardPage() {
               i < client.invoices.length - 1 ? 'border-b border-[#DCE6F2] dark:border-surface-border' : ''
             }`}
           >
-            <span className="col-span-2 font-mono font-bold text-primary dark:text-primary-cyan text-[10px]">{inv.id}</span>
-            <span className="col-span-2 text-[#5B6E88] dark:text-text-muted text-[11px]">{inv.date}</span>
+            <span className="col-span-2 font-mono font-bold text-primary dark:text-primary-cyan text-[12px]">{inv.id}</span>
+            <span className="col-span-2 text-[#5B6E88] dark:text-text-muted text-[13px]">{inv.date}</span>
             <span className="col-span-4 text-[#29405E] dark:text-text-light">{inv.description}</span>
-            <span className="col-span-2 font-bold text-[#0A1E3F] dark:text-white text-[11px]">{inv.amount}</span>
+            <span className="col-span-2 font-bold text-[#0A1E3F] dark:text-white text-[13px]">{inv.amount}</span>
             <span className="col-span-2"><StatusBadge status={inv.status} /></span>
           </div>
         ))}
@@ -382,12 +382,12 @@ export default function ClientDashboardPage() {
           <div key={t.id} className="rounded-2xl p-4 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-mono font-bold text-primary dark:text-primary-cyan">{t.id}</span>
+                <span className="text-[12px] font-mono font-bold text-primary dark:text-primary-cyan">{t.id}</span>
                 <StatusBadge status={t.status} />
                 <StatusBadge status={t.priority} />
               </div>
               <p className="text-xs font-semibold text-[#0A1E3F] dark:text-white">{t.subject}</p>
-              <p className="text-[10px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
+              <p className="text-[12px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
                 <Calendar className="w-3 h-3" /> {t.date}
               </p>
             </div>
@@ -397,12 +397,12 @@ export default function ClientDashboardPage() {
                   href={`https://wa.me/94770000000?text=${encodeURIComponent(`Hi SMART Support, Client ID: ${client.id} — following up on ticket ${t.id}: ${t.subject}`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  className="flex items-center gap-1.5 text-[13px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
                 >
                   <ExternalLink className="w-3.5 h-3.5" /> Follow up
                 </a>
               ) : (
-                <span className="text-[11px] text-[#5B6E88] dark:text-text-muted">Closed</span>
+                <span className="text-[13px] text-[#5B6E88] dark:text-text-muted">Closed</span>
               )}
             </div>
           </div>

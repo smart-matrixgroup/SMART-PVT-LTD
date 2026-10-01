@@ -38,7 +38,7 @@ export default function InsightsPage() {
                   <span className="font-bold uppercase tracking-wider text-primary dark:text-primary-cyan bg-primary/10 dark:bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-primary/20 dark:border-cyan-500/20">
                     {item.category}
                   </span>
-                  <span className="flex items-center gap-1 text-[11px] text-[#5B6E88] dark:text-text-muted">
+                  <span className="flex items-center gap-1 text-[13px] text-[#5B6E88] dark:text-text-muted">
                     <Clock className="w-3 h-3 text-amber-500 dark:text-amber-400" />
                     {item.readTime}
                   </span>
@@ -53,7 +53,7 @@ export default function InsightsPage() {
               </div>
 
               <div className="pt-6 mt-4 border-t border-[#DCE6F2] dark:border-surface-border/50 flex items-center justify-between">
-                <span className="text-[11px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
+                <span className="text-[13px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1">
                   <Calendar className="w-3 h-3" /> {item.date}
                 </span>
                 <Link

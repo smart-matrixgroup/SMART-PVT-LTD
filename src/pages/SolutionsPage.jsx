@@ -69,12 +69,12 @@ export default function SolutionsPage({ onOpenQuote }) {
 
                 {/* Recommended Stack Box */}
                 <div className="p-4 rounded-2xl bg-[#F0F6FF] dark:bg-navy-800/80 border border-[#C8D8EE] dark:border-surface-border space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#29405E] dark:text-text-light">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-[#29405E] dark:text-text-light">
                     Recommended Tech Stack:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {sol.recommendedStack.map((st, i) => (
-                      <span key={i} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-[#E0EEFF] dark:bg-navy-700 text-primary dark:text-primary-cyan border border-primary/20">
+                      <span key={i} className="text-[13px] font-medium px-2.5 py-1 rounded-lg bg-[#E0EEFF] dark:bg-navy-700 text-primary dark:text-primary-cyan border border-primary/20">
                         {st}
                       </span>
                     ))}
@@ -117,7 +117,7 @@ export default function SolutionsPage({ onOpenQuote }) {
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         <span>{feat.title}</span>
                       </div>
-                      <p className="text-[11px] text-[#5B6E88] dark:text-text-muted leading-relaxed pl-5">
+                      <p className="text-[13px] text-[#5B6E88] dark:text-text-muted leading-relaxed pl-5">
                         {feat.desc}
                       </p>
                     </div>

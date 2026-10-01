@@ -21,7 +21,7 @@ const Badge = ({ status }) => {
     'Pending':  'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30',
   };
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${map[status] || map['Pending']}`}>
+    <span className={`text-[12px] font-bold px-2 py-0.5 rounded-full border ${map[status] || map['Pending']}`}>
       {status}
     </span>
   );
@@ -114,7 +114,7 @@ You can track your project progress, invoices and support tickets from your dash
                 </div>
                 <div>
                   <p className="text-xs font-bold text-[#0A1E3F] dark:text-white">Admin</p>
-                  <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">SMART Pvt Ltd</p>
+                  <p className="text-[12px] text-[#5B6E88] dark:text-text-muted">SMART Pvt Ltd</p>
                 </div>
               </div>
             </div>
@@ -128,7 +128,7 @@ You can track your project progress, invoices and support tickets from your dash
                   }`}>
                   <span className="flex items-center gap-2"><Icon className="w-4 h-4" />{label}</span>
                   {count > 0 && (
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tab === id ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary dark:text-primary-cyan'}`}>
+                    <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded-full ${tab === id ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary dark:text-primary-cyan'}`}>
                       {count}
                     </span>
                   )}
@@ -194,12 +194,12 @@ You can track your project progress, invoices and support tickets from your dash
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <p className="text-xs font-bold text-[#0A1E3F] dark:text-white">{req.name || 'Unknown'}</p>
-                            <p className="text-[10px] text-[#5B6E88] dark:text-text-muted mt-0.5">{req.service || '—'}</p>
-                            <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">{req.whatsapp || req.email || '—'}</p>
+                            <p className="text-[12px] text-[#5B6E88] dark:text-text-muted mt-0.5">{req.service || '—'}</p>
+                            <p className="text-[12px] text-[#5B6E88] dark:text-text-muted">{req.whatsapp || req.email || '—'}</p>
                           </div>
                           <div className="flex flex-col items-end gap-1.5">
                             <Badge status={req.status || 'New'} />
-                            <span className="text-[9px] text-[#5B6E88] dark:text-text-muted font-mono">{req.leadId}</span>
+                            <span className="text-[13px] text-[#5B6E88] dark:text-text-muted font-mono">{req.leadId}</span>
                           </div>
                         </div>
                       </button>
@@ -211,7 +211,7 @@ You can track your project progress, invoices and support tickets from your dash
                     <div className="rounded-2xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 p-5 space-y-4 sticky top-24">
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="text-[10px] font-mono text-[#5B6E88] dark:text-text-muted">{selected.leadId}</p>
+                          <p className="text-[12px] font-mono text-[#5B6E88] dark:text-text-muted">{selected.leadId}</p>
                           <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white mt-0.5">{selected.name}</h3>
                         </div>
                         <Badge status={selected.status || 'New'} />
@@ -234,7 +234,7 @@ You can track your project progress, invoices and support tickets from your dash
                           </div>
                         ))}
                         {selected.message && (
-                          <div className="mt-2 p-3 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 text-[#29405E] dark:text-text-light text-[11px] leading-relaxed">
+                          <div className="mt-2 p-3 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 text-[#29405E] dark:text-text-light text-[13px] leading-relaxed">
                             {selected.message}
                           </div>
                         )}
@@ -242,7 +242,7 @@ You can track your project progress, invoices and support tickets from your dash
 
                       {/* Action buttons */}
                       <div className="pt-3 border-t border-[#DCE6F2] dark:border-surface-border space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Actions</p>
+                        <p className="text-[12px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Actions</p>
 
                         {/* Accept */}
                         <button onClick={() => updateStatus(selected.leadId, 'Accepted')}
@@ -259,10 +259,10 @@ You can track your project progress, invoices and support tickets from your dash
                         {/* Send credentials via WhatsApp — only when Accepted */}
                         {selected.status === 'Accepted' && (
                           <div className="mt-3 p-4 rounded-xl bg-[#F0F6FF] dark:bg-navy-700 border border-[#C8D8EE] dark:border-surface-border space-y-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-primary dark:text-primary-cyan">
+                            <p className="text-[12px] font-bold uppercase tracking-wider text-primary dark:text-primary-cyan">
                               Send Client Credentials via WhatsApp
                             </p>
-                            <p className="text-[11px] text-[#5B6E88] dark:text-text-muted leading-relaxed">
+                            <p className="text-[13px] text-[#5B6E88] dark:text-text-muted leading-relaxed">
                               Create this client in Firebase Console (Authentication → Add user) and add their
                               <code className="bg-[#E0EEFF] dark:bg-navy-600 px-1 rounded mx-1">clients/{'{uid}'}</code>
                               Firestore document first, then send credentials:
@@ -270,11 +270,11 @@ You can track your project progress, invoices and support tickets from your dash
 
                             {/* Email copy */}
                             <div className="flex items-center gap-2">
-                              <code className="flex-1 text-[11px] bg-white dark:bg-navy-800 border border-[#DCE6F2] dark:border-surface-border px-2 py-1.5 rounded-lg text-[#0A1E3F] dark:text-white truncate">
+                              <code className="flex-1 text-[13px] bg-white dark:bg-navy-800 border border-[#DCE6F2] dark:border-surface-border px-2 py-1.5 rounded-lg text-[#0A1E3F] dark:text-white truncate">
                                 {selected.email || 'No email provided'}
                               </code>
                               <button onClick={() => copyText(selected.email || '', 'email')}
-                                className="px-2 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan text-[10px] font-bold hover:bg-primary/20 transition-all">
+                                className="px-2 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan text-[12px] font-bold hover:bg-primary/20 transition-all">
                                 {copied === 'email' ? '✓' : <Copy className="w-3.5 h-3.5" />}
                               </button>
                             </div>
@@ -328,15 +328,15 @@ You can track your project progress, invoices and support tickets from your dash
                     <div key={c.id} className="rounded-2xl p-5 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 space-y-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="text-[10px] font-mono text-primary dark:text-primary-cyan">{c.id}</p>
+                          <p className="text-[12px] font-mono text-primary dark:text-primary-cyan">{c.id}</p>
                           <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white mt-0.5">{c.name}</h3>
                           <p className="text-xs text-[#5B6E88] dark:text-text-muted">{c.company}</p>
                         </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-500/30">
+                        <span className="text-[12px] font-bold px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-500/30">
                           Active
                         </span>
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                      <div className="grid grid-cols-3 gap-2 text-center text-[12px]">
                         {[
                           { label: 'Projects', val: (c.projects || []).length },
                           { label: 'Invoices', val: (c.invoices || []).length },
@@ -348,7 +348,7 @@ You can track your project progress, invoices and support tickets from your dash
                           </div>
                         ))}
                       </div>
-                      <div className="pt-2 border-t border-[#DCE6F2] dark:border-surface-border text-[11px] text-[#5B6E88] dark:text-text-muted flex items-center gap-3">
+                      <div className="pt-2 border-t border-[#DCE6F2] dark:border-surface-border text-[13px] text-[#5B6E88] dark:text-text-muted flex items-center gap-3">
                         <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Since {c.clientSince}</span>
                       </div>

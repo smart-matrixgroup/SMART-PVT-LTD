@@ -56,7 +56,7 @@ export default function ContactPage({ onOpenQuote }) {
                 <span className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                   <MessageCircle className="w-5 h-5" />
                 </span>
-                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <span className="text-[12px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   Fastest Response
                 </span>
               </div>
@@ -80,21 +80,21 @@ export default function ContactPage({ onOpenQuote }) {
                 <div className="flex items-start gap-3 text-xs">
                   <Phone className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0 mt-0.5" />
                   <div>
-                    <span className="text-[#5B6E88] dark:text-text-muted block text-[11px]">Direct Phone Line</span>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Direct Phone Line</span>
                     <strong className="text-[#0A1E3F] dark:text-white text-sm">{company.contact.phoneDisplay}</strong>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 text-xs">
                   <Mail className="w-4 h-4 text-primary dark:text-primary-electric shrink-0 mt-0.5" />
                   <div>
-                    <span className="text-[#5B6E88] dark:text-text-muted block text-[11px]">Official Email</span>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Official Email</span>
                     <strong className="text-[#0A1E3F] dark:text-white text-sm">{company.contact.email}</strong>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 text-xs">
                   <Clock className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <span className="text-[#5B6E88] dark:text-text-muted block text-[11px]">Business Operating Hours</span>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Business Operating Hours</span>
                     <strong className="text-[#0A1E3F] dark:text-white text-xs">{company.contact.businessHours}</strong>
                   </div>
                 </div>

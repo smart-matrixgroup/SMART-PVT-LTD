@@ -65,7 +65,7 @@ export default function ClientLoginPage({ onOpenQuote }) {
           {/* Info Banner */}
           <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-primary/5 dark:bg-primary/10 border border-primary/20">
             <Sparkles className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0 mt-0.5" />
-            <p className="text-[11px] leading-relaxed text-[#29405E] dark:text-text-light">
+            <p className="text-[13px] leading-relaxed text-[#29405E] dark:text-text-light">
               <strong>Active clients</strong> — use the email address registered during your project onboarding.
             </p>
           </div>
