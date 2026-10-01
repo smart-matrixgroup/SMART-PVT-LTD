@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { clients } from '../config/clients';
+import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { useAuth } from '../context/AuthContext';
+import SEO from '../components/SEO';
 import {
-  ShieldCheck, Users, FileText, Bell, LogOut,
-  CheckCircle2, XCircle, Clock, Eye, EyeOff,
-  Copy, MessageSquare, ChevronRight, Sparkles,
-  User, Building, Phone, Mail, Calendar, Lock,
-  AlertCircle, LayoutDashboard, Inbox
+  ShieldCheck, Users, FileText, LogOut,
+  CheckCircle2, XCircle, Clock,
+  Copy, MessageSquare, Sparkles,
+  Building, Phone, Mail, Calendar,
+  Inbox
 } from 'lucide-react';
-
-// ── Admin credentials ─────────────────────────────────────────
-const ADMIN_ID       = 'SMART-ADMIN';
-const ADMIN_PASSWORD = 'smart@erp2025';
 
 // ── Status badge helper ───────────────────────────────────────
 const Badge = ({ status }) => {
@@ -28,107 +27,37 @@ const Badge = ({ status }) => {
   );
 };
 
-// ── Admin Login Screen ────────────────────────────────────────
-function AdminLogin({ onLogin }) {
-  const [id, setId]           = useState('');
-  const [pass, setPass]       = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [error, setError]     = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    setTimeout(() => {
-      if (id.trim() === ADMIN_ID && pass === ADMIN_PASSWORD) {
-        onLogin();
-      } else {
-        setError('Invalid admin credentials.');
-        setLoading(false);
-      }
-    }, 600);
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F4F8FC] dark:bg-navy-950 px-4">
-      <div className="w-full max-w-sm">
-        <div className="rounded-3xl p-8 border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-900 shadow-xl space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan border border-primary/30 flex items-center justify-center mx-auto">
-              <ShieldCheck className="w-7 h-7" />
-            </div>
-            <h1 className="text-xl font-extrabold text-[#0A1E3F] dark:text-white">Admin Panel</h1>
-            <p className="text-xs text-[#5B6E88] dark:text-text-muted">SMART Pvt Ltd — Internal Access Only</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Admin ID</label>
-              <div className="relative">
-                <User className="w-4 h-4 text-[#5B6E88] dark:text-text-muted absolute left-3.5 top-3" />
-                <input type="text" required value={id} onChange={e => setId(e.target.value)}
-                  placeholder="SMART-ADMIN"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#F4F8FC] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border text-[#0A1E3F] dark:text-white text-sm focus:outline-none focus:border-primary dark:focus:border-primary-electric"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-[#5B6E88] dark:text-text-muted absolute left-3.5 top-3" />
-                <input type={showPass ? 'text' : 'password'} required value={pass} onChange={e => setPass(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#F4F8FC] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border text-[#0A1E3F] dark:text-white text-sm focus:outline-none focus:border-primary dark:focus:border-primary-electric"
-                />
-                <button type="button" onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3.5 top-3 text-[#5B6E88] dark:text-text-muted hover:text-[#0A1E3F] dark:hover:text-white">
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            {error && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-600 dark:text-red-400">
-                <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-              </div>
-            )}
-            <button type="submit" disabled={loading}
-              className="w-full py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
-              {loading ? (
-                <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Verifying...</>
-              ) : (
-                <>Enter Admin Panel <ChevronRight className="w-4 h-4" /></>
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Admin Panel ──────────────────────────────────────────
+// Authentication/authorization is already enforced by <ProtectedRoute
+// role="admin"> in App.jsx before this component ever renders.
 export default function AdminPanelPage() {
   const navigate                = useNavigate();
-  const [authed, setAuthed]     = useState(false);
+  const { logout }              = useAuth();
   const [tab, setTab]           = useState('requests');
   const [requests, setRequests] = useState([]);
+  const [clients, setClients]   = useState([]);
   const [selected, setSelected] = useState(null);
   const [copied, setCopied]     = useState('');
 
-  // Load quote requests from localStorage
+  // Live quote requests from Firestore
   useEffect(() => {
-    if (!authed) return;
-    try {
-      const raw = JSON.parse(localStorage.getItem('smart_leads') || '[]');
-      setRequests(raw);
-    } catch {
-      setRequests([]);
-    }
-  }, [authed]);
+    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setRequests(snap.docs.map(d => ({ leadId: d.id, ...d.data() })));
+    }, (err) => console.error('Leads listener error', err));
+    return unsubscribe;
+  }, []);
 
-  const handleLogout = () => {
-    setAuthed(false);
+  // Live client list from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'clients'), (snap) => {
+      setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error('Clients listener error', err));
+    return unsubscribe;
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 
@@ -138,12 +67,14 @@ export default function AdminPanelPage() {
     setTimeout(() => setCopied(''), 2000);
   };
 
-  // Update request status in localStorage
-  const updateStatus = (leadId, status) => {
-    const updated = requests.map(r => r.leadId === leadId ? { ...r, status } : r);
-    setRequests(updated);
-    localStorage.setItem('smart_leads', JSON.stringify(updated));
-    if (selected?.leadId === leadId) setSelected({ ...selected, status });
+  // Update request status in Firestore
+  const updateStatus = async (leadId, status) => {
+    try {
+      await updateDoc(doc(db, 'leads', leadId), { status });
+      if (selected?.leadId === leadId) setSelected({ ...selected, status });
+    } catch (err) {
+      console.error('Failed to update lead status', err);
+    }
   };
 
   // Build WhatsApp message for client
@@ -163,8 +94,6 @@ You can track your project progress, invoices and support tickets from your dash
     return `https://wa.me/${(req.whatsapp || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
   };
 
-  if (!authed) return <AdminLogin onLogin={() => setAuthed(true)} />;
-
   const NAV = [
     { id: 'requests', label: 'Quote Requests', icon: Inbox,          count: requests.filter(r => r.status === 'New').length },
     { id: 'clients',  label: 'Active Clients', icon: Users,          count: clients.length },
@@ -172,6 +101,7 @@ You can track your project progress, invoices and support tickets from your dash
 
   return (
     <div className="min-h-screen bg-[#F4F8FC] dark:bg-navy-950 pt-20">
+      <SEO title="Admin Panel" description="SMART Pvt Ltd internal admin panel." noIndex />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-6 items-start">
 
@@ -333,7 +263,9 @@ You can track your project progress, invoices and support tickets from your dash
                               Send Client Credentials via WhatsApp
                             </p>
                             <p className="text-[11px] text-[#5B6E88] dark:text-text-muted leading-relaxed">
-                              Add this client to <code className="bg-[#E0EEFF] dark:bg-navy-600 px-1 rounded">clients.js</code> first, then send credentials:
+                              Create this client in Firebase Console (Authentication → Add user) and add their
+                              <code className="bg-[#E0EEFF] dark:bg-navy-600 px-1 rounded mx-1">clients/{'{uid}'}</code>
+                              Firestore document first, then send credentials:
                             </p>
 
                             {/* Email copy */}
@@ -350,7 +282,7 @@ You can track your project progress, invoices and support tickets from your dash
                             {/* WhatsApp send button */}
                             {selected.whatsapp && (
                               <a
-                                href={buildWhatsApp(selected, selected.email || '', '(set in clients.js)')}
+                                href={buildWhatsApp(selected, selected.email || '', '(set in Firebase Console)')}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-all"
@@ -385,7 +317,8 @@ You can track your project progress, invoices and support tickets from your dash
                     <Users className="w-8 h-8 text-[#5B6E88] dark:text-text-muted mx-auto mb-3" />
                     <p className="text-sm text-[#5B6E88] dark:text-text-muted">No clients yet.</p>
                     <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-1">
-                      Add clients to <code className="bg-[#E0EEFF] dark:bg-navy-700 px-1 rounded">src/config/clients.js</code>
+                      Create a client in Firebase Console (Authentication → Add user), then add a
+                      matching document to the <code className="bg-[#E0EEFF] dark:bg-navy-700 px-1 rounded">clients</code> Firestore collection (doc ID = that user's UID).
                     </p>
                   </div>
                 )}
@@ -405,9 +338,9 @@ You can track your project progress, invoices and support tickets from your dash
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
                         {[
-                          { label: 'Projects', val: c.projects.length },
-                          { label: 'Invoices', val: c.invoices.length },
-                          { label: 'Tickets',  val: c.tickets.length  },
+                          { label: 'Projects', val: (c.projects || []).length },
+                          { label: 'Invoices', val: (c.invoices || []).length },
+                          { label: 'Tickets',  val: (c.tickets  || []).length },
                         ].map(({ label, val }) => (
                           <div key={label} className="p-2 rounded-xl bg-[#F4F8FC] dark:bg-navy-700">
                             <p className="text-base font-extrabold text-[#0A1E3F] dark:text-white">{val}</p>

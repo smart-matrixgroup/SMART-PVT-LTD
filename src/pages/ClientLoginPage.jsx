@@ -1,53 +1,40 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SEO from '../components/SEO';
-import { authenticateClient } from '../config/clients';
-import { 
-  ShieldCheck, Lock, Mail, ArrowRight, 
+import { useAuth } from '../context/AuthContext';
+import {
+  ShieldCheck, Lock, Mail, ArrowRight,
   Sparkles, Eye, EyeOff, User, AlertCircle
 } from 'lucide-react';
 
-// ─── Admin Credentials (hardcoded — change before production) ───
-const ADMIN_ID       = 'SMART-ADMIN';
-const ADMIN_PASSWORD = 'smart@erp2025';
-
 export default function ClientLoginPage({ onOpenQuote }) {
   const navigate = useNavigate();
+  const { login, isFirebaseConfigured } = useAuth();
 
-  const [identifier, setIdentifier] = useState('');   // email OR admin ID
+  const [identifier, setIdentifier] = useState('');   // email
   const [password, setPassword]     = useState('');
   const [showPass, setShowPass]     = useState(false);
   const [error, setError]           = useState('');
   const [loading, setLoading]       = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!isFirebaseConfigured) {
+      setError('Login is not configured yet. Contact the SMART team.');
+      return;
+    }
+
     setLoading(true);
-
-    setTimeout(() => {
-      // ── Admin check ──────────────────────────────────────────
-      if (identifier.trim() === ADMIN_ID && password === ADMIN_PASSWORD) {
-        sessionStorage.setItem('smart_role', 'admin');
-        sessionStorage.setItem('smart_user', ADMIN_ID);
-        navigate('/erp-system');
-        return;
-      }
-
-      // ── Client check — clients.js-ல் verify ──────────────────
-      const client = authenticateClient(identifier, password);
-      if (client) {
-        sessionStorage.setItem('smart_role',      'client');
-        sessionStorage.setItem('smart_user',      client.email);
-        sessionStorage.setItem('smart_client_id', client.id);
-        navigate('/client-dashboard');
-        return;
-      }
-
-      // ── Error ─────────────────────────────────────────────────
+    try {
+      const result = await login(identifier.trim(), password);
+      navigate(result.role === 'admin' ? '/admin-panel' : '/client-dashboard');
+    } catch (err) {
       setError('Invalid email or password. Please try again.');
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
   return (

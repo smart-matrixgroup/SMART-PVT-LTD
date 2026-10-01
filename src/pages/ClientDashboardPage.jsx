@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SEO from '../components/SEO';
-import { getClientById } from '../config/clients';
+import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, FolderKanban, FileText, 
   HeadphonesIcon, LogOut, Bell, CheckCircle2,
@@ -41,39 +41,26 @@ const NAV = [
 
 export default function ClientDashboardPage() {
   const navigate  = useNavigate();
+  const { clientProfile, logout } = useAuth();
   const [tab, setTab]         = useState('overview');
   const [sideOpen, setSideOpen] = useState(false);
-  const [client, setClient]   = useState(null);
+  // Normalize once here so every tab below can safely assume arrays exist,
+  // even if the admin hasn't populated a client's Firestore doc fully yet.
+  const client = clientProfile && {
+    projects: [],
+    invoices: [],
+    tickets: [],
+    ...clientProfile,
+  };
 
-  // Load client data from clients.js using sessionStorage id
-  useEffect(() => {
-    const role = sessionStorage.getItem('smart_role');
-    const clientId = sessionStorage.getItem('smart_client_id');
-
-    if (role !== 'client' || !clientId) {
-      navigate('/client-login', { replace: true });
-      return;
-    }
-
-    const found = getClientById(clientId);
-    if (!found) {
-      // id found in session but not in clients.js — invalid
-      sessionStorage.clear();
-      navigate('/client-login', { replace: true });
-      return;
-    }
-
-    setClient(found);
-  }, [navigate]);
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('smart_role');
-    sessionStorage.removeItem('smart_user');
-    sessionStorage.removeItem('smart_client_id');
+  const handleLogout = async () => {
+    await logout();
     navigate('/client-login');
   };
 
-  // Show nothing while loading
+  // ProtectedRoute already guarantees an authenticated client before this
+  // page renders; guard here only covers the instant before Firestore
+  // profile data lands.
   if (!client) return null;
 
   // ── Sidebar ────────────────────────────────────────────────────
@@ -434,7 +421,7 @@ export default function ClientDashboardPage() {
   // ── Layout ─────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#F4F8FC] dark:bg-navy-950 pt-20">
-      <SEO title="Client Dashboard" description="Your SMART Pvt Ltd client portal — projects, invoices, and support." />
+      <SEO title="Client Dashboard" description="Your SMART Pvt Ltd client portal — projects, invoices, and support." noIndex />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-6 items-start">

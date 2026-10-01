@@ -1,5 +1,5 @@
 import React, { useState, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -26,6 +26,12 @@ const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
 const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'));
 const TermsPage           = lazy(() => import('./pages/TermsPage'));
 const NotFoundPage        = lazy(() => import('./pages/NotFoundPage'));
+
+// Firebase Auth is only relevant to the client/admin routes — lazy-load
+// the provider + guard too, so public marketing pages (the vast majority
+// of traffic) never download the Firebase SDK at all.
+const AuthProvider  = lazy(() => import('./context/AuthContext').then(m => ({ default: m.AuthProvider })));
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 
 function RouteFallback() {
   return (
@@ -74,24 +80,17 @@ function AppContent() {
           <Route path="/insights/:slug" element={<PublicPage><InsightDetailPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/contact" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/locations" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/client-login" element={<PublicPage><ClientLoginPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/client-dashboard" element={<ClientDashboardPage />} />
-          <Route path="/admin-panel" element={<AdminPanelPage />} />
-          <Route path="/erp-system" element={
-            <div className="min-h-screen flex items-center justify-center bg-navy-950 text-white">
-              <div className="text-center space-y-4 p-8">
-                <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
-                  <span className="text-2xl">⚙️</span>
-                </div>
-                <h1 className="text-2xl font-extrabold">SMARTORIX ERP System</h1>
-                <p className="text-text-muted text-sm">Admin portal — Phase 2 deployment in progress.</p>
-                <button onClick={() => { sessionStorage.clear(); window.location.href='/client-login'; }}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-white hover:bg-primary-hover">
-                  ← Back to Login
-                </button>
-              </div>
-            </div>
+          <Route path="/client-login" element={
+            <AuthProvider><PublicPage><ClientLoginPage onOpenQuote={handleOpenQuote} /></PublicPage></AuthProvider>
           } />
+          <Route path="/client-dashboard" element={
+            <AuthProvider><ProtectedRoute role="client"><ClientDashboardPage /></ProtectedRoute></AuthProvider>
+          } />
+          <Route path="/admin-panel" element={
+            <AuthProvider><ProtectedRoute role="admin"><AdminPanelPage /></ProtectedRoute></AuthProvider>
+          } />
+          {/* Legacy link — admin portal now lives at /admin-panel */}
+          <Route path="/erp-system" element={<Navigate to="/admin-panel" replace />} />
           <Route path="/privacy" element={<PublicPage><PrivacyPolicyPage /></PublicPage>} />
           <Route path="/terms" element={<PublicPage><TermsPage /></PublicPage>} />
           <Route path="*" element={<PublicPage><NotFoundPage /></PublicPage>} />

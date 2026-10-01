@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
-import { 
-  X, CheckCircle, ArrowRight, ArrowLeft, Send, 
-  Sparkles, MessageSquare, Phone, Mail, Building, User, HelpCircle 
+import {
+  X, CheckCircle, ArrowRight, ArrowLeft, Send,
+  Sparkles, MessageSquare, Phone, Mail, Building, User, HelpCircle
 } from 'lucide-react';
 import { company } from '../config/company';
+
+// Firebase is loaded on demand (dynamic import), not at module top-level,
+// so every page that mounts this modal doesn't pay for the Firestore SDK
+// weight up front — only an actual form submission pulls it in.
+async function submitLeadToFirestore(leadRecord) {
+  const [{ collection, addDoc, serverTimestamp }, { db, isFirebaseConfigured }] = await Promise.all([
+    import('firebase/firestore'),
+    import('../config/firebase'),
+  ]);
+  if (!isFirebaseConfigured) return { configured: false };
+  const docRef = await addDoc(collection(db, 'leads'), { ...leadRecord, createdAt: serverTimestamp() });
+  return { configured: true, id: docRef.id };
+}
 
 export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
   const [step, setStep] = useState(1);
@@ -63,28 +76,37 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
     setStep(prev => Math.max(prev - 1, 1));
   };
 
-  const handleSubmit = (e) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError('');
+
     const generatedId = `LEAD-${Math.floor(1000 + Math.random() * 9000)}`;
-    setLeadId(generatedId);
 
     const leadRecord = {
-      leadId: generatedId,
-      createdAt: new Date().toISOString(),
       ...formData,
-      status: 'New'
+      status: 'New',
+      source: 'website-quote-modal',
     };
 
-    // Save lead to local storage (Firebase ready)
+    setSubmitting(true);
     try {
-      const existing = JSON.parse(localStorage.getItem('smart_leads') || '[]');
-      existing.unshift(leadRecord);
-      localStorage.setItem('smart_leads', JSON.stringify(existing));
+      const result = await submitLeadToFirestore(leadRecord);
+      setLeadId(result.configured ? result.id : generatedId);
+      if (!result.configured) {
+        setSubmitError('Firebase not configured yet — your request wasn\'t saved automatically. Please follow up on WhatsApp.');
+      }
+      setSubmitted(true);
     } catch (err) {
-      console.error("Local storage lead write error", err);
+      console.error('Failed to submit lead', err);
+      setSubmitError("Couldn't submit automatically — please reach us on WhatsApp instead.");
+      setLeadId(generatedId);
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitted(true);
   };
 
   const handleReset = () => {
@@ -346,9 +368,10 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
                 ) : (
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-primary shadow-glow-sm transition-all flex items-center gap-2 ml-auto"
+                    disabled={submitting}
+                    className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-primary shadow-glow-sm transition-all flex items-center gap-2 ml-auto disabled:opacity-60"
                   >
-                    <Send className="w-3.5 h-3.5" /> Submit Enquiry
+                    <Send className="w-3.5 h-3.5" /> {submitting ? 'Submitting...' : 'Submit Enquiry'}
                   </button>
                 )}
               </div>
@@ -372,6 +395,9 @@ export default function QuoteModal({ isOpen, onClose, initialService = '' }) {
               <p className="text-xs text-text-muted max-w-md mx-auto mt-2">
                 Your reference ID is <strong className="text-white bg-navy-800 px-2 py-0.5 rounded border border-surface-border">{leadId}</strong>. A SMART solutions specialist will review your requirements and reach out via {formData.preferredContact}.
               </p>
+              {submitError && (
+                <p className="text-[11px] text-amber-400 max-w-md mx-auto mt-2">{submitError}</p>
+              )}
             </div>
 
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
