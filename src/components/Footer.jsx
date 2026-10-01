@@ -139,7 +139,7 @@ export default function Footer({ onOpenQuote }) {
               <span className="block font-bold text-white">Support & Legal</span>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-[#B8CBE2]">
                 <Link to="/contact" className="hover:text-[#E3B977]">Help Center</Link>
-                <Link to="/client-login" className="hover:text-[#E3B977]">Client Portal</Link>
+                <Link to="/client-login" className="hover:text-[#E3B977]">Login</Link>
                 <Link to="/privacy" className="hover:text-[#E3B977]">Privacy Policy</Link>
                 <Link to="/terms" className="hover:text-[#E3B977]">Terms & Conditions</Link>
               </div>

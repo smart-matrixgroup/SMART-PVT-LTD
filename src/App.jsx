@@ -19,6 +19,7 @@ import InsightsPage from './pages/InsightsPage';
 import InsightDetailPage from './pages/InsightDetailPage';
 import ContactPage from './pages/ContactPage';
 import ClientLoginPage from './pages/ClientLoginPage';
+import ClientDashboardPage from './pages/ClientDashboardPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsPage from './pages/TermsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -62,6 +63,22 @@ function AppContent() {
           <Route path="/contact" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/locations" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/client-login" element={<PublicPage><ClientLoginPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+          <Route path="/client-dashboard" element={<ClientDashboardPage />} />
+          <Route path="/erp-system" element={
+            <div className="min-h-screen flex items-center justify-center bg-navy-950 text-white">
+              <div className="text-center space-y-4 p-8">
+                <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
+                  <span className="text-2xl">⚙️</span>
+                </div>
+                <h1 className="text-2xl font-extrabold">SMARTORIX ERP System</h1>
+                <p className="text-text-muted text-sm">Admin portal — Phase 2 deployment in progress.</p>
+                <button onClick={() => { sessionStorage.clear(); window.location.href='/client-login'; }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-primary text-white hover:bg-primary-hover">
+                  ← Back to Login
+                </button>
+              </div>
+            </div>
+          } />
           <Route path="/privacy" element={<PublicPage><PrivacyPolicyPage /></PublicPage>} />
           <Route path="/terms" element={<PublicPage><TermsPage /></PublicPage>} />
           <Route path="*" element={<PublicPage><NotFoundPage /></PublicPage>} />

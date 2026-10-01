@@ -112,13 +112,13 @@ export default function Navbar({ onOpenQuote }) {
               {isDark ? <Moon className="w-4 h-4 text-amber-400" /> : <Sun className="w-4 h-4 text-[#5B6E88] hover:text-[#C59A5C]" />}
             </button>
 
-            {/* Client Portal Button (Pill with User icon) */}
+            {/* Login Button */}
             <Link
               to="/client-login"
               className="flex items-center gap-2 border-l border-[#D8E0E9] py-2 pl-4 pr-2 text-xs font-bold text-[#0A1E3F] transition-colors hover:text-[#8A6235] dark:border-surface-border dark:text-white dark:hover:text-[#F2C98D]"
             >
               <User className="w-3.5 h-3.5 text-[#8A6235]" />
-              Client Portal
+              Login
             </Link>
 
             {/* Get a Quote Button (Bright Blue Pill with Arrow) */}
@@ -171,7 +171,7 @@ export default function Navbar({ onOpenQuote }) {
               className="flex w-full items-center justify-center gap-2 border border-[#E4D6C2] bg-[#FCF8F2] py-2.5 text-xs font-bold text-[#0A1E3F] dark:border-surface-border dark:bg-navy-800 dark:text-white"
             >
               <User className="h-4 w-4 text-[#8A6235]" />
-              Client Portal
+              Login
             </Link>
             <button
               onClick={() => {
