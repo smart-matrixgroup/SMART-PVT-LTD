@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
@@ -6,24 +6,34 @@ import Footer from './components/Footer';
 import WhatsAppButton from './components/WhatsAppButton';
 import QuoteModal from './components/QuoteModal';
 
-// Pages
+// HomePage loads eagerly (first paint). Every other route is code-split
+// into its own chunk so a visitor only downloads the page they asked for.
 import HomePage from './pages/HomePage';
-import AboutPage from './pages/AboutPage';
-import ServicesPage from './pages/ServicesPage';
-import ServiceDetailPage from './pages/ServiceDetailPage';
-import SolutionsPage from './pages/SolutionsPage';
-import ProjectsPage from './pages/ProjectsPage';
-import ProjectDetailPage from './pages/ProjectDetailPage';
-import PricingPage from './pages/PricingPage';
-import InsightsPage from './pages/InsightsPage';
-import InsightDetailPage from './pages/InsightDetailPage';
-import ContactPage from './pages/ContactPage';
-import ClientLoginPage from './pages/ClientLoginPage';
-import ClientDashboardPage from './pages/ClientDashboardPage';
-import AdminPanelPage from './pages/AdminPanelPage';
-import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
-import TermsPage from './pages/TermsPage';
-import NotFoundPage from './pages/NotFoundPage';
+
+const AboutPage           = lazy(() => import('./pages/AboutPage'));
+const ServicesPage        = lazy(() => import('./pages/ServicesPage'));
+const ServiceDetailPage   = lazy(() => import('./pages/ServiceDetailPage'));
+const SolutionsPage       = lazy(() => import('./pages/SolutionsPage'));
+const ProjectsPage        = lazy(() => import('./pages/ProjectsPage'));
+const ProjectDetailPage   = lazy(() => import('./pages/ProjectDetailPage'));
+const PricingPage         = lazy(() => import('./pages/PricingPage'));
+const InsightsPage        = lazy(() => import('./pages/InsightsPage'));
+const InsightDetailPage   = lazy(() => import('./pages/InsightDetailPage'));
+const ContactPage         = lazy(() => import('./pages/ContactPage'));
+const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
+const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
+const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
+const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'));
+const TermsPage           = lazy(() => import('./pages/TermsPage'));
+const NotFoundPage        = lazy(() => import('./pages/NotFoundPage'));
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+    </div>
+  );
+}
 
 function PublicPage({ children }) {
   return <div className="public-page">{children}</div>;
@@ -50,6 +60,7 @@ function AppContent() {
 
       {/* Main Content Area */}
       <main className="flex-grow">
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<HomePage onOpenQuote={handleOpenQuote} />} />
           <Route path="/about" element={<PublicPage><AboutPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
@@ -85,6 +96,7 @@ function AppContent() {
           <Route path="/terms" element={<PublicPage><TermsPage /></PublicPage>} />
           <Route path="*" element={<PublicPage><NotFoundPage /></PublicPage>} />
         </Routes>
+        </Suspense>
       </main>
 
       {/* Footer */}
