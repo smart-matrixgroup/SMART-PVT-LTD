@@ -20,6 +20,7 @@ import InsightDetailPage from './pages/InsightDetailPage';
 import ContactPage from './pages/ContactPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import ClientDashboardPage from './pages/ClientDashboardPage';
+import AdminPanelPage from './pages/AdminPanelPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsPage from './pages/TermsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -64,6 +65,7 @@ function AppContent() {
           <Route path="/locations" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/client-login" element={<PublicPage><ClientLoginPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/client-dashboard" element={<ClientDashboardPage />} />
+          <Route path="/admin-panel" element={<AdminPanelPage />} />
           <Route path="/erp-system" element={
             <div className="min-h-screen flex items-center justify-center bg-navy-950 text-white">
               <div className="text-center space-y-4 p-8">
