@@ -4,7 +4,7 @@ import SEO from '../components/SEO';
 import ServiceCard from '../components/ServiceCard';
 import { LayoutGrid, Code2, Globe, Cpu, Calculator, Sparkles, Filter } from 'lucide-react';
 
-export default function ServicesPage({ onOpenQuote }) {
+export default function ServicesPage({ onOpenQuote, onOpenClientRequest }) {
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const categories = [
@@ -84,7 +84,7 @@ export default function ServicesPage({ onOpenQuote }) {
             </p>
           </div>
           <button
-            onClick={() => onOpenQuote("Custom Requirement")}
+            onClick={() => onOpenClientRequest()}
             className="px-6 py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all shrink-0"
           >
             Discuss Custom Scope

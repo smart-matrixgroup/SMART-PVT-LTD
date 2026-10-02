@@ -5,7 +5,7 @@ import PricingCard from '../components/PricingCard';
 import FAQAccordion from '../components/FAQAccordion';
 import { Sparkles, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 
-export default function PricingPage({ onOpenQuote }) {
+export default function PricingPage({ onOpenQuote, onOpenClientRequest }) {
   return (
     <div className="pt-28 pb-20 space-y-20">
       <SEO 
@@ -33,7 +33,7 @@ export default function PricingPage({ onOpenQuote }) {
             <PricingCard 
               key={tier.id} 
               tier={tier} 
-              onOpenQuote={onOpenQuote}
+              onOpenQuote={onOpenClientRequest}
             />
           ))}
         </div>
@@ -50,7 +50,7 @@ export default function PricingPage({ onOpenQuote }) {
               </p>
             </div>
             <button
-              onClick={() => onOpenQuote("Add-On Services")}
+              onClick={() => onOpenClientRequest()}
               className="px-4 py-2 rounded-xl text-xs font-bold text-primary-cyan bg-primary/20 hover:bg-primary/30 border border-primary/30 self-start sm:self-auto"
             >
               Inquire Add-ons

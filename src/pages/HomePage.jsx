@@ -15,7 +15,7 @@ import {
   TrendingUp, Check, Phone, Mail, MapPin, Building, Shield, FileText
 } from 'lucide-react';
 
-export default function HomePage({ onOpenQuote }) {
+export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
   const { isDark } = useTheme();
   const [activeBranch, setActiveBranch] = useState(branches[0]);
   const [openFaq, setOpenFaq] = useState(0);
@@ -175,7 +175,7 @@ export default function HomePage({ onOpenQuote }) {
               {/* CTA Action Buttons */}
               <div className="flex flex-wrap items-center gap-3.5 pt-1">
                 <button
-                  onClick={() => onOpenQuote()}
+                  onClick={() => onOpenClientRequest()}
                   className="px-6 py-3.5 rounded-full text-xs sm:text-sm font-bold text-white bg-[#0066FF] hover:bg-[#0052CC] shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2"
                 >
                   Get Started <ArrowRight className="w-4 h-4" />

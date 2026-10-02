@@ -3,7 +3,7 @@ import { solutions } from '../config/solutions';
 import SEO from '../components/SEO';
 import { CheckCircle2, ArrowRight, Sparkles, Utensils, ShoppingBag, Building2, Briefcase } from 'lucide-react';
 
-export default function SolutionsPage({ onOpenQuote }) {
+export default function SolutionsPage({ onOpenQuote, onOpenClientRequest }) {
   const getSolutionIcon = (id) => {
     switch (id) {
       case 'restaurants': return <Utensils className="w-6 h-6 text-amber-500 dark:text-amber-400" />;
@@ -83,7 +83,7 @@ export default function SolutionsPage({ onOpenQuote }) {
 
                 <div className="pt-2">
                   <button
-                    onClick={() => onOpenQuote(`${sol.title} Solution`)}
+                    onClick={() => onOpenClientRequest()}
                     className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all"
                   >
                     Build Solution for My Business

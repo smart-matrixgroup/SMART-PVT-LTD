@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import WhatsAppButton from './components/WhatsAppButton';
 import QuoteModal from './components/QuoteModal';
+import ClientRequestForm from './components/ClientRequestForm';
 
 // HomePage loads eagerly (first paint). Every other route is code-split
 // into its own chunk so a visitor only downloads the page they asked for.
@@ -46,8 +47,9 @@ function PublicPage({ children }) {
 }
 
 function AppContent() {
-  const [isQuoteOpen, setIsQuoteOpen] = useState(false);
-  const [quoteService, setQuoteService] = useState('');
+  const [isQuoteOpen, setIsQuoteOpen]               = useState(false);
+  const [quoteService, setQuoteService]             = useState('');
+  const [isClientRequestOpen, setIsClientRequestOpen] = useState(false);
 
   const handleOpenQuote = (serviceName = '') => {
     setQuoteService(serviceName);
@@ -57,6 +59,9 @@ function AppContent() {
   const handleCloseQuote = () => {
     setIsQuoteOpen(false);
   };
+
+  const handleOpenClientRequest = () => setIsClientRequestOpen(true);
+  const handleCloseClientRequest = () => setIsClientRequestOpen(false);
 
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#0A1E3F] dark:bg-navy-950 dark:text-white transition-colors duration-200">
@@ -68,16 +73,16 @@ function AppContent() {
       <main className="flex-grow">
         <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<HomePage onOpenQuote={handleOpenQuote} />} />
-          <Route path="/about" element={<PublicPage><AboutPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/services" element={<PublicPage><ServicesPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/services/:slug" element={<PublicPage><ServiceDetailPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/solutions" element={<PublicPage><SolutionsPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+          <Route path="/" element={<HomePage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} />} />
+          <Route path="/about" element={<PublicPage><AboutPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
+          <Route path="/services" element={<PublicPage><ServicesPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
+          <Route path="/services/:slug" element={<PublicPage><ServiceDetailPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
+          <Route path="/solutions" element={<PublicPage><SolutionsPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
           <Route path="/projects" element={<PublicPage><ProjectsPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/projects/:slug" element={<PublicPage><ProjectDetailPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
-          <Route path="/pricing" element={<PublicPage><PricingPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+          <Route path="/pricing" element={<PublicPage><PricingPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
           <Route path="/insights" element={<PublicPage><InsightsPage /></PublicPage>} />
-          <Route path="/insights/:slug" element={<PublicPage><InsightDetailPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+          <Route path="/insights/:slug" element={<PublicPage><InsightDetailPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
           <Route path="/contact" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/locations" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
           <Route path="/client-login" element={
@@ -109,6 +114,12 @@ function AppContent() {
         isOpen={isQuoteOpen} 
         onClose={handleCloseQuote} 
         initialService={quoteService} 
+      />
+
+      {/* Client Request / Get Started Form */}
+      <ClientRequestForm
+        isOpen={isClientRequestOpen}
+        onClose={handleCloseClientRequest}
       />
 
     </div>
