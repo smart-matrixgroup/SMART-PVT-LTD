@@ -459,16 +459,75 @@ export default function ClientDashboardPage() {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Your Team</p>
                     <div className="flex flex-wrap gap-2">
                       {staff.map(s => (
-                        <div key={s.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border">
-                          <div className={`w-7 h-7 rounded-full ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                        <div key={s.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border">
+                          <div className={`w-8 h-8 rounded-xl ${s.avatarColor} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
                             {s.avatar}
                           </div>
                           <div>
-                            <p className="text-[11px] font-semibold text-[#0A1E3F] dark:text-white leading-none">{s.name}</p>
-                            <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">{s.role}</p>
+                            <p className="text-xs font-bold text-[#0A1E3F] dark:text-white leading-none">{s.name}</p>
+                            <p className="text-[10px] text-[#5B6E88] dark:text-text-muted mt-0.5">{s.role}</p>
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Work progress steps — shown when advance paid or in progress */}
+                {['advance_paid','In Progress'].includes(proj.status) && (proj.milestones||[]).length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">
+                      Work Progress
+                    </p>
+                    <div className="relative">
+                      {/* Vertical line */}
+                      <div className="absolute left-3.5 top-4 bottom-4 w-px bg-[#E8EFF8] dark:bg-surface-border" />
+                      <div className="space-y-3">
+                        {proj.milestones.map((m, i) => (
+                          <div key={i} className="flex items-start gap-3 relative">
+                            {/* Step dot */}
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 border-2 ${
+                              m.done
+                                ? 'bg-emerald-500 border-emerald-500'
+                                : i === (proj.milestones.findIndex(x=>!x.done))
+                                  ? 'bg-white dark:bg-navy-800 border-primary dark:border-primary-cyan animate-pulse'
+                                  : 'bg-white dark:bg-navy-800 border-[#C8D8EE] dark:border-surface-border'
+                            }`}>
+                              {m.done
+                                ? <CheckCircle2 className="w-4 h-4 text-white" />
+                                : <span className="text-[10px] font-bold text-[#5B6E88] dark:text-text-muted">{i+1}</span>
+                              }
+                            </div>
+                            {/* Step content */}
+                            <div className={`flex-1 pb-3 ${i < proj.milestones.length-1 ? '' : ''}`}>
+                              <p className={`text-xs font-semibold ${
+                                m.done ? 'text-[#5B6E88] dark:text-text-muted line-through' :
+                                i === (proj.milestones.findIndex(x=>!x.done)) ? 'text-primary dark:text-primary-cyan' :
+                                'text-[#0A1E3F] dark:text-white'
+                              }`}>{m.title}</p>
+                              {i === (proj.milestones.findIndex(x=>!x.done)) && (
+                                <span className="text-[10px] text-primary dark:text-primary-cyan font-medium">← In progress</span>
+                              )}
+                              {m.done && (
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ Completed</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Staff allocated alert — shown right after advance paid */}
+                {proj.status === 'advance_paid' && staff.length > 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Team Allocated!</p>
+                      <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
+                        {staff.map(s=>s.name.split(' ')[0]).join(' & ')} {staff.length===1?'has':'have'} been assigned to your project and will begin work shortly.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -737,83 +796,157 @@ export default function ClientDashboardPage() {
   };
 
   // ════════════════════════════════════════════════════════════
-  // MESSAGES
+  // MESSAGES — improved with staff panel + smooth typing
   // ════════════════════════════════════════════════════════════
-  const MessagesTab = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-base font-bold text-[#0A1E3F] dark:text-white">Messages</h2>
-        {projects.length > 0 && (
-          <select value={selProject?.id||''} onChange={e=>setSelProject(projects.find(p=>p.id===e.target.value)||null)}
-            className="px-3 py-2 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border text-[#0A1E3F] dark:text-white text-xs focus:outline-none focus:border-primary dark:focus:border-primary-electric">
-            <option value="">Select project...</option>
-            {projects.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
-          </select>
-        )}
-      </div>
+  const MessagesTab = () => {
+    const inputRef = useRef(null);
+
+    // Auto-select first project if only one exists
+    useEffect(() => {
+      if (!selProject && projects.length === 1) setSelProject(projects[0]);
+    }, []);
+
+    return (
+    <div className="space-y-3">
+      <h2 className="text-base font-bold text-[#0A1E3F] dark:text-white">Messages</h2>
+
+      {/* Project selector tabs */}
+      {projects.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {projects.map(p => (
+            <button key={p.id} onClick={() => setSelProject(p)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
+                selProject?.id === p.id
+                  ? 'bg-primary text-white'
+                  : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#5B6E88] dark:text-text-muted border border-[#E8EFF8] dark:border-surface-border hover:border-primary/30'
+              }`}>
+              {p.title}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!selProject ? (
-        <div className="text-center py-12">
+        <div className="text-center py-16">
           <MessageCircle className="w-10 h-10 text-[#C8D8EE] dark:text-text-muted mx-auto mb-3" />
-          <p className="text-sm text-[#5B6E88] dark:text-text-muted">Select a project to start chatting with your team.</p>
+          <p className="text-sm text-[#5B6E88] dark:text-text-muted">Select a project above to message your team.</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-[#E8EFF8] dark:border-surface-border bg-white dark:bg-navy-800 overflow-hidden flex flex-col" style={{height:'520px'}}>
-          {/* Header */}
-          <div className="px-4 py-3 bg-[#F4F8FC] dark:bg-navy-700 border-b border-[#E8EFF8] dark:border-surface-border">
-            <p className="text-xs font-bold text-[#0A1E3F] dark:text-white">{selProject.title}</p>
-            <p className="text-[10px] text-[#5B6E88] dark:text-text-muted mt-0.5 flex items-center gap-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Team is active · Session resets daily
-            </p>
-          </div>
+        <div className="flex flex-col lg:flex-row gap-3">
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-            {messages.length === 0 && (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center space-y-2">
-                  <MessageCircle className="w-8 h-8 text-[#C8D8EE] dark:text-text-muted mx-auto" />
-                  <p className="text-xs text-[#5B6E88] dark:text-text-muted">No messages yet. Say hi!</p>
-                </div>
-              </div>
-            )}
-            {messages.map(msg => {
-              const isMe = msg.senderId === uid;
-              const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
-              return (
-                <div key={msg.id} className={`flex ${isMe?'justify-end':'justify-start'}`}>
-                  <div className={`max-w-[78%] ${isMe?'items-end':'items-start'} flex flex-col gap-1`}>
-                    <span className={`text-[10px] font-medium text-[#5B6E88] dark:text-text-muted ${isMe?'text-right':''}`}>
-                      {isMe ? 'You' : msg.senderName} · {time}
-                    </span>
-                    <div className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                      isMe
-                        ? 'bg-primary text-white rounded-tr-sm'
-                        : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white rounded-tl-sm border border-[#E8EFF8] dark:border-surface-border'
-                    }`}>
-                      {msg.text}
+          {/* ── Staff panel (left on desktop, top on mobile) ── */}
+          {(() => {
+            const staff = getStaffByIds(selProject.assignedStaff || []);
+            if (!staff.length) return null;
+            return (
+              <div className="lg:w-48 shrink-0 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted px-1">Your Team</p>
+                {staff.map(s => (
+                  <div key={s.id} className="flex items-center gap-2.5 p-3 rounded-xl bg-white dark:bg-navy-800 border border-[#E8EFF8] dark:border-surface-border">
+                    <div className={`w-9 h-9 rounded-xl ${s.avatarColor} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
+                      {s.avatar}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-[#0A1E3F] dark:text-white truncate">{s.name}</p>
+                      <p className="text-[10px] text-[#5B6E88] dark:text-text-muted truncate">{s.role}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        <span className="text-[9px] text-green-600 dark:text-green-400">Online</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-            <div ref={msgEndRef} />
-          </div>
+                ))}
+              </div>
+            );
+          })()}
 
-          {/* Input */}
-          <form onSubmit={handleSendMsg} className="px-4 py-3 border-t border-[#E8EFF8] dark:border-surface-border flex gap-2 bg-[#F4F8FC] dark:bg-navy-700">
-            <input type="text" value={msgText} onChange={e=>setMsgText(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 px-4 py-2.5 rounded-xl bg-white dark:bg-navy-800 border border-[#E8EFF8] dark:border-surface-border text-[#0A1E3F] dark:text-white text-xs placeholder:text-[#A0B0C0] focus:outline-none focus:border-primary dark:focus:border-primary-electric transition-colors" />
-            <button type="submit" disabled={!msgText.trim()||msgSending}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-40 transition-all">
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+          {/* ── Chat window ── */}
+          <div className="flex-1 min-w-0 rounded-2xl border border-[#E8EFF8] dark:border-surface-border bg-white dark:bg-navy-800 overflow-hidden flex flex-col" style={{height:'480px'}}>
+            {/* Header */}
+            <div className="px-4 py-3 bg-[#F4F8FC] dark:bg-navy-700 border-b border-[#E8EFF8] dark:border-surface-border flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-[#0A1E3F] dark:text-white truncate">{selProject.title}</p>
+                <p className="text-[10px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
+                  Team is active
+                </p>
+              </div>
+              <Chip status={selProject.status} />
+            </div>
+
+            {/* Messages area */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+              {messages.length === 0 && (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center space-y-2">
+                    <MessageCircle className="w-8 h-8 text-[#C8D8EE] dark:text-text-muted mx-auto" />
+                    <p className="text-xs text-[#5B6E88] dark:text-text-muted">No messages yet. Say hi to your team! 👋</p>
+                  </div>
+                </div>
+              )}
+              {messages.map(msg => {
+                const isMe = msg.senderId === uid;
+                const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
+                return (
+                  <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    {/* Staff avatar */}
+                    {!isMe && (() => {
+                      const s = getStaffByIds(selProject.assignedStaff||[]).find(x => x.id === msg.senderId) ||
+                                { avatar: msg.senderName?.[0]||'S', avatarColor:'bg-slate-500' };
+                      return (
+                        <div className={`w-7 h-7 rounded-full ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5`}>
+                          {s.avatar}
+                        </div>
+                      );
+                    })()}
+                    <div className={`max-w-[72%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
+                      {!isMe && <span className="text-[10px] font-medium text-[#5B6E88] dark:text-text-muted px-1">{msg.senderName}</span>}
+                      <div className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                        isMe
+                          ? 'bg-primary text-white rounded-br-sm'
+                          : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white rounded-bl-sm border border-[#E8EFF8] dark:border-surface-border'
+                      }`}>
+                        {msg.text}
+                      </div>
+                      <span className="text-[9px] text-[#8B9AAF] dark:text-text-muted px-1">{time}</span>
+                    </div>
+                    {/* My avatar */}
+                    {isMe && (
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-electric flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5">
+                        {client.name?.[0]?.toUpperCase()||'C'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div ref={msgEndRef} />
+            </div>
+
+            {/* Input — smooth, no mouse needed */}
+            <form onSubmit={handleSendMsg}
+              className="px-3 py-3 border-t border-[#E8EFF8] dark:border-surface-border bg-[#F4F8FC] dark:bg-navy-700 flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={msgText}
+                onChange={e => setMsgText(e.target.value)}
+                onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSendMsg(e); }}}
+                placeholder="Type a message... (Enter to send)"
+                autoComplete="off"
+                autoFocus={!!selProject}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-white dark:bg-navy-800 border border-[#E8EFF8] dark:border-surface-border text-[#0A1E3F] dark:text-white text-sm placeholder:text-[#A0B0C0] focus:outline-none focus:border-primary dark:focus:border-primary-electric transition-colors"
+              />
+              <button type="submit" disabled={!msgText.trim() || msgSending}
+                className="w-10 h-10 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-40 transition-all flex items-center justify-center shrink-0">
+                <Send className="w-4 h-4 text-white" />
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   // ════════════════════════════════════════════════════════════
   // INVOICES
