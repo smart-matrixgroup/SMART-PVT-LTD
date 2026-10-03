@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import SEO from '../components/SEO';
+import { staffList, getStaffByIds, STATUS_COLORS } from '../config/staff';
 import {
   ShieldCheck, Users, FileText, LogOut,
-  CheckCircle2, XCircle, Clock,
+  CheckCircle2, XCircle, FolderKanban,
   Copy, MessageSquare, Sparkles,
   Building, Phone, Mail, Calendar,
-  Inbox, UserPlus
+  Inbox, UserPlus, Briefcase, X,
+  ChevronDown, Award, Star
 } from 'lucide-react';
 
 // ── Status badge helper ───────────────────────────────────────
@@ -132,13 +134,18 @@ function RequestDetailPanel({ selected, copied, onCopy, onUpdateStatus, buildWha
 // Authentication/authorization is already enforced by <ProtectedRoute
 // role="admin"> in App.jsx before this component ever renders.
 export default function AdminPanelPage() {
-  const navigate                = useNavigate();
-  const { logout }              = useAuth();
+  const navigate                   = useNavigate();
+  const { logout, isDevSession }   = useAuth();
   const [tab, setTab]              = useState('client_requests');
   const [allLeads, setAllLeads]    = useState([]);
-  const [clients, setClients]      = useState([]);
+  const [clients,  setClients]     = useState([]);
+  const [projects, setProjects]    = useState([]);
   const [selected, setSelected]    = useState(null);
-  const [copied, setCopied]        = useState('');
+  const [copied,   setCopied]      = useState('');
+
+  // Assign modal state
+  const [assignProject, setAssignProject] = useState(null); // project being assigned
+  const [assignLoading, setAssignLoading] = useState(false);
 
   // Derived — split leads by type
   const clientRequests = allLeads.filter(r => r.type === 'client_request');
@@ -146,24 +153,64 @@ export default function AdminPanelPage() {
 
   // Live leads from Firestore (all types)
   useEffect(() => {
+    if (isDevSession) { setAllLeads([]); return; }
     const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snap) => {
       setAllLeads(snap.docs.map(d => ({ leadId: d.id, ...d.data() })));
     }, (err) => console.error('Leads listener error', err));
     return unsubscribe;
-  }, []);
+  }, [isDevSession]);
 
   // Live client list from Firestore
   useEffect(() => {
+    if (isDevSession) { setClients([]); return; }
     const unsubscribe = onSnapshot(collection(db, 'clients'), (snap) => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => console.error('Clients listener error', err));
     return unsubscribe;
+  }, [isDevSession]);
+
+  // Live projects from Firestore
+  useEffect(() => {
+    if (!isFirebaseConfigured || isDevSession) {
+      setProjects([
+        { id: 'dev-proj-001', clientId: 'dev-client-001', clientName: 'Test Client', clientCompany: 'Test Company Pvt Ltd', title: 'Corporate Website Redesign', serviceType: 'Corporate Business Website', status: 'In Progress', completion: 65, assignedStaff: ['STAFF-001', 'STAFF-002'] },
+        { id: 'dev-proj-002', clientId: 'dev-client-001', clientName: 'Test Client', clientCompany: 'Test Company Pvt Ltd', title: 'Mobile App Development', serviceType: 'Mobile App (Android & iOS)', status: 'quotation_sent', completion: 0, assignedStaff: [] },
+      ]);
+      return;
+    }
+    const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, snap => {
+      setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
   }, []);
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
+  };
+
+  // ── Toggle staff assignment on a project ─────────────────────
+  const handleToggleStaff = async (projectId, staffId, currentAssigned) => {
+    const isAssigned = currentAssigned.includes(staffId);
+    const updated    = isAssigned
+      ? currentAssigned.filter(id => id !== staffId)
+      : [...currentAssigned, staffId];
+
+    // Update local state immediately (optimistic)
+    setProjects(prev =>
+      prev.map(p => p.id === projectId ? { ...p, assignedStaff: updated } : p)
+    );
+    if (assignProject?.id === projectId) {
+      setAssignProject(prev => ({ ...prev, assignedStaff: updated }));
+    }
+
+    // Persist to Firestore if configured
+    if (isFirebaseConfigured && !isDevSession) {
+      try {
+        await updateDoc(doc(db, 'projects', projectId), { assignedStaff: updated });
+      } catch (err) { console.error('Staff assign error', err); }
+    }
   };
 
   const copyText = (text, key) => {
@@ -200,9 +247,11 @@ You can track your project progress, invoices and support tickets from your dash
   };
 
   const NAV = [
-    { id: 'client_requests', label: 'Client Requests', icon: UserPlus, count: clientRequests.filter(r => r.status === 'New').length },
-    { id: 'quote_leads',     label: 'Quote Leads',     icon: Inbox,    count: quoteLeads.filter(r => r.status === 'New').length     },
-    { id: 'clients',         label: 'Active Clients',  icon: Users,    count: clients.length                                        },
+    { id: 'client_requests', label: 'Client Requests', icon: UserPlus,      count: clientRequests.filter(r => r.status === 'New').length },
+    { id: 'quote_leads',     label: 'Quote Leads',     icon: Inbox,         count: quoteLeads.filter(r => r.status === 'New').length     },
+    { id: 'projects',        label: 'Projects',         icon: FolderKanban, count: projects.filter(p => p.status === 'requirements_pending').length },
+    { id: 'staff',           label: 'Staff',            icon: Users,        count: staffList.length                                      },
+    { id: 'clients',         label: 'Active Clients',   icon: Briefcase,    count: clients.length                                        },
   ];
 
   return (
@@ -395,7 +444,175 @@ You can track your project progress, invoices and support tickets from your dash
               </div>
             )}
 
-            {/* ══ CLIENTS TAB ══════════════════════════════════ */}
+            {/* ══ PROJECTS TAB ══════════════════════════════════ */}
+            {tab === 'projects' && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#0A1E3F] dark:text-white">Projects</h2>
+                    <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">All client projects — assign staff and track progress</p>
+                  </div>
+                  <span className="text-xs text-[#5B6E88] dark:text-text-muted">{projects.length} total</span>
+                </div>
+
+                {projects.length === 0 && (
+                  <div className="rounded-2xl p-10 border border-dashed border-[#C8D8EE] dark:border-surface-border bg-white dark:bg-navy-800 text-center">
+                    <FolderKanban className="w-8 h-8 text-[#5B6E88] dark:text-text-muted mx-auto mb-3" />
+                    <p className="text-sm text-[#5B6E88] dark:text-text-muted">No projects yet.</p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {projects.map(proj => {
+                    const assigned = getStaffByIds(proj.assignedStaff || []);
+                    const statusMap = {
+                      'requirements_pending': 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30',
+                      'quotation_sent':       'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30',
+                      'quotation_accepted':   'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-500/30',
+                      'advance_paid':         'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30',
+                      'In Progress':          'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30',
+                      'Completed':            'bg-green-100 text-green-700 border-green-200 dark:bg-green-500/15 dark:text-green-300 dark:border-green-500/30',
+                    };
+                    const statusLabel = {
+                      'requirements_pending': 'Requirements Pending',
+                      'quotation_sent':       'Quotation Sent',
+                      'quotation_accepted':   'Quotation Accepted',
+                      'advance_paid':         'Advance Paid',
+                    }[proj.status] || proj.status;
+
+                    return (
+                      <div key={proj.id} className="rounded-2xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 p-5 space-y-4">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div>
+                            <p className="text-[10px] font-mono text-[#5B6E88] dark:text-text-muted">{proj.clientName} · {proj.clientCompany}</p>
+                            <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white mt-0.5">{proj.title}</h3>
+                            <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">{proj.serviceType}</p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusMap[proj.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-[#5B6E88] dark:text-text-muted">Completion</span>
+                            <span className="font-bold text-primary dark:text-primary-cyan">{proj.completion || 0}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-[#EBF3FC] dark:bg-navy-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-primary to-primary-electric rounded-full"
+                              style={{ width: `${proj.completion || 0}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Assigned staff */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">
+                              Assigned Staff ({assigned.length})
+                            </p>
+                            <button
+                              onClick={() => setAssignProject(proj)}
+                              className="flex items-center gap-1 text-[11px] font-bold text-primary dark:text-primary-cyan hover:underline">
+                              <UserPlus className="w-3 h-3" /> Manage
+                            </button>
+                          </div>
+
+                          {assigned.length === 0 ? (
+                            <p className="text-[11px] text-[#5B6E88] dark:text-text-muted italic">No staff assigned yet.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {assigned.map(s => (
+                                <div key={s.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#DCE6F2] dark:border-surface-border">
+                                  <div className={`w-6 h-6 rounded-full ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                                    {s.avatar}
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-[#0A1E3F] dark:text-white leading-none">{s.name}</p>
+                                    <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">{s.role}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ══ STAFF TAB ════════════════════════════════════ */}
+            {tab === 'staff' && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-[#0A1E3F] dark:text-white">Staff Members</h2>
+                    <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">All staff — add new members in <code className="bg-[#E0EEFF] dark:bg-navy-700 px-1 rounded">src/config/staff.js</code></p>
+                  </div>
+                  <span className="text-xs text-[#5B6E88] dark:text-text-muted">{staffList.length} members</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {staffList.map(s => (
+                    <div key={s.id} className="rounded-2xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 p-5 space-y-3">
+                      {/* Header */}
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl ${s.avatarColor} flex items-center justify-center text-white text-lg font-bold shrink-0`}>
+                          {s.avatar}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white">{s.name}</h3>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[s.status]}`}>
+                              {s.status}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#5B6E88] dark:text-text-muted">{s.role}</p>
+                          <p className="text-[11px] text-[#5B6E88] dark:text-text-muted">{s.department}</p>
+                        </div>
+                      </div>
+
+                      {/* Contact */}
+                      <div className="space-y-1.5 text-[11px] text-[#5B6E88] dark:text-text-muted">
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-3 h-3 text-primary dark:text-primary-cyan shrink-0" />
+                          <span>{s.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <span>{s.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3 h-3 text-[#5B6E88] dark:text-text-muted shrink-0" />
+                          <span>Joined: {s.joinedDate}</span>
+                        </div>
+                      </div>
+
+                      {/* Skills */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {s.skills.map(skill => (
+                          <span key={skill} className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#EBF3FC] dark:bg-navy-700 text-primary dark:text-primary-cyan border border-primary/20">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Projects assigned */}
+                      <div className="pt-2 border-t border-[#DCE6F2] dark:border-surface-border">
+                        <p className="text-[10px] text-[#5B6E88] dark:text-text-muted">
+                          Assigned to <strong className="text-[#0A1E3F] dark:text-white">
+                            {projects.filter(p => (p.assignedStaff || []).includes(s.id)).length}
+                          </strong> project(s)
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {tab === 'clients' && (
               <div className="space-y-5">
                 <div className="flex items-center justify-between">
@@ -452,6 +669,79 @@ You can track your project progress, invoices and support tickets from your dash
           </main>
         </div>
       </div>
+
+      {/* ══ ASSIGN STAFF MODAL ══════════════════════════════════ */}
+      {assignProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-navy-900 rounded-3xl border border-[#DCE6F2] dark:border-surface-border shadow-2xl overflow-hidden">
+
+            {/* Modal header */}
+            <div className="px-6 py-4 border-b border-[#DCE6F2] dark:border-surface-border flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white">Assign Staff</h3>
+                <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-0.5 truncate">{assignProject.title}</p>
+              </div>
+              <button onClick={() => setAssignProject(null)}
+                className="p-1.5 rounded-xl text-[#5B6E88] dark:text-text-muted hover:text-[#0A1E3F] dark:hover:text-white hover:bg-[#F4F8FC] dark:hover:bg-navy-800 transition-colors shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Staff list */}
+            <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mb-3">
+                Click to toggle assignment. ✓ = currently assigned.
+              </p>
+              {staffList.map(s => {
+                const isAssigned = (assignProject.assignedStaff || []).includes(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => handleToggleStaff(assignProject.id, s.id, assignProject.assignedStaff || [])}
+                    className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all text-left ${
+                      isAssigned
+                        ? 'border-primary dark:border-primary-cyan bg-primary/5 dark:bg-primary/10'
+                        : 'border-[#DCE6F2] dark:border-surface-border hover:border-primary/40 dark:hover:border-primary-cyan/40 bg-white dark:bg-navy-800'
+                    }`}>
+                    {/* Avatar */}
+                    <div className={`w-9 h-9 rounded-xl ${s.avatarColor} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+                      {s.avatar}
+                    </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-[#0A1E3F] dark:text-white truncate">{s.name}</p>
+                      <p className="text-[11px] text-[#5B6E88] dark:text-text-muted truncate">{s.role}</p>
+                    </div>
+                    {/* Status badge + check */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_COLORS[s.status]}`}>
+                        {s.status}
+                      </span>
+                      {isAssigned && (
+                        <div className="w-5 h-5 rounded-full bg-primary dark:bg-primary-cyan flex items-center justify-center">
+                          <CheckCircle2 className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-[#DCE6F2] dark:border-surface-border flex items-center justify-between">
+              <span className="text-xs text-[#5B6E88] dark:text-text-muted">
+                {(assignProject.assignedStaff || []).length} staff assigned
+              </span>
+              <button onClick={() => setAssignProject(null)}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover transition-all">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

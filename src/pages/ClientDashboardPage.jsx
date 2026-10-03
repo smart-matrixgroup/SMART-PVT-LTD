@@ -129,7 +129,7 @@ const NAV = [
 // ─── MAIN ─────────────────────────────────────────────────────────
 export default function ClientDashboardPage() {
   const navigate = useNavigate();
-  const { clientProfile, logout, currentUser } = useAuth();
+  const { clientProfile, logout, currentUser, isDevSession } = useAuth();
   const [tab, setTab]             = useState('overview');
   const [projects, setProjects]   = useState([]);
   const [messages, setMessages]   = useState([]);
@@ -152,21 +152,23 @@ export default function ClientDashboardPage() {
   // Load projects
   useEffect(() => {
     if (!uid) return;
-    if (!isFirebaseConfigured) {
+    // Skip Firestore for dev mock sessions — use local mock data
+    if (!isFirebaseConfigured || isDevSession) {
       setProjects(DEV_PROJECTS.filter(() => uid.startsWith('dev-')));
       return;
     }
     const q = query(collection(db,'projects'), where('clientId','==',uid), orderBy('createdAt','desc'));
     return onSnapshot(q, snap => setProjects(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
-  }, [uid]);
+  }, [uid, isDevSession]);
 
   // Load messages
   useEffect(() => {
     if (!selProject) { setMessages([]); return; }
-    if (!isFirebaseConfigured) { setMessages(DEV_MESSAGES); return; }
+    // Skip Firestore for dev mock sessions
+    if (!isFirebaseConfigured || isDevSession) { setMessages(DEV_MESSAGES); return; }
     const q = query(collection(db,'messages',selProject.id,'chats'), orderBy('timestamp','asc'));
     return onSnapshot(q, snap => setMessages(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
-  }, [selProject]);
+  }, [selProject, isDevSession]);
 
   useEffect(() => { msgEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages]);
 
@@ -190,7 +192,7 @@ export default function ClientDashboardPage() {
     const sessionId = new Date().toISOString().slice(0,10);
     const newMsg = { id:`msg-${Date.now()}`, senderId:uid, senderName:client.name, senderRole:'client',
       text:msgText.trim(), sessionId, timestamp:{ toDate:()=>new Date() } };
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured || isDevSession) {
       setMessages(prev => [...prev, newMsg]);
     } else {
       try {
@@ -203,14 +205,14 @@ export default function ClientDashboardPage() {
 
   // ── ACCEPT QUOTATION ────────────────────────────────────────
   const handleAcceptQuote = async (projectId) => {
-    if (!isFirebaseConfigured) { setProjects(p => p.map(x => x.id===projectId ? {...x,status:'quotation_accepted'} : x)); return; }
+    if (!isFirebaseConfigured || isDevSession) { setProjects(p => p.map(x => x.id===projectId ? {...x,status:'quotation_accepted'} : x)); return; }
     try { await updateDoc(doc(db,'projects',projectId), { status:'quotation_accepted', updatedAt:serverTimestamp() }); }
     catch(err) { console.error(err); }
   };
 
   // ── ADVANCE PAID ─────────────────────────────────────────────
   const handleAdvancePaid = async (projectId) => {
-    if (!isFirebaseConfigured) { setProjects(p => p.map(x => x.id===projectId ? {...x,status:'advance_paid'} : x)); return; }
+    if (!isFirebaseConfigured || isDevSession) { setProjects(p => p.map(x => x.id===projectId ? {...x,status:'advance_paid'} : x)); return; }
     try { await updateDoc(doc(db,'projects',projectId), { status:'advance_paid', updatedAt:serverTimestamp(), 'payment.advancePaidByClient':true }); }
     catch(err) { console.error(err); }
   };
@@ -229,7 +231,7 @@ export default function ClientDashboardPage() {
       references:reqForm.references.trim(), extraNotes:reqForm.extraNotes.trim(),
       quotation:null, milestones:[], completion:0, assignedStaff:[] };
     try {
-      if (!isFirebaseConfigured) {
+      if (!isFirebaseConfigured || isDevSession) {
         setProjects(prev => [{ id:`dev-proj-${Date.now()}`, ...payload, createdAt:null }, ...prev]);
       } else {
         await addDoc(collection(db,'projects'), { ...payload, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
@@ -881,32 +883,9 @@ export default function ClientDashboardPage() {
         </div>
       </Card>
 
-      {/* Tickets */}
-      {client.tickets?.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-xs font-bold text-[#5B6E88] dark:text-text-muted uppercase tracking-wider">Previous Tickets</p>
-          {client.tickets.map(t => (
-            <Card key={t.id} className="p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-[#0A1E3F] dark:text-white">{t.subject}</p>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <Chip status={t.status} />
-                    <span className="text-[10px] text-[#5B6E88] dark:text-text-muted">{t.date}</span>
-                  </div>
-                </div>
-                {t.status === 'Open' && (
-                  <a href={`https://wa.me/${company.contact.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(`Following up on ticket ${t.id}: ${t.subject}`)}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-[11px] font-bold text-primary dark:text-primary-cyan hover:underline shrink-0 flex items-center gap-1">
-                    Follow up <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+      {/* Tickets — only show if admin has added tickets to client profile */}
+
+
 
       <p className="text-center text-[11px] text-[#5B6E88] dark:text-text-muted">
         Response time: <strong className="text-[#0A1E3F] dark:text-white">2–4 hrs</strong> · Hours: <strong className="text-[#0A1E3F] dark:text-white">{company.contact.businessHours}</strong>
