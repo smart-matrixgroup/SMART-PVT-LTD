@@ -139,6 +139,11 @@ export default function ClientDashboardPage() {
   const [msgSending, setMsgSending] = useState(false);
   const msgEndRef                 = useRef(null);
 
+  // Session report modal state (lifted to main so it renders outside MessagesTab)
+  const [showReport,    setShowReport]    = useState(false);
+  const [reportSession, setReportSession] = useState(null);
+  const [reportProject, setReportProject] = useState(null);
+
   // Requirements form
   const [step, setStep]           = useState(1); // multi-step form
   const [reqForm, setReqForm]     = useState({ projectTitle:'', serviceType:'', description:'', timeline:'', budget:'', references:'', extraNotes:'' });
@@ -651,11 +656,62 @@ export default function ClientDashboardPage() {
   // ════════════════════════════════════════════════════════════
   const MessagesTab = () => {
     const inputRef = useRef(null);
+    const [showReport, setShowReport] = React.useState(false);
+    const [reportSession, setReportSession] = React.useState(null);
 
     // Auto-select first project if only one exists
     useEffect(() => {
       if (!selProject && projects.length === 1) setSelProject(projects[0]);
     }, []);
+    // Group messages by sessionId (each session = 1 day)
+    const sessionGroups = React.useMemo(() => {
+      const groups = {};
+      messages.forEach(msg => {
+        const sid = msg.sessionId || 'unknown';
+        if (!groups[sid]) groups[sid] = [];
+        groups[sid].push(msg);
+      });
+      return groups;
+    }, [messages]);
+
+    const sessionIds = Object.keys(sessionGroups).sort().reverse(); // newest first
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Build report text for a session
+    const buildReport = (sessionId) => {
+      const msgs = sessionGroups[sessionId] || [];
+      const lines = [
+        `📋 SMART Pvt Ltd — Conversation Report`,
+        `Project: ${selProject?.title}`,
+        `Date: ${sessionId}`,
+        `Messages: ${msgs.length}`,
+        `─────────────────────────────`,
+        ...msgs.map(m => {
+          const time = m.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
+          const role = m.senderRole === 'client' ? '👤 You' : `👷 ${m.senderName}`;
+          return `[${time}] ${role}: ${m.text}`;
+        }),
+        `─────────────────────────────`,
+        `Generated via SMART Client Portal`,
+      ];
+      return lines.join('\n');
+    };
+
+    const handleViewReport = (sessionId) => {
+      setReportSession(sessionId);
+      setReportProject(selProject);
+      setShowReport(true);
+    };
+
+    const handleSendReport = (sessionId) => {
+      const reportText = buildReport(sessionId);
+      const waUrl = `https://wa.me/${company.contact.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(reportText)}`;
+      window.open(waUrl, '_blank');
+    };
+
+    const handleCopyReport = (sessionId) => {
+      navigator.clipboard.writeText(buildReport(sessionId));
+    };
 
     return (
     <div className="space-y-3">
@@ -719,14 +775,24 @@ export default function ClientDashboardPage() {
                 <p className="text-xs font-bold text-[#0A1E3F] dark:text-white truncate">{selProject.title}</p>
                 <p className="text-[10px] text-[#5B6E88] dark:text-text-muted flex items-center gap-1 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse" />
-                  Team is active
+                  Team is active · Session resets daily
                 </p>
               </div>
               <Chip status={selProject.status} />
+              {/* Session reports dropdown */}
+              {sessionIds.filter(s => s !== today).length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => handleViewReport(sessionIds.filter(s=>s!==today)[0])}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-primary dark:text-primary-cyan bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary-cyan/20 hover:bg-primary/10 transition-all whitespace-nowrap">
+                    <FileText className="w-3 h-3" /> Session Reports
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Messages area */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
               {messages.length === 0 && (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center space-y-2">
@@ -735,36 +801,72 @@ export default function ClientDashboardPage() {
                   </div>
                 </div>
               )}
-              {messages.map(msg => {
-                const isMe = msg.senderId === uid;
-                const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
+
+              {/* Render by session groups */}
+              {sessionIds.slice().reverse().map(sessionId => {
+                const sessionMsgs = sessionGroups[sessionId];
+                const isToday = sessionId === today;
+                const isPast  = sessionId < today;
                 return (
-                  <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    {/* Staff avatar */}
-                    {!isMe && (() => {
-                      const s = getStaffByIds(selProject.assignedStaff||[]).find(x => x.id === msg.senderId) ||
-                                { avatar: msg.senderName?.[0]||'S', avatarColor:'bg-slate-500' };
+                  <div key={sessionId} className="space-y-3">
+                    {/* Session divider */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-[#E8EFF8] dark:bg-surface-border" />
+                      <span className="text-[10px] font-medium text-[#5B6E88] dark:text-text-muted px-2 shrink-0">
+                        {isToday ? '📅 Today' : `📅 ${sessionId}`}
+                      </span>
+                      {/* Past session → show report button */}
+                      {isPast && (
+                        <button
+                          onClick={() => handleViewReport(sessionId)}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold text-primary dark:text-primary-cyan bg-primary/5 dark:bg-primary/10 border border-primary/20 hover:bg-primary/10 transition-all shrink-0">
+                          <FileText className="w-3 h-3" /> Report
+                        </button>
+                      )}
+                      <div className="flex-1 h-px bg-[#E8EFF8] dark:bg-surface-border" />
+                    </div>
+
+                    {/* Messages in this session */}
+                    {sessionMsgs.map(msg => {
+                      const isMe = msg.senderId === uid;
+                      const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
                       return (
-                        <div className={`w-7 h-7 rounded-full ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5`}>
-                          {s.avatar}
+                        <div key={msg.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                          {!isMe && (() => {
+                            const s = getStaffByIds(selProject.assignedStaff||[]).find(x => x.id === msg.senderId) ||
+                                      { avatar: msg.senderName?.[0]||'S', avatarColor:'bg-slate-500' };
+                            return (
+                              <div className={`w-7 h-7 rounded-full ${s.avatarColor} flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5`}>
+                                {s.avatar}
+                              </div>
+                            );
+                          })()}
+                          <div className={`max-w-[72%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
+                            {!isMe && <span className="text-[10px] font-medium text-[#5B6E88] dark:text-text-muted px-1">{msg.senderName}</span>}
+                            <div className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                              isMe
+                                ? 'bg-primary text-white rounded-br-sm'
+                                : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white rounded-bl-sm border border-[#E8EFF8] dark:border-surface-border'
+                            }`}>
+                              {msg.text}
+                            </div>
+                            <span className="text-[9px] text-[#8B9AAF] dark:text-text-muted px-1">{time}</span>
+                          </div>
+                          {isMe && (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-electric flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5">
+                              {client.name?.[0]?.toUpperCase()||'C'}
+                            </div>
+                          )}
                         </div>
                       );
-                    })()}
-                    <div className={`max-w-[72%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
-                      {!isMe && <span className="text-[10px] font-medium text-[#5B6E88] dark:text-text-muted px-1">{msg.senderName}</span>}
-                      <div className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                        isMe
-                          ? 'bg-primary text-white rounded-br-sm'
-                          : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white rounded-bl-sm border border-[#E8EFF8] dark:border-surface-border'
-                      }`}>
-                        {msg.text}
-                      </div>
-                      <span className="text-[9px] text-[#8B9AAF] dark:text-text-muted px-1">{time}</span>
-                    </div>
-                    {/* My avatar */}
-                    {isMe && (
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-electric flex items-center justify-center text-white text-[10px] font-bold shrink-0 mb-0.5">
-                        {client.name?.[0]?.toUpperCase()||'C'}
+                    })}
+
+                    {/* Today's session end notice */}
+                    {isToday && (
+                      <div className="flex items-center justify-center">
+                        <span className="text-[10px] text-[#5B6E88] dark:text-text-muted bg-[#F4F8FC] dark:bg-navy-700 px-3 py-1 rounded-full border border-[#E8EFF8] dark:border-surface-border">
+                          Session ends at midnight · Report auto-generated
+                        </span>
                       </div>
                     )}
                   </div>
@@ -796,8 +898,76 @@ export default function ClientDashboardPage() {
         </div>
       )}
     </div>
-    );
-  };
+
+    {/* ── SESSION REPORT MODAL ── */}
+    {showReport && reportSession && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="w-full max-w-lg bg-white dark:bg-navy-900 rounded-3xl border border-[#DCE6F2] dark:border-surface-border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-[#DCE6F2] dark:border-surface-border flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white">
+                📋 Session Report — {reportSession}
+              </h3>
+              <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-0.5">
+                {selProject?.title} · {sessionGroups[reportSession]?.length || 0} messages
+              </p>
+            </div>
+            <button onClick={() => setShowReport(false)}
+              className="w-7 h-7 rounded-xl bg-[#F4F8FC] dark:bg-navy-800 border border-[#DCE6F2] dark:border-surface-border flex items-center justify-center text-[#5B6E88] dark:text-text-muted hover:text-[#0A1E3F] dark:hover:text-white">
+              ✕
+            </button>
+          </div>
+
+          {/* Report content */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-3">
+            {(sessionGroups[reportSession] || []).map((msg, i) => {
+              const isMe = msg.senderId === uid;
+              const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) || '';
+              return (
+                <div key={i} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0 mt-0.5 ${
+                    isMe ? 'bg-gradient-to-br from-primary to-primary-electric' : 'bg-slate-500'
+                  }`}>
+                    {isMe ? client.name?.[0] : msg.senderName?.[0]}
+                  </div>
+                  <div className={`flex-1 ${isMe ? 'text-right' : ''}`}>
+                    <div className="flex items-center gap-2" style={{justifyContent: isMe ? 'flex-end' : 'flex-start'}}>
+                      <span className="text-[10px] font-semibold text-[#5B6E88] dark:text-text-muted">
+                        {isMe ? 'You' : msg.senderName}
+                      </span>
+                      <span className="text-[9px] text-[#8B9AAF] dark:text-text-muted">{time}</span>
+                    </div>
+                    <p className={`text-xs mt-1 leading-relaxed inline-block px-3 py-2 rounded-xl ${
+                      isMe
+                        ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan'
+                        : 'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white'
+                    }`}>{msg.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Actions */}
+          <div className="px-5 py-4 border-t border-[#DCE6F2] dark:border-surface-border flex gap-3">
+            <button onClick={() => handleCopyReport(reportSession)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-[#29405E] dark:text-text-light bg-[#F0F6FF] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border hover:bg-[#E0EEFF] transition-all">
+              <FileText className="w-3.5 h-3.5" /> Copy Report
+            </button>
+            <a href={`https://wa.me/${company.contact.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(buildReport(reportSession))}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-all">
+              <MessageSquare className="w-3.5 h-3.5" /> Send to Admin
+            </a>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+  );
+};
 
   // ════════════════════════════════════════════════════════════
   // INVOICES
@@ -1128,6 +1298,59 @@ export default function ClientDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── SESSION REPORT MODAL (rendered at main component level) ── */}
+      {showReport && reportSession && reportProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-white dark:bg-navy-900 rounded-3xl border border-[#DCE6F2] dark:border-surface-border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-[#DCE6F2] dark:border-surface-border flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white">📋 Session Report — {reportSession}</h3>
+                <p className="text-[11px] text-[#5B6E88] dark:text-text-muted mt-0.5">
+                  {reportProject.title} · {messages.filter(m=>m.sessionId===reportSession).length} messages
+                </p>
+              </div>
+              <button onClick={() => setShowReport(false)}
+                className="w-7 h-7 rounded-xl bg-[#F4F8FC] dark:bg-navy-800 border border-[#DCE6F2] dark:border-surface-border flex items-center justify-center text-xs text-[#5B6E88] hover:text-[#0A1E3F] dark:hover:text-white">
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              {messages.filter(m=>m.sessionId===reportSession).map((msg, i) => {
+                const isMe = msg.senderId === uid;
+                const time = msg.timestamp?.toDate?.()?.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})||'';
+                return (
+                  <div key={i} className={`flex gap-3 ${isMe?'flex-row-reverse':''}`}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0 mt-0.5 ${isMe?'bg-primary':'bg-slate-500'}`}>
+                      {isMe ? client.name?.[0] : msg.senderName?.[0]}
+                    </div>
+                    <div className={`flex-1 ${isMe?'text-right':''}`}>
+                      <div className={`flex items-center gap-2 ${isMe?'justify-end':''}`}>
+                        <span className="text-[10px] font-semibold text-[#5B6E88] dark:text-text-muted">{isMe?'You':msg.senderName}</span>
+                        <span className="text-[9px] text-[#8B9AAF]">{time}</span>
+                      </div>
+                      <p className={`text-xs mt-1 leading-relaxed inline-block px-3 py-2 rounded-xl ${isMe?'bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary-cyan':'bg-[#F4F8FC] dark:bg-navy-700 text-[#0A1E3F] dark:text-white'}`}>
+                        {msg.text}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-5 py-4 border-t border-[#DCE6F2] dark:border-surface-border flex gap-3">
+              <button onClick={() => { navigator.clipboard.writeText(messages.filter(m=>m.sessionId===reportSession).map(m=>`[${m.timestamp?.toDate?.()?.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})||''}] ${m.senderRole==='client'?'You':m.senderName}: ${m.text}`).join('\n')); }}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-[#29405E] dark:text-text-light bg-[#F0F6FF] dark:bg-navy-800 border border-[#C8D8EE] dark:border-surface-border hover:bg-[#E0EEFF] transition-all">
+                <FileText className="w-3.5 h-3.5" /> Copy Report
+              </button>
+              <a href={`https://wa.me/${company.contact.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(`📋 Session Report — ${reportSession}\nProject: ${reportProject.title}\n\n${messages.filter(m=>m.sessionId===reportSession).map(m=>`[${m.timestamp?.toDate?.()?.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})||''}] ${m.senderRole==='client'?'You':m.senderName}: ${m.text}`).join('\n')}`)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-all">
+                <MessageSquare className="w-3.5 h-3.5" /> Send to Admin
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
