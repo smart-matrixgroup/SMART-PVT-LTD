@@ -24,6 +24,7 @@ const ContactPage         = lazy(() => import('./pages/ContactPage'));
 const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
 const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
+const ERPApp              = lazy(() => import('./erp/ERPApp'));
 const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'));
 const TermsPage           = lazy(() => import('./pages/TermsPage'));
 const NotFoundPage        = lazy(() => import('./pages/NotFoundPage'));
@@ -94,8 +95,12 @@ function AppContent() {
           <Route path="/admin-panel" element={
             <AuthProvider><ProtectedRoute role="admin"><AdminPanelPage /></ProtectedRoute></AuthProvider>
           } />
-          {/* Legacy link — admin portal now lives at /admin-panel */}
-          <Route path="/erp-system" element={<Navigate to="/admin-panel" replace />} />
+          {/* ERP System — full admin ERP, no website Navbar/Footer */}
+          <Route path="/erp/*" element={
+            <AuthProvider><ProtectedRoute role="admin"><ERPApp /></ProtectedRoute></AuthProvider>
+          } />
+          {/* Legacy redirects */}
+          <Route path="/erp-system" element={<Navigate to="/erp" replace />} />
           <Route path="/privacy" element={<PublicPage><PrivacyPolicyPage /></PublicPage>} />
           <Route path="/terms" element={<PublicPage><TermsPage /></PublicPage>} />
           <Route path="*" element={<PublicPage><NotFoundPage /></PublicPage>} />
