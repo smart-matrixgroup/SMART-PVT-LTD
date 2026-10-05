@@ -71,6 +71,8 @@ export function AuthProvider({ children }) {
       const devSession = sessionStorage.getItem('smart_dev_session');
       if (devSession) return;
 
+      // If role is already set (by login() above), skip re-fetching
+      // unless this is a page refresh (currentUser would be null initially)
       setCurrentUser(user);
 
       if (!user) {
@@ -80,6 +82,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      // Only fetch role from Firestore on page refresh (loading=true means fresh load)
       try {
         const adminSnap = await getDoc(doc(db, 'admins', user.uid));
         if (adminSnap.exists()) {
@@ -97,7 +100,6 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // Authenticated but no profile doc — reject
         setRole(null);
         setClientProfile(null);
       } catch (err) {
@@ -123,10 +125,22 @@ export function AuthProvider({ children }) {
         const uid = credential.user.uid;
 
         const adminSnap = await getDoc(doc(db, 'admins', uid));
-        if (adminSnap.exists()) return { role: 'admin' };
+        if (adminSnap.exists()) {
+          // Set state immediately so ProtectedRoute sees role before redirect
+          setCurrentUser(credential.user);
+          setRole('admin');
+          setClientProfile(null);
+          return { role: 'admin' };
+        }
 
         const clientSnap = await getDoc(doc(db, 'clients', uid));
-        if (clientSnap.exists()) return { role: 'client', profile: { id: clientSnap.id, ...clientSnap.data() } };
+        if (clientSnap.exists()) {
+          const profile = { id: clientSnap.id, ...clientSnap.data() };
+          setCurrentUser(credential.user);
+          setRole('client');
+          setClientProfile(profile);
+          return { role: 'client', profile };
+        }
 
         // Signed in with Firebase but no admin/client doc — reject
         await firebaseSignOut(auth);
