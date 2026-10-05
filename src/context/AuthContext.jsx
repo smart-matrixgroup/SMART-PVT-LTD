@@ -114,40 +114,66 @@ export function AuthProvider({ children }) {
 
   // ── LOGIN ──────────────────────────────────────────────────────
   const login = async (email, password) => {
-    // DEV mock — triggers when email ends with @smart.com (test accounts)
-    // Works even if Firebase is configured, so we can test without real users.
-    const isDevAccount = DEV_ACCOUNTS.some(
-      a => a.email.toLowerCase() === email.toLowerCase().trim()
-    );
+    const trimmedEmail = email.toLowerCase().trim();
 
-    if (isDevAccount || !isFirebaseConfigured) {
-      const account = DEV_ACCOUNTS.find(
-        a => a.email.toLowerCase() === email.toLowerCase().trim() && a.password === password
-      );
-      if (!account) {
-        throw new Error('Invalid email or password.');
+    // ── Firebase login (always try first if Firebase is configured) ──
+    if (isFirebaseConfigured) {
+      try {
+        const credential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+        const uid = credential.user.uid;
+
+        const adminSnap = await getDoc(doc(db, 'admins', uid));
+        if (adminSnap.exists()) return { role: 'admin' };
+
+        const clientSnap = await getDoc(doc(db, 'clients', uid));
+        if (clientSnap.exists()) return { role: 'client', profile: { id: clientSnap.id, ...clientSnap.data() } };
+
+        // Signed in with Firebase but no admin/client doc — reject
+        await firebaseSignOut(auth);
+        throw new Error('This account has no portal access assigned. Contact SMART support.');
+      } catch (err) {
+        // If Firebase auth failed (wrong password, user not found),
+        // fall through to dev mock only if it's a known dev account.
+        const isAuthError = err.code === 'auth/invalid-credential' ||
+                            err.code === 'auth/user-not-found' ||
+                            err.code === 'auth/wrong-password' ||
+                            err.code === 'auth/invalid-email';
+
+        if (!isAuthError) throw err; // re-throw non-auth errors (network, permission etc.)
+
+        // Firebase auth failed — try dev mock as fallback
+        const devAccount = DEV_ACCOUNTS.find(
+          a => a.email.toLowerCase() === trimmedEmail && a.password === password
+        );
+        if (devAccount) {
+          const uid = devAccount.role === 'admin' ? 'dev-admin-001' : 'dev-client-001';
+          const session = { role: devAccount.role, profile: devAccount.profile, uid };
+          sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
+          setCurrentUser({ uid, email: devAccount.email });
+          setRole(devAccount.role);
+          setClientProfile(devAccount.profile);
+          return { role: devAccount.role };
+        }
+
+        // Neither Firebase nor dev mock worked
+        throw new Error('Invalid email or password. Please try again.');
       }
-      const uid = account.role === 'admin' ? 'dev-admin-001' : 'dev-client-001';
-      const session = { role: account.role, profile: account.profile, uid };
-      sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
-      setCurrentUser({ uid, email: account.email });
-      setRole(account.role);
-      setClientProfile(account.profile);
-      return { role: account.role };
     }
 
-    // Firebase login
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-    const uid = credential.user.uid;
-
-    const adminSnap = await getDoc(doc(db, 'admins', uid));
-    if (adminSnap.exists()) return { role: 'admin' };
-
-    const clientSnap = await getDoc(doc(db, 'clients', uid));
-    if (clientSnap.exists()) return { role: 'client', profile: { id: clientSnap.id, ...clientSnap.data() } };
-
-    await firebaseSignOut(auth);
-    throw new Error('This account has no portal access assigned. Contact SMART support.');
+    // ── Firebase NOT configured — dev mock only ──────────────────
+    const devAccount = DEV_ACCOUNTS.find(
+      a => a.email.toLowerCase() === trimmedEmail && a.password === password
+    );
+    if (!devAccount) {
+      throw new Error('Invalid email or password.');
+    }
+    const uid = devAccount.role === 'admin' ? 'dev-admin-001' : 'dev-client-001';
+    const session = { role: devAccount.role, profile: devAccount.profile, uid };
+    sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
+    setCurrentUser({ uid, email: devAccount.email });
+    setRole(devAccount.role);
+    setClientProfile(devAccount.profile);
+    return { role: devAccount.role };
   };
 
   // ── LOGOUT ─────────────────────────────────────────────────────
