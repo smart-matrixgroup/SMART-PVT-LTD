@@ -219,7 +219,7 @@ export default function ClientDashboardPage() {
 
   // ── SUBMIT REQUIREMENTS ──────────────────────────────────────
   const handleReqSubmit = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     setReqError('');
     if (!reqForm.projectTitle.trim() || !reqForm.serviceType || !reqForm.description.trim()) {
       setReqError('Please fill in all required fields.'); return;
@@ -548,156 +548,7 @@ export default function ClientDashboardPage() {
   // ════════════════════════════════════════════════════════════
   // NEW REQUEST (multi-step)
   // ════════════════════════════════════════════════════════════
-  const RequirementsTab = () => {
-    const services  = ['ERP & POS System','Custom Software Development','Portfolio Website','Corporate Business Website','Mobile App (Android & iOS)','Business Process Automation','AI-Powered Solutions','Accounting & Tax Services','Audit & Assurance','Other'];
-    const timelines = ['Less than 1 month','1–2 months','2–3 months','3–6 months','6+ months','Flexible'];
-    const budgets   = ['Below LKR 25,000','LKR 25,000–50,000','LKR 50,000–100,000','LKR 100,000–250,000','LKR 250,000+','Let\'s discuss'];
-
-    if (reqDone) return (
-      <div className="py-12 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
-        </div>
-        <div>
-          <h3 className="text-base font-extrabold text-[#0A1E3F] dark:text-white">Request Submitted!</h3>
-          <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-1 max-w-xs mx-auto">
-            Our team will review and send you a quotation within 24 hours.
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 max-w-xs mx-auto pt-2">
-          <button onClick={() => { setReqDone(false); setTab('projects'); }}
-            className="py-2.5 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover transition-all">
-            View My Projects
-          </button>
-          <button onClick={() => setReqDone(false)}
-            className="py-2.5 rounded-xl text-xs font-semibold text-[#5B6E88] dark:text-text-muted hover:text-[#0A1E3F] dark:hover:text-white transition-all">
-            Submit Another Request
-          </button>
-        </div>
-      </div>
-    );
-
-    const inputCls = "w-full px-4 py-3 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border text-[#0A1E3F] dark:text-white text-sm placeholder:text-[#A0B0C0] focus:outline-none focus:border-primary dark:focus:border-primary-electric transition-colors";
-    const selectCls = inputCls + " appearance-none";
-
-    return (
-      <div className="space-y-5">
-        {/* Step header */}
-        <div>
-          <h2 className="text-base font-bold text-[#0A1E3F] dark:text-white">New Project Request</h2>
-          <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">Step {step} of 2</p>
-          {/* Step indicator */}
-          <div className="flex gap-1.5 mt-3">
-            {[1,2].map(s => (
-              <div key={s} className={`h-1 rounded-full flex-1 transition-all ${s<=step ? 'bg-primary dark:bg-primary-cyan' : 'bg-[#E8EFF8] dark:bg-navy-700'}`} />
-            ))}
-          </div>
-        </div>
-
-        <form onSubmit={step===2 ? handleReqSubmit : (e) => { e.preventDefault(); setStep(2); }} className="space-y-4">
-
-          {step === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
-                  Project Name <span className="text-red-400">*</span>
-                </label>
-                <input type="text" required value={reqForm.projectTitle}
-                  onChange={e => setReqForm(p=>({...p,projectTitle:e.target.value}))}
-                  placeholder="e.g. Restaurant POS System"
-                  className={inputCls} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
-                  Type of Service <span className="text-red-400">*</span>
-                </label>
-                <select required value={reqForm.serviceType}
-                  onChange={e => setReqForm(p=>({...p,serviceType:e.target.value}))}
-                  className={selectCls}>
-                  <option value="" disabled>Select a service...</option>
-                  {services.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
-                  What do you need? <span className="text-red-400">*</span>
-                </label>
-                <textarea required rows={4} value={reqForm.description}
-                  onChange={e => setReqForm(p=>({...p,description:e.target.value}))}
-                  placeholder="Describe your business and what you're trying to achieve..."
-                  className={inputCls + " resize-none"} />
-              </div>
-
-              <button type="submit" disabled={!reqForm.projectTitle||!reqForm.serviceType||!reqForm.description}
-                className="w-full py-3 rounded-xl text-sm font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
-                Continue <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Timeline</label>
-                  <select value={reqForm.timeline} onChange={e=>setReqForm(p=>({...p,timeline:e.target.value}))} className={selectCls}>
-                    <option value="">Not sure</option>
-                    {timelines.map(t=><option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Budget</label>
-                  <select value={reqForm.budget} onChange={e=>setReqForm(p=>({...p,budget:e.target.value}))} className={selectCls}>
-                    <option value="">Not sure</option>
-                    {budgets.map(b=><option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
-                  Reference links <span className="text-[#8B9AAF] font-normal">(optional)</span>
-                </label>
-                <input type="text" value={reqForm.references}
-                  onChange={e=>setReqForm(p=>({...p,references:e.target.value}))}
-                  placeholder="e.g. https://example.com"
-                  className={inputCls} />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
-                  Any other notes <span className="text-[#8B9AAF] font-normal">(optional)</span>
-                </label>
-                <textarea rows={2} value={reqForm.extraNotes}
-                  onChange={e=>setReqForm(p=>({...p,extraNotes:e.target.value}))}
-                  placeholder="Anything else we should know..."
-                  className={inputCls + " resize-none"} />
-              </div>
-
-              {reqError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-600 dark:text-red-400">
-                  <AlertCircle className="w-4 h-4 shrink-0" /> {reqError}
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setStep(1)}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-[#5B6E88] dark:text-text-muted bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border transition-all">
-                  ← Back
-                </button>
-                <button type="submit" disabled={reqSubmitting}
-                  className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
-                  {reqSubmitting ? <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Sending...</> : <><Send className="w-4 h-4" /> Send Request</>}
-                </button>
-              </div>
-            </div>
-          )}
-        </form>
-      </div>
-    );
-  };
+  // Requirements form rendered inline in layout — see TAB ROUTER section below
 
   // ════════════════════════════════════════════════════════════
   // QUOTATIONS
@@ -1029,11 +880,19 @@ export default function ClientDashboardPage() {
   // ════════════════════════════════════════════════════════════
   // TAB ROUTER
   // ════════════════════════════════════════════════════════════
-  const TABS = {
-    overview: <OverviewTab />, projects: <ProjectsTab />,
-    requirements: <RequirementsTab />, quotation: <QuotationTab />,
-    messages: <MessagesTab />, invoices: <InvoicesTab />, support: <SupportTab />,
-  };
+  const mainRef = useRef(null);
+
+  // Scroll main content to top on tab change (not window scroll)
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [tab]);
+
+  // ── Constants for requirements form (stable — no re-render) ──
+  const REQ_SERVICES  = ['ERP & POS System','Custom Software Development','Portfolio Website','Corporate Business Website','Mobile App (Android & iOS)','Business Process Automation','AI-Powered Solutions','Accounting & Tax Services','Audit & Assurance','Other'];
+  const REQ_TIMELINES = ['Less than 1 month','1–2 months','2–3 months','3–6 months','6+ months','Flexible'];
+  const REQ_BUDGETS   = ['Below LKR 25,000','LKR 25,000–50,000','LKR 50,000–100,000','LKR 100,000–250,000','LKR 250,000+','Let\'s discuss'];
+  const inputCls  = "w-full px-4 py-3 rounded-xl bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border text-[#0A1E3F] dark:text-white text-sm placeholder:text-[#A0B0C0] focus:outline-none focus:border-primary dark:focus:border-primary-electric transition-colors";
+  const selectCls = inputCls + " appearance-none";
 
   // ════════════════════════════════════════════════════════════
   // LAYOUT
@@ -1115,9 +974,157 @@ export default function ClientDashboardPage() {
             </button>
           </div>
 
-          {/* Page content */}
-          <div className="min-w-0">
-            {TABS[tab]}
+          {/* Page content — uses ref for scroll control */}
+          <div className="min-w-0" ref={mainRef}>
+            {tab === 'overview'     && <OverviewTab />}
+            {tab === 'projects'     && <ProjectsTab />}
+            {tab === 'quotation'    && <QuotationTab />}
+            {tab === 'messages'     && <MessagesTab />}
+            {tab === 'invoices'     && <InvoicesTab />}
+            {tab === 'support'      && <SupportTab />}
+
+            {/* Requirements form — rendered inline (NOT as component) to prevent remount on every keystroke */}
+            {tab === 'requirements' && (
+              <div className="space-y-5">
+                {reqDone ? (
+                  <div className="py-12 text-center space-y-4">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center mx-auto">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-[#0A1E3F] dark:text-white">Request Submitted!</h3>
+                      <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-1 max-w-xs mx-auto">
+                        Our team will review and send you a quotation within 24 hours.
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 max-w-xs mx-auto pt-2">
+                      <button onClick={() => { setReqDone(false); setTab('projects'); }}
+                        className="py-2.5 rounded-xl text-sm font-bold text-white bg-primary hover:bg-primary-hover transition-all">
+                        View My Projects
+                      </button>
+                      <button onClick={() => setReqDone(false)}
+                        className="py-2.5 rounded-xl text-sm font-semibold text-[#5B6E88] dark:text-text-muted hover:text-[#0A1E3F] dark:hover:text-white transition-all">
+                        Submit Another Request
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Header */}
+                    <div>
+                      <h2 className="text-base font-bold text-[#0A1E3F] dark:text-white">New Project Request</h2>
+                      <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">Step {step} of 2</p>
+                      <div className="flex gap-1.5 mt-3">
+                        {[1,2].map(s => (
+                          <div key={s} className={`h-1 rounded-full flex-1 transition-all ${s<=step ? 'bg-primary dark:bg-primary-cyan' : 'bg-[#E8EFF8] dark:bg-navy-700'}`} />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Step 1 */}
+                    {step === 1 && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
+                            Project Name <span className="text-red-400">*</span>
+                          </label>
+                          <input type="text" value={reqForm.projectTitle}
+                            onChange={e => setReqForm(p=>({...p,projectTitle:e.target.value}))}
+                            placeholder="e.g. Restaurant POS System"
+                            autoFocus
+                            className={inputCls} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
+                            Type of Service <span className="text-red-400">*</span>
+                          </label>
+                          <select value={reqForm.serviceType}
+                            onChange={e => setReqForm(p=>({...p,serviceType:e.target.value}))}
+                            className={selectCls}>
+                            <option value="" disabled>Select a service...</option>
+                            {REQ_SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
+                            What do you need? <span className="text-red-400">*</span>
+                          </label>
+                          <textarea rows={5} value={reqForm.description}
+                            onChange={e => setReqForm(p=>({...p,description:e.target.value}))}
+                            placeholder="Describe your business and what you're trying to achieve..."
+                            className={inputCls + " resize-none"} />
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!reqForm.projectTitle.trim() || !reqForm.serviceType || !reqForm.description.trim()}
+                          onClick={() => setStep(2)}
+                          className="w-full py-3 rounded-xl text-sm font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                          Continue <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Step 2 */}
+                    {step === 2 && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Timeline</label>
+                            <select value={reqForm.timeline} onChange={e=>setReqForm(p=>({...p,timeline:e.target.value}))} className={selectCls}>
+                              <option value="">Not sure</option>
+                              {REQ_TIMELINES.map(t=><option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">Budget</label>
+                            <select value={reqForm.budget} onChange={e=>setReqForm(p=>({...p,budget:e.target.value}))} className={selectCls}>
+                              <option value="">Not sure</option>
+                              {REQ_BUDGETS.map(b=><option key={b} value={b}>{b}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
+                            Reference links <span className="text-[#8B9AAF] font-normal">(optional)</span>
+                          </label>
+                          <input type="text" value={reqForm.references}
+                            onChange={e=>setReqForm(p=>({...p,references:e.target.value}))}
+                            placeholder="e.g. https://example.com"
+                            className={inputCls} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#29405E] dark:text-text-light mb-1.5">
+                            Any other notes <span className="text-[#8B9AAF] font-normal">(optional)</span>
+                          </label>
+                          <textarea rows={3} value={reqForm.extraNotes}
+                            onChange={e=>setReqForm(p=>({...p,extraNotes:e.target.value}))}
+                            placeholder="Anything else we should know..."
+                            className={inputCls + " resize-none"} />
+                        </div>
+                        {reqError && (
+                          <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-600 dark:text-red-400">
+                            <AlertCircle className="w-4 h-4 shrink-0" /> {reqError}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setStep(1)}
+                            className="flex-1 py-3 rounded-xl text-sm font-semibold text-[#5B6E88] dark:text-text-muted bg-[#F4F8FC] dark:bg-navy-700 border border-[#E8EFF8] dark:border-surface-border hover:border-[#C8D8EE] transition-all">
+                            ← Back
+                          </button>
+                          <button type="button" disabled={reqSubmitting} onClick={handleReqSubmit}
+                            className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                            {reqSubmitting
+                              ? <><svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Sending...</>
+                              : <><Send className="w-4 h-4" /> Send Request</>
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
