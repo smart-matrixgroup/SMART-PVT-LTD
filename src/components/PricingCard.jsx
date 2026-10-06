@@ -4,7 +4,7 @@ import { Check, Sparkles, ArrowRight } from 'lucide-react';
 
 export default function PricingCard({ tier, onOpenQuote }) {
   return (
-    <div className={`glass-card rounded-3xl p-7 flex flex-col justify-between relative transition-all duration-300 ${
+    <div className={`glass-card rounded-3xl p-7 pt-8 flex flex-col justify-between relative transition-all duration-300 overflow-visible ${
       tier.highlight 
         ? 'border-2 border-primary-electric/70 shadow-glow-md bg-navy-900/90 dark:bg-navy-900/90 scale-100 lg:-translate-y-2' 
         : 'border border-surface-border bg-navy-900/80 dark:bg-navy-900/80 hover:border-surface-borderHighlight'
@@ -12,9 +12,9 @@ export default function PricingCard({ tier, onOpenQuote }) {
       
       {/* Popular Badge */}
       {tier.badge && (
-        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-          <span className="px-3.5 py-1 rounded-full text-[13px] font-bold uppercase tracking-wider text-white bg-gradient-to-r from-primary to-primary-electric shadow-glow-sm flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-cyan-200" />
+        <div className="absolute -top-4 left-0 right-0 flex justify-center pointer-events-none">
+          <span className="px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider text-white bg-gradient-to-r from-primary to-primary-electric shadow-glow-sm flex items-center gap-1 whitespace-nowrap">
+            <Sparkles className="w-3 h-3 text-cyan-200 shrink-0" />
             {tier.badge}
           </span>
         </div>

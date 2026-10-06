@@ -28,12 +28,12 @@ export default function PricingPage({ onOpenQuote, onOpenClientRequest }) {
 
       {/* 4 Pricing Cards Grid */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch pt-6">
           {pricingTiers.map((tier) => (
             <PricingCard 
               key={tier.id} 
               tier={tier} 
-              onOpenQuote={onOpenClientRequest}
+              onOpenQuote={onOpenQuote}
             />
           ))}
         </div>
@@ -50,7 +50,7 @@ export default function PricingPage({ onOpenQuote, onOpenClientRequest }) {
               </p>
             </div>
             <button
-              onClick={() => onOpenClientRequest()}
+              onClick={() => onOpenQuote("Add-On Services")}
               className="px-4 py-2 rounded-xl text-xs font-bold text-primary-cyan bg-primary/20 hover:bg-primary/30 border border-primary/30 self-start sm:self-auto"
             >
               Inquire Add-ons
