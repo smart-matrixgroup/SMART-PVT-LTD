@@ -7,6 +7,7 @@ import Footer from './components/Footer';
 import WhatsAppButton from './components/WhatsAppButton';
 import QuoteModal from './components/QuoteModal';
 import ClientRequestForm from './components/ClientRequestForm';
+import ErrorBoundary from './components/ErrorBoundary';
 
 import HomePage from './pages/HomePage';
 
@@ -24,6 +25,8 @@ const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
 const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
 const ERPApp              = lazy(() => import('./erp/ERPApp'));
+const StaffLoginPage      = lazy(() => import('./staff/StaffLoginPage'));
+const StaffPortalApp      = lazy(() => import('./staff/StaffPortalApp'));
 const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'));
 const TermsPage           = lazy(() => import('./pages/TermsPage'));
 const NotFoundPage        = lazy(() => import('./pages/NotFoundPage'));
@@ -64,6 +67,10 @@ function StandaloneRoutes() {
         } />
         <Route path="/admin-panel" element={
           <ProtectedRoute role="admin"><AdminPanelPage /></ProtectedRoute>
+        } />
+        <Route path="/staff-login" element={<StaffLoginPage />} />
+        <Route path="/staff-portal" element={
+          <ProtectedRoute role="staff" redirectTo="/staff-login"><StaffPortalApp /></ProtectedRoute>
         } />
         <Route path="*" element={<ERPFallback />} />
       </Routes>
@@ -123,7 +130,9 @@ function AppRouter() {
   const isStandalone =
     pathname.startsWith('/erp') ||
     pathname.startsWith('/client-dashboard') ||
-    pathname.startsWith('/admin-panel');
+    pathname.startsWith('/admin-panel') ||
+    pathname.startsWith('/staff-portal') ||
+    pathname.startsWith('/staff-login');
 
   return isStandalone ? <StandaloneRoutes /> : <WebsiteRoutes />;
 }
@@ -134,7 +143,11 @@ export default function App() {
       <Router>
         {/* Single AuthProvider at app root — shared across ALL routes */}
         <AuthProvider>
-          <AppRouter />
+          {/* Top-level error boundary: a crash in any route or form shows a
+              friendly reload panel instead of a blank page */}
+          <ErrorBoundary>
+            <AppRouter />
+          </ErrorBoundary>
         </AuthProvider>
       </Router>
     </ThemeProvider>
