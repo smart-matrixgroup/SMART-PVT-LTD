@@ -8,6 +8,7 @@ export const company = {
   description: "SMART Pvt Ltd is a technology and business solutions company providing software development, ERP & POS systems, website & mobile app development, along with accounting, tax and audit services — all under one roof.",
   mission: "To empower businesses with technology and professional services for a smarter future.",
   vision: "To be the most trusted and innovative business solutions provider in Sri Lanka and beyond.",
+  website: "https://smartpvtltd.com",
   values: "Integrity, Innovation, Client Success, Continuous Improvement.",
   
   // ⚠️ CONFIGURE_REAL_NUMBERS — these were placeholder marketing figures
@@ -56,6 +57,12 @@ export const company = {
     lightMode: "/logos/SMART_LOGO_LM_WTHOT_BG.png",
     headOnly: "/logos/SMART_LOGO_ONLY_HEAD.png",
     fullLight: "/logos/SMART_LOGO_LM.png",
+    // Admin / ERP brand mark — reuses the SAME public website logo files
+    // (single source of truth). Expanded sidebar: full dark-mode logo;
+    // collapsed sidebar / mobile drawer: head-only mark.
+    admin: "/logos/SMART_LOGO_DM_WTHOT_BG_1.png",
+    adminCollapsed: "/logos/SMART_LOGO_ONLY_HEAD.png",
+    adminFallback: "/logos/SMART_LOGO_DM_WTHOT_BG_1.png",
   },
 
   // 9-Step Delivery Standard — used by ProcessTimeline component in About page

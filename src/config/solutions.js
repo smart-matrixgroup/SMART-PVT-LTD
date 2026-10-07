@@ -17,7 +17,7 @@ export const solutions = [
       { title: "Recipe-Level Inventory Tracking", desc: "Deducts exact grams of cheese, meat, and sauce automatically upon each dish sold." },
       { title: "Split-Bill & Dynamic Tax Support", desc: "Instantly split checks by item or seat with automated service charge and VAT calculations." }
     ],
-    recommendedStack: ["SMARTORIX Restaurant ERP", "Thermal Printers", "Tablet Floor System", "WhatsApp Receipts"]
+    recommendedStack: ["SMART Restaurant ERP", "Thermal Printers", "Tablet Floor System", "WhatsApp Receipts"]
   },
   {
     id: "retail",
@@ -37,7 +37,7 @@ export const solutions = [
       { title: "Automated Reorder Thresholds", desc: "Generates supplier purchase orders automatically when stock drops below safety levels." },
       { title: "Customer Loyalty & WhatsApp Points", desc: "Track repeat customers with mobile-based loyalty points and digital promotions." }
     ],
-    recommendedStack: ["SMARTORIX Retail POS", "Barcode Terminals", "Central Cloud Database", "Supplier Portal"]
+    recommendedStack: ["SMART Retail POS", "Barcode Terminals", "Central Cloud Database", "Supplier Portal"]
   },
   {
     id: "sme",

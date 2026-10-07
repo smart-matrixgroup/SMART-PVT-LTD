@@ -11,15 +11,15 @@ export default function FAQAccordion({ items = [] }) {
     },
     {
       q: "What is the typical timeframe for a project?",
-      a: "Portfolio websites are delivered in 3-5 business days. Corporate business websites take 2-4 weeks. Complex custom software and multi-branch SMARTORIX ERP implementations range from 4-12 weeks based on scope."
+      a: "Portfolio websites are delivered in 3-5 business days. Corporate business websites take 2-4 weeks. Complex custom software and multi-branch SMART ERP implementations range from 4-12 weeks based on scope."
     },
     {
       q: "How does the LKR 15,000 Portfolio Website package work?",
       a: "It is our fixed starting package for professionals, freelancers, and executives. It includes a responsive single-page web portfolio, project gallery, contact capture, direct WhatsApp CTA, and free Firebase deployment."
     },
     {
-      q: "Can SMARTORIX ERP work if our internet disconnects?",
-      a: "Yes. SMARTORIX features local offline capability for POS billing and floor orders, syncing automatically with cloud databases once your connection is restored."
+      q: "Can SMART ERP work if our internet disconnects?",
+      a: "Yes. SMART ERP features local offline capability for POS billing and floor orders, syncing automatically with cloud databases once your connection is restored."
     },
     {
       q: "Do you provide accounting, tax, and audit compliance support?",

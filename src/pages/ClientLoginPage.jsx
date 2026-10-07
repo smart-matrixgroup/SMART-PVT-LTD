@@ -29,7 +29,11 @@ export default function ClientLoginPage({ onOpenQuote }) {
     setLoading(true);
     try {
       const result = await login(identifier.trim(), password);
-      navigate(result.role === 'admin' ? '/erp' : '/client-dashboard');
+      navigate(
+        result.role === 'admin'  ? '/erp'
+        : result.role === 'staff' ? '/staff-portal'
+        : '/client-dashboard'
+      );
     } catch (err) {
       setError('Invalid email or password. Please try again.');
     } finally {

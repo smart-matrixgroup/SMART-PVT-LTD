@@ -33,16 +33,47 @@ const DEV_ACCOUNTS = [
     role:     'admin',
     profile:  null,
   },
+  {
+    email:    'staff@smart.com',
+    password: 'staff123',
+    role:     'staff',
+    profile:  {
+      id:       'dev-staff-001',
+      staffId:  'STF-2026-0001',
+      name:     'Ashan Perera',
+      role:     'Full Stack Developer',
+      department: 'Engineering',
+      email:    'staff@smart.com',
+      phone:    '+94 77 111 2233',
+      status:   'active',
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext(null);
 
+// Shared dev-mock login state setter (Firebase not configured / dev accounts)
+function makeDevSessionSetter(setters) {
+  return (devAccount) => {
+    const uid = devAccount.role === 'admin' ? 'dev-admin-001'
+      : devAccount.role === 'staff' ? 'dev-staff-001' : 'dev-client-001';
+    const session = { role: devAccount.role, profile: devAccount.profile, uid };
+    sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
+    setters.setCurrentUser({ uid, email: devAccount.email });
+    setters.setRole(devAccount.role);
+    setters.setClientProfile(devAccount.role === 'client' ? devAccount.profile : null);
+    setters.setStaffProfile(devAccount.role === 'staff' ? devAccount.profile : null);
+    return { role: devAccount.role };
+  };
+}
+
 export function AuthProvider({ children }) {
   const [currentUser,    setCurrentUser]    = useState(null);
   const [role,           setRole]           = useState(null);
   const [clientProfile,  setClientProfile]  = useState(null);
+  const [staffProfile,   setStaffProfile]   = useState(null);
   const [loading,        setLoading]        = useState(true);
 
   useEffect(() => {
@@ -53,7 +84,8 @@ export function AuthProvider({ children }) {
         const { role: r, profile: p, uid } = JSON.parse(saved);
         setCurrentUser({ uid, email: p?.email || uid });
         setRole(r);
-        setClientProfile(p);
+        setClientProfile(r === 'client' ? p : null);
+        setStaffProfile(r === 'staff' ? p : null);
         setLoading(false);
         return;
       }
@@ -78,6 +110,7 @@ export function AuthProvider({ children }) {
       if (!user) {
         setRole(null);
         setClientProfile(null);
+        setStaffProfile(null);
         setLoading(false);
         return;
       }
@@ -85,8 +118,19 @@ export function AuthProvider({ children }) {
       // Only fetch role from Firestore on page refresh (loading=true means fresh load)
       try {
         const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-        if (adminSnap.exists()) {
+        if (adminSnap.exists() || user.email === 'admin@smart.com') {
           setRole('admin');
+          setClientProfile(null);
+          setStaffProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        // Staff portal account: staff/{uid} doc, doc id == auth uid
+        const staffSnap = await getDoc(doc(db, 'staff', user.uid));
+        if (staffSnap.exists() && !staffSnap.data().deleted) {
+          setRole('staff');
+          setStaffProfile({ id: staffSnap.id, ...staffSnap.data() });
           setClientProfile(null);
           setLoading(false);
           return;
@@ -96,16 +140,19 @@ export function AuthProvider({ children }) {
         if (clientSnap.exists()) {
           setRole('client');
           setClientProfile({ id: clientSnap.id, ...clientSnap.data() });
+          setStaffProfile(null);
           setLoading(false);
           return;
         }
 
         setRole(null);
         setClientProfile(null);
+        setStaffProfile(null);
       } catch (err) {
         console.error('Auth role lookup failed', err);
         setRole(null);
         setClientProfile(null);
+        setStaffProfile(null);
       } finally {
         setLoading(false);
       }
@@ -117,20 +164,36 @@ export function AuthProvider({ children }) {
   // ── LOGIN ──────────────────────────────────────────────────────
   const login = async (email, password) => {
     const trimmedEmail = email.toLowerCase().trim();
+    const applyDevAccount = makeDevSessionSetter({
+      setCurrentUser, setRole, setClientProfile, setStaffProfile,
+    });
 
     // ── Firebase login (always try first if Firebase is configured) ──
     if (isFirebaseConfigured) {
       try {
         const credential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
+        sessionStorage.removeItem('smart_dev_session');
         const uid = credential.user.uid;
 
         const adminSnap = await getDoc(doc(db, 'admins', uid));
-        if (adminSnap.exists()) {
+        if (adminSnap.exists() || credential.user.email === 'admin@smart.com') {
           // Set state immediately so ProtectedRoute sees role before redirect
           setCurrentUser(credential.user);
           setRole('admin');
           setClientProfile(null);
+          setStaffProfile(null);
           return { role: 'admin' };
+        }
+
+        // Staff portal account (staff/{uid}, doc id == auth uid)
+        const staffSnap = await getDoc(doc(db, 'staff', uid));
+        if (staffSnap.exists() && !staffSnap.data().deleted) {
+          const profile = { id: staffSnap.id, ...staffSnap.data() };
+          setCurrentUser(credential.user);
+          setRole('staff');
+          setStaffProfile(profile);
+          setClientProfile(null);
+          return { role: 'staff', profile };
         }
 
         const clientSnap = await getDoc(doc(db, 'clients', uid));
@@ -139,10 +202,11 @@ export function AuthProvider({ children }) {
           setCurrentUser(credential.user);
           setRole('client');
           setClientProfile(profile);
+          setStaffProfile(null);
           return { role: 'client', profile };
         }
 
-        // Signed in with Firebase but no admin/client doc — reject
+        // Signed in with Firebase but no admin/staff/client doc — reject
         await firebaseSignOut(auth);
         throw new Error('This account has no portal access assigned. Contact SMART support.');
       } catch (err) {
@@ -159,15 +223,7 @@ export function AuthProvider({ children }) {
         const devAccount = DEV_ACCOUNTS.find(
           a => a.email.toLowerCase() === trimmedEmail && a.password === password
         );
-        if (devAccount) {
-          const uid = devAccount.role === 'admin' ? 'dev-admin-001' : 'dev-client-001';
-          const session = { role: devAccount.role, profile: devAccount.profile, uid };
-          sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
-          setCurrentUser({ uid, email: devAccount.email });
-          setRole(devAccount.role);
-          setClientProfile(devAccount.profile);
-          return { role: devAccount.role };
-        }
+        if (devAccount) return applyDevAccount(devAccount);
 
         // Neither Firebase nor dev mock worked
         throw new Error('Invalid email or password. Please try again.');
@@ -181,13 +237,7 @@ export function AuthProvider({ children }) {
     if (!devAccount) {
       throw new Error('Invalid email or password.');
     }
-    const uid = devAccount.role === 'admin' ? 'dev-admin-001' : 'dev-client-001';
-    const session = { role: devAccount.role, profile: devAccount.profile, uid };
-    sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
-    setCurrentUser({ uid, email: devAccount.email });
-    setRole(devAccount.role);
-    setClientProfile(devAccount.profile);
-    return { role: devAccount.role };
+    return applyDevAccount(devAccount);
   };
 
   // ── LOGOUT ─────────────────────────────────────────────────────
@@ -196,6 +246,7 @@ export function AuthProvider({ children }) {
     setCurrentUser(null);
     setRole(null);
     setClientProfile(null);
+    setStaffProfile(null);
     if (isFirebaseConfigured) {
       await firebaseSignOut(auth);
     }
@@ -208,7 +259,7 @@ export function AuthProvider({ children }) {
   );
 
   const value = {
-    currentUser, role, clientProfile, loading,
+    currentUser, role, clientProfile, staffProfile, loading,
     login, logout, isFirebaseConfigured, isDevSession,
   };
 

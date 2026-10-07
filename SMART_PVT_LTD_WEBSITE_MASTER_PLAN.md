@@ -299,7 +299,7 @@ Use the supplied service-card visual direction.
 
 ## Core Services
 
-### 01 --- SMARTORIX ERP with POS
+### 01 --- SMART ERP with POS
 
 **Starting / subscription pricing:** Configure from the official current
 price list.
@@ -1501,7 +1501,7 @@ Hi SMART Pvt Ltd, I would like to discuss a custom software requirement.
 For ERP:
 
 ``` text
-Hi SMART Pvt Ltd, I would like to know more about SMARTORIX ERP.
+Hi SMART Pvt Ltd, I would like to know more about SMART ERP.
 ```
 
 Use configurable message templates.
@@ -1792,7 +1792,7 @@ About SMART
 ↓
 Core Services
 ↓
-SMARTORIX ERP Highlight
+SMART ERP Highlight
 ↓
 Custom Software Highlight
 ↓
@@ -1821,7 +1821,7 @@ Footer
 
 ------------------------------------------------------------------------
 
-# 49. SMARTORIX ERP Highlight
+# 49. SMART ERP Highlight
 
 Create a large premium feature block.
 
@@ -1846,7 +1846,7 @@ Settings
 
 CTA:
 
-**Explore SMARTORIX**
+**Explore SMART ERP**
 
 Secondary:
 

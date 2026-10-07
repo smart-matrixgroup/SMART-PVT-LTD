@@ -11,11 +11,50 @@ export default function Footer({ onOpenQuote }) {
   const { isDark } = useTheme();
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subError, setSubError] = useState('');
 
-  const handleSubscribe = (e) => {
+  // Newsletter signups are saved as leads (source: "Newsletter") so they
+  // appear in the ERP Leads page like every other website submission.
+  const handleSubscribe = async (e) => {
     e.preventDefault();
-    if (email) {
+    setSubError('');
+    const emailTrimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      setSubError('Please enter a valid email address.');
+      return;
+    }
+    setSubscribing(true);
+    try {
+      // Dynamic import: the footer renders on every page, so the Firestore
+      // SDK is only pulled in when someone actually subscribes.
+      const [{ collection, addDoc, serverTimestamp }, { db, isFirebaseConfigured }] = await Promise.all([
+        import('firebase/firestore'),
+        import('../config/firebase'),
+      ]);
+      if (!isFirebaseConfigured) {
+        setSubError('Our newsletter service is temporarily unavailable. Please try again later.');
+        return;
+      }
+      await addDoc(collection(db, 'leads'), {
+        type:      'website_form',
+        leadId:    `WEB-${Date.now().toString(36).toUpperCase()}`,
+        status:    'New',
+        createdAt: serverTimestamp(),
+        name:      emailTrimmed.split('@')[0], // real subscriber, derived from their own email
+        email:     emailTrimmed,
+        service:   'Newsletter Subscription',
+        message:   'Newsletter subscription from the website footer.',
+        source:    'Newsletter',
+        page:      'footer',
+      });
       setSubscribed(true);
+      setEmail('');
+    } catch (err) {
+      console.error('Newsletter subscribe error:', err);
+      setSubError("Couldn't subscribe right now — please try again in a moment.");
+    } finally {
+      setSubscribing(false);
     }
   };
 
@@ -112,21 +151,25 @@ export default function Footer({ onOpenQuote }) {
               </p>
 
               {!subscribed ? (
-                <form onSubmit={handleSubscribe} className="flex items-center gap-2">
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    className="w-full rounded-lg border border-[#2A5884] bg-[#0A2343] px-3 py-2.5 text-xs text-white placeholder:text-[#7493B5] focus:border-[#71B2FF] focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-[#2A7BE4] px-3.5 py-2.5 text-xs font-bold text-white transition-colors hover:bg-[#4A99FF]"
-                  >
-                    Subscribe
-                  </button>
+                <form onSubmit={handleSubscribe} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email"
+                      className="w-full rounded-lg border border-[#2A5884] bg-[#0A2343] px-3 py-2.5 text-xs text-white placeholder:text-[#7493B5] focus:border-[#71B2FF] focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={subscribing}
+                      className="rounded-lg bg-[#2A7BE4] px-3.5 py-2.5 text-xs font-bold text-white transition-colors hover:bg-[#4A99FF] disabled:opacity-60"
+                    >
+                      {subscribing ? '...' : 'Subscribe'}
+                    </button>
+                  </div>
+                  {subError && <p className="text-[11px] text-amber-300">{subError}</p>}
                 </form>
               ) : (
                 <div className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 p-2.5 text-xs font-semibold text-emerald-300">

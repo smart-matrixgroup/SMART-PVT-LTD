@@ -1,0 +1,14 @@
+You are working on SMART Pvt Ltd Website + ERP (Admin Panel, Staff Portal, Client Portal).
+
+RULES:
+- First scan the existing codebase (stack, folder structure, DB, auth) and follow its existing patterns. Do not change the tech stack.
+- Make minimal, targeted changes. Do not rewrite working code.
+- Keep replies SHORT. No long explanations. After each task give only: Done / Files changed / How to test.
+- All data must be saved in the database. No dummy/hardcoded data.
+- Never hard-delete records that have related quotations/projects/payments. Use soft delete (is_deleted/status) or block delete with a clear message. Always show a confirmation dialog before delete.
+- Role-based access: Admin, Staff, Client. A client can only see their own data. A staff can only see their own private data. Enforce this in backend queries, not just the UI.
+- Money: LKR, store as integers or decimals, never floats. Balance = Total - sum(payments). Status auto-updates from payments.
+- Every payment must auto-generate a Receipt with a unique receipt number.
+- No separate Invoice module. Quotation holds payment info.
+- All pages responsive (mobile + desktop), with loading, empty, and error states. No blank pages.
+- If something is unclear, make a reasonable assumption and list it at the end. Do not stop to ask.

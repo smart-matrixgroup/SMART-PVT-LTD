@@ -13,7 +13,7 @@ export const insights = [
       "1. Real-Time Inventory Depletion: When a customer orders a pizza or a carton of milk, your inventory ledger should deduct the relevant items and raw ingredients immediately.",
       "2. Offline-First Resilience: Power and internet outages happen. Your POS must be capable of processing transactions locally and syncing with the central database when connectivity resumes.",
       "3. Unified Staff and Cash Drawer Controls: Shift-end discrepancies can be eliminated by requiring waiter PIN sign-ins and automated cash float reconciliations.",
-      "At SMART Pvt Ltd, we engineered SMARTORIX to tackle exactly these challenges—giving business owners real-time control from any device, anywhere."
+      "At SMART Pvt Ltd, we engineered SMART ERP to tackle exactly these challenges—giving business owners real-time control from any device, anywhere."
     ]
   },
   {

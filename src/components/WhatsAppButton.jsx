@@ -13,7 +13,7 @@ export default function WhatsAppButton() {
       return "Hi SMART Pvt Ltd, I am interested in your Portfolio Website (LKR 15,000 package).";
     }
     if (path.includes('erp-pos')) {
-      return "Hi SMART Pvt Ltd, I would like to schedule a demo for SMARTORIX ERP with POS.";
+      return "Hi SMART Pvt Ltd, I would like to schedule a demo for SMART ERP with POS.";
     }
     if (path.includes('custom-software')) {
       return "Hi SMART Pvt Ltd, I would like to discuss a custom business software requirement.";

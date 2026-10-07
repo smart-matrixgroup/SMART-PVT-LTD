@@ -17,16 +17,16 @@ export const projectCategories = [
 
 export const projects = [
   {
-    id: "smartorix-fnb",
-    slug: "smartorix-restaurant-pos",
-    name: "SMARTORIX Restaurant POS & Cloud ERP",
+    id: "smart-fnb",
+    slug: "smart-restaurant-pos",
+    name: "SMART Restaurant POS & Cloud ERP",
     category: "ERP & POS",
     clientType: "Hospitality & Restaurant Chain",
     status: "Production Ready",
     techStack: ["React", "Node.js", "PostgreSQL", "Tailwind CSS", "ESC/POS Thermal Engine"],
     tagline: "High-speed table ordering, instant KOT, and central multi-outlet inventory management.",
     challenge: "Traditional handwritten orders caused delayed kitchen prep, billing discrepancies during peak dinner hours, and unchecked raw ingredient wastage.",
-    solution: "Implemented SMARTORIX with tablet-based floor ordering, automatic kitchen display routing, split billing, and real-time recipe-based ingredient depletion tracking.",
+    solution: "Implemented SMART ERP with tablet-based floor ordering, automatic kitchen display routing, split billing, and real-time recipe-based ingredient depletion tracking.",
     results: [
       "Order-to-table delivery time reduced by 35%",
       "Eliminated billing mistakes and cash mismatch at shift close",

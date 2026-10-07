@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -26,7 +26,7 @@ const MILESTONES = ['Advance Payment','Discovery & Blueprint','Design Complete',
 
 export default function ERPInvoices() {
   const { isDevSession } = useAuth();
-  const [invoices,   setInvoices]   = useState(DEV_INVOICES);
+  const [invoices,   setInvoices]   = useState([]);
   const [filter,     setFilter]     = useState('All');
   const [showCreate, setShowCreate] = useState(false);
   const [markPaidId, setMarkPaidId] = useState(null);

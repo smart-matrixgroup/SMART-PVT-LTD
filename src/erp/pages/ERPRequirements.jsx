@@ -1,6 +1,7 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  collection, query, orderBy, onSnapshot,
+  collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc, serverTimestamp
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
@@ -10,10 +11,11 @@ import {
   ERPModal, ERPInput, ERPSelect, ERPEmpty,
   ERPAvatar, C
 } from '../components/ERPui';
+import { REQUIREMENT_TEMPLATE_SEEDS, seedId } from '../data/seedTemplates';
 import {
   Plus, Trash2, Send, Eye, CheckCircle2,
-  GripVertical, ChevronDown, ChevronUp,
-  FileText, Image, Upload, Type, List,
+  ChevronDown, ChevronUp,
+  Upload, Type, List,
   ToggleLeft, AlignLeft, Hash
 } from 'lucide-react';
 
@@ -38,7 +40,23 @@ const FILE_ACCEPTS = {
   'all_docs': 'PDF, Word, Excel',
 };
 
-const CLIENTS = [
+// ── Timestamp helpers (client-side sort, no orderBy in listeners) ─
+const toMs = (t) => {
+  if (!t) return 0;
+  if (typeof t === 'number') return t;
+  if (typeof t === 'string') { const n = Date.parse(t); return Number.isNaN(n) ? 0 : n; }
+  if (typeof t === 'object') {
+    if (typeof t.toDate === 'function') return t.toDate().getTime();
+    if (typeof t.seconds === 'number') return t.seconds * 1000;
+  }
+  return 0;
+};
+const fmtMs = (ms) => ms
+  ? new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  : '';
+
+// ── Dev-mode data (only when Firebase is off / dev session) ───────
+const DEV_CLIENTS = [
   { id:'C001', name:'John Perera',    company:'Perera Holdings' },
   { id:'C002', name:'Sarah Fernando', company:'Mehala Restaurant' },
   { id:'C003', name:'Kumar Arasan',   company:'KA Retail' },
@@ -46,7 +64,8 @@ const CLIENTS = [
   { id:'C005', name:'Dilan Perera',   company:'DP Constructions' },
 ];
 
-// ── Built-in form templates ───────────────────────────────────────
+// ── Built-in form templates (question-forms, separate from the
+//    per-service document checklist templates in ERPTemplates) ─────
 const TEMPLATES = {
   'Website': {
     label: 'Website Requirements',
@@ -110,6 +129,7 @@ const TEMPLATES = {
     ]
   },
 };
+const findFormTpl = (name) => TEMPLATES[name] || Object.values(TEMPLATES).find(t => t.label === name);
 
 const DEV_SENT_FORMS = [
   { id:'F001', clientId:'C001', clientName:'John Perera',    formType:'Website',      status:'filled',   sentAt:'Oct 1, 2026',  filledAt:'Oct 2, 2026', isCustom:false },
@@ -117,32 +137,188 @@ const DEV_SENT_FORMS = [
   { id:'F003', clientId:'C004', clientName:'Priya Nair',     formType:'Bank Statement',status:'reviewed', sentAt:'Sep 25, 2026', filledAt:'Sep 26, 2026',isCustom:false },
 ];
 
+const DEV_CUSTOM_FORMS = [
+  { id:'CF1', kind:'custom', name:'Interior Design Brief', createdAt:'Sep 28, 2026', isCustom:true, fields:[
+    { id:'cf1', type:'text',   label:'Property type', required:true, placeholder:'e.g. Apartment / House', options:[] },
+    { id:'cf2', type:'radio',  label:'Preferred style', required:true, options:['Modern','Minimal','Traditional'] },
+  ]},
+];
+
 const DEV_FILLED = {
   F001: { f1:['Home','About','Services','Contact'], f2:'Corporate', f3:'https://notion.so', f4:'Partially ready', f5:['Contact Form','WhatsApp Chat'], f6:'6 weeks', f7:'Match brand colors (navy + gold).' },
   F003: { f1:'HNB', f2:'Current Account', f3:'Jan 2024 – Dec 2024', f4:'Loan Application', f5:'12 months', f6:'[Bank Statement PDF uploaded]', f7:'Excel Report', f8:'Need monthly cash flow breakdown.' },
 };
+
+const DEV_REQS = [
+  { id:'RQ1', clientId:'C001', clientName:'John Perera', clientCompany:'Perera Holdings',
+    serviceName:'Website Development', status:'Collecting',
+    receivedCount:2, totalCount:4,
+    checklist:[
+      { id:'c1', label:'Client & company details (name, address, contacts)', received:true },
+      { id:'c2', label:'Logo file (vector/AI or high-res PNG preferred)',     received:true },
+      { id:'c3', label:'Website content — text for each page',                received:false },
+      { id:'c4', label:'Images / photos / brand media',                       received:false },
+    ],
+    createdAt:'Oct 5, 2026' },
+];
+
+// Seed fallback for the requirement-template picker (live mode uses the
+// 'requirementTemplates' collection once it has docs).
+const SEED_REQ_TPLS = REQUIREMENT_TEMPLATE_SEEDS.map(s => ({ id: seedId(s.serviceCode), ...s }));
+
+// ── Small shared UI bits ──────────────────────────────────────────
+const Spinner = () => (
+  <div style={{display:'flex',justifyContent:'center',padding:'36px 0'}}>
+    <div style={{width:26,height:26,borderRadius:'50%',border:`3px solid ${C.border}`,borderTopColor:C.blue,animation:'reqspin 0.8s linear infinite'}}/>
+    <style>{`@keyframes reqspin{to{transform:rotate(360deg)}}`}</style>
+  </div>
+);
+const ErrorBanner = ({ msg }) => (
+  <div style={{padding:'10px 14px',borderRadius:10,background:'rgba(240,90,103,0.1)',border:'1px solid rgba(240,90,103,0.45)',color:C.red,fontSize:12,fontWeight:600}}>
+    ⚠ {msg}
+  </div>
+);
 
 // ── Unique ID helper ──────────────────────────────────────────────
 const uid = () => `f${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 
 export default function ERPRequirements() {
   const { isDevSession } = useAuth();
-  const [view,        setView]        = useState('list');   // 'list' | 'builder' | 'templates'
-  const [sentForms,   setSentForms]   = useState(DEV_SENT_FORMS);
+  const live = isFirebaseConfigured && !isDevSession;
+  const navigate = useNavigate();
+
+  const [view,        setView]        = useState('reqs');   // 'reqs' | 'list' | 'builder' | 'templates'
+
+  // Data (live → hydrated from Firestore; dev → fixtures below)
+  const [clients,     setClients]     = useState(live ? [] : DEV_CLIENTS);
+  const [sentForms,   setSentForms]   = useState(live ? [] : DEV_SENT_FORMS);
+  const [savedForms,  setSavedForms]  = useState(live ? [] : DEV_CUSTOM_FORMS);
+  const [reqs,        setReqs]        = useState(live ? [] : DEV_REQS);
+  const [reqTpls,     setReqTpls]     = useState(SEED_REQ_TPLS);
+
+  const [formsLoaded, setFormsLoaded] = useState(!live);
+  const [reqsLoaded,  setReqsLoaded]  = useState(!live);
+  const [formsError,  setFormsError]  = useState(null);
+  const [reqsError,   setReqsError]   = useState(null);
+
+  // Requirement checklist state
+  const [showNewReq,  setShowNewReq]  = useState(false);
+  const [reqClientId, setReqClientId] = useState('');
+  const [reqTplId,    setReqTplId]    = useState('');
+  const [creatingReq, setCreatingReq] = useState(false);
+  const [delReq,      setDelReq]      = useState(null);
+
+  // Sent / custom forms state
   const [showFilled,  setShowFilled]  = useState(null);
   const [showSend,    setShowSend]    = useState(null);     // form/template to send
   const [sendClient,  setSendClient]  = useState('');
   const [sending,     setSending]     = useState(false);
   const [sentDone,    setSentDone]    = useState(false);
+  const [delForm,     setDelForm]     = useState(null);     // custom form pending delete
 
   // Form builder state
   const [formName,    setFormName]    = useState('');
   const [formFields,  setFormFields]  = useState([
     { id:uid(), type:'text',    label:'',   required:false, placeholder:'', options:[], fileAccept:'any', multiple:false },
   ]);
-  const [editingOption, setEditingOption] = useState(null); // { fieldIdx, optionIdx }
-  const [savedForms,  setSavedForms]  = useState([]);       // custom saved forms
-  const [editForm,    setEditForm]    = useState(null);     // form being edited
+  const [editForm,    setEditForm]    = useState(null);     // custom form being edited
+
+  // ── Firestore listeners (live only) ──────────────────────────────
+  useEffect(() => {
+    if (!live) return;
+    const unsubs = [];
+
+    // Requirement forms — one collection, split by kind ('sent' | 'custom').
+    unsubs.push(onSnapshot(collection(db, 'requirementForms'), snap => {
+      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      setSentForms(rows.filter(r => r.kind !== 'custom').sort((a,b) => toMs(b.createdAt) - toMs(a.createdAt)));
+      setSavedForms(rows.filter(r => r.kind === 'custom'));
+      setFormsLoaded(true); setFormsError(null);
+    }, e => { setFormsError(e.message || 'Failed to load forms'); setFormsLoaded(true); }));
+
+    // Client requirements (checklists copied from templates)
+    unsubs.push(onSnapshot(collection(db, 'requirements'), snap => {
+      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      setReqs(rows.sort((a,b) => toMs(b.createdAt) - toMs(a.createdAt)));
+      setReqsLoaded(true); setReqsError(null);
+    }, e => { setReqsError(e.message || 'Failed to load requirements'); setReqsLoaded(true); }));
+
+    // Clients (replaces the old hardcoded list)
+    unsubs.push(onSnapshot(collection(db, 'clients'), snap => {
+      setClients(snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a,b) => String(a.name||'').localeCompare(String(b.name||''))));
+    }, () => {}));
+
+    // Requirement templates — fall back to seeds until docs exist
+    unsubs.push(onSnapshot(collection(db, 'requirementTemplates'), snap => {
+      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if (rows.length) setReqTpls(rows);
+    }, () => {}));
+
+    return () => unsubs.forEach(u => u());
+  }, [live]);
+
+  // ── Requirement checklist handlers ───────────────────────────────
+  const openNewReq = () => { setReqClientId(''); setReqTplId(''); setShowNewReq(true); };
+
+  const handleCreateReq = async () => {
+    const client = clients.find(c => c.id === reqClientId);
+    const tpl    = reqTpls.find(t => t.id === reqTplId);
+    if (!client || !tpl) return;
+    setCreatingReq(true);
+    // COPY the template checklist into this record — later template edits
+    // never change records already created.
+    const checklist = (tpl.checklist || [])
+      .map(it => (typeof it === 'string' ? it : (it.label ?? String(it))))
+      .filter(Boolean)
+      .map(label => ({ id: uid(), label, received: false }));
+    const base = {
+      clientId:      client.id,
+      clientName:    client.name || '',
+      clientCompany: client.company || '',
+      serviceName:   tpl.serviceName || tpl.name || 'Service',
+      templateId:    tpl.id,
+      checklist,
+      receivedCount: 0,
+      totalCount:    checklist.length,
+      status:        'Collecting',
+    };
+    if (live) {
+      try { await addDoc(collection(db, 'requirements'), { ...base, createdAt: serverTimestamp() }); }
+      catch (e) { setReqsError(e.message || 'Failed to create requirement'); }
+    } else {
+      setReqs(p => [{ id:`RQ${Date.now()}`, ...base, createdAt:new Date().toISOString() }, ...p]);
+    }
+    setCreatingReq(false);
+    setShowNewReq(false);
+    setView('reqs');
+  };
+
+  const handleToggleItem = async (req, idx) => {
+    const checklist = (req.checklist || []).map((it, i) => i === idx ? { ...it, received: !it.received } : it);
+    const receivedCount = checklist.filter(i => i.received).length;
+    const patch = {
+      checklist,
+      receivedCount,
+      totalCount:   checklist.length,
+      status:       checklist.length > 0 && receivedCount >= checklist.length ? 'Complete' : 'Collecting',
+    };
+    setReqs(p => p.map(r => r.id === req.id ? { ...r, ...patch } : r));
+    if (live) {
+      try { await updateDoc(doc(db, 'requirements', req.id), patch); }
+      catch (e) { setReqsError(e.message || 'Failed to update checklist'); }
+    }
+  };
+
+  const handleDeleteReq = async (req) => {
+    if (live) {
+      try { await deleteDoc(doc(db, 'requirements', req.id)); }
+      catch (e) { setReqsError(e.message || 'Failed to delete requirement'); }
+    } else {
+      setReqs(p => p.filter(r => r.id !== req.id));
+    }
+    setDelReq(null);
+  };
 
   // ── Field helpers ────────────────────────────────────────────────
   const addField = () => setFormFields(p => [...p, { id:uid(), type:'text', label:'', required:false, placeholder:'', options:[], fileAccept:'any', multiple:false }]);
@@ -174,20 +350,30 @@ export default function ERPRequirements() {
     updateField(fieldIdx, 'options', opts);
   };
 
-  // ── Save custom form ─────────────────────────────────────────────
-  const handleSaveForm = () => {
+  // ── Save custom form (persisted to 'requirementForms' kind:'custom') ──
+  const handleSaveForm = async () => {
     if (!formName.trim() || formFields.some(f=>!f.label.trim())) return;
-    const form = {
-      id: editForm?.id || `CF${Date.now()}`,
-      name: formName.trim(),
-      fields: formFields,
+    const base = {
+      kind:      'custom',
+      name:      formName.trim(),
+      fields:    formFields,
       createdAt: new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
-      isCustom: true,
+      isCustom:  true,
     };
     if (editForm) {
-      setSavedForms(p=>p.map(f=>f.id===editForm.id?form:f));
+      if (live) {
+        try { await updateDoc(doc(db,'requirementForms',editForm.id), base); }
+        catch (e) { setFormsError(e.message || 'Failed to update form'); }
+      } else {
+        setSavedForms(p => p.map(f => f.id === editForm.id ? { ...f, ...base, id:f.id } : f));
+      }
     } else {
-      setSavedForms(p=>[...p, form]);
+      if (live) {
+        try { await addDoc(collection(db,'requirementForms'), base); }
+        catch (e) { setFormsError(e.message || 'Failed to save form'); }
+      } else {
+        setSavedForms(p => [...p, { ...base, id:`CF${Date.now()}` }]);
+      }
     }
     setView('list');
     setFormName('');
@@ -202,36 +388,57 @@ export default function ERPRequirements() {
     setView('builder');
   };
 
-  const handleDeleteForm = (formId) => {
-    setSavedForms(p=>p.filter(f=>f.id!==formId));
+  const handleDeleteForm = async (form) => {
+    if (live) {
+      try { await deleteDoc(doc(db,'requirementForms',form.id)); }
+      catch (e) { setFormsError(e.message || 'Failed to delete form'); }
+    } else {
+      setSavedForms(p => p.filter(f => f.id !== form.id));
+    }
+    setDelForm(null);
   };
 
-  // ── Send form ────────────────────────────────────────────────────
+  // ── Send form to client ──────────────────────────────────────────
+  // Fields are EMBEDDED into the sent doc: built-in templates live only in
+  // this file, and the client portal must be able to render + submit the
+  // form without ever reading the 'requirementTemplates' collection.
   const handleSend = async () => {
-    if (!sendClient||!showSend) return;
+    if (!sendClient || !showSend) return;
     setSending(true);
-    const client  = CLIENTS.find(c=>c.id===sendClient);
-    const newForm = {
-      id:         `F${Date.now()}`,
-      clientId:   sendClient,
-      clientName: client?.name||'',
-      formType:   showSend.name||showSend.label||showSend,
-      status:     'sent',
-      sentAt:     new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
-      filledAt:   null,
-      isCustom:   !!showSend.isCustom,
+    const client = clients.find(c => c.id === sendClient);
+    const formTypeLabel = showSend.name || showSend.label || String(showSend);
+    const fields = showSend.fields || findFormTpl(formTypeLabel)?.fields || [];
+    const base = {
+      kind:          'sent',
+      clientId:      sendClient,
+      clientName:    client?.name || '',
+      clientCompany: client?.company || '',
+      formType:      formTypeLabel,
+      fields,                             // snapshot — copied like checklist templates
+      status:        'sent',
+      sentAt:        new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+      filledAt:      null,
+      isCustom:      !!showSend.isCustom,
     };
-    if (isFirebaseConfigured && !isDevSession) {
-      try { await addDoc(collection(db,'requirementForms'),{...newForm,createdAt:serverTimestamp()}); } catch(e){console.error(e);}
+    if (live) {
+      try { await addDoc(collection(db,'requirementForms'), { ...base, createdAt: serverTimestamp() }); }
+      catch (e) { setFormsError(e.message || 'Failed to send form'); }
+    } else {
+      setSentForms(p => [{ id:`F${Date.now()}`, ...base }, ...p]);
     }
-    setSentForms(p=>[newForm,...p]);
     setSending(false);
     setSentDone(true);
   };
 
-  const handleMarkReviewed = (id) => setSentForms(p=>p.map(f=>f.id===id?{...f,status:'reviewed'}:f));
+  const handleMarkReviewed = async (form) => {
+    setSentForms(p => p.map(f => f.id === form.id ? { ...f, status:'reviewed' } : f));
+    if (live) {
+      try { await updateDoc(doc(db,'requirementForms',form.id), { status:'reviewed', reviewedAt: serverTimestamp() }); }
+      catch (e) { setFormsError(e.message || 'Failed to update form'); }
+    }
+  };
 
-  // ── Load template into builder ───────────────────────────────────
+  // ── Load form template into builder ──────────────────────────────
   const loadTemplate = (key) => {
     const tpl = TEMPLATES[key];
     setFormName(tpl.label);
@@ -243,12 +450,15 @@ export default function ERPRequirements() {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
+      <style>{`@media (max-width:1100px){.req-split{grid-template-columns:1fr !important}.req-sticky{position:static !important}}`}</style>
+
       {/* Top bar */}
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
         {/* View tabs */}
         {[
+          {id:'reqs',      label:'Client Requirements'},
           {id:'list',      label:'Sent Forms'},
-          {id:'templates', label:'Templates'},
+          {id:'templates', label:'Form Templates'},
           {id:'builder',   label:'Form Builder'},
         ].map(t=>(
           <button key={t.id} onClick={()=>setView(t.id)} style={{
@@ -263,10 +473,109 @@ export default function ERPRequirements() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════
+          CLIENT REQUIREMENTS (checklists copied from templates)
+      ══════════════════════════════════════════════════════════ */}
+      {view === 'reqs' && (
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <ERPPanel>
+            <div style={{padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:800,color:C.text}}>Client Requirements</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                  Document checklists copied from each service's template — track every item as received or pending.
+                </div>
+              </div>
+              <ERPBtn variant="primary" onClick={openNewReq}>
+                <Plus size={13}/> New Requirement
+              </ERPBtn>
+            </div>
+          </ERPPanel>
+
+          {reqsError && <ErrorBanner msg={reqsError} />}
+
+          {!reqsLoaded ? (
+            <ERPPanel><Spinner/></ERPPanel>
+          ) : reqs.length === 0 ? (
+            <ERPPanel><ERPEmpty icon="📋" title="No client requirements yet" sub='Click "New Requirement" to copy a service checklist for a client.'/></ERPPanel>
+          ) : reqs.map(req => {
+            const checklist = req.checklist || [];
+            const received  = req.receivedCount ?? checklist.filter(i=>i.received).length;
+            const total     = req.totalCount || checklist.length;
+            const pct       = total > 0 ? Math.round(received/total*100) : 0;
+            const done      = total > 0 && received >= total;
+            return (
+              <ERPPanel key={req.id}>
+                <div style={{padding:'16px 20px',display:'flex',flexDirection:'column',gap:12}}>
+                  {/* Header row */}
+                  <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                    <ERPAvatar name={req.clientName||'?'} color={C.blue} size={38}/>
+                    <div style={{flex:1,minWidth:180}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:13,fontWeight:800,color:C.text}}>{req.clientName}</span>
+                        <span style={{fontSize:11,color:C.muted}}>{req.clientCompany}</span>
+                        <ERPBadge status={done?'Completed':'In Progress'} label={done?'Complete':'Collecting'}/>
+                      </div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>
+                        📄 {req.serviceName}
+                        <span style={{marginLeft:12}}>Created {fmtMs(toMs(req.createdAt)) || '—'}</span>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:12,fontWeight:800,color:done?C.green:C.amber}}>
+                        {received}/{total} received
+                      </span>
+                      <ERPBtn size="sm" variant="danger" onClick={()=>setDelReq(req)} title="Delete requirement">
+                        <Trash2 size={12}/>
+                      </ERPBtn>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{height:6,borderRadius:6,background:'rgba(10,24,56,0.6)',overflow:'hidden'}}>
+                    <div style={{
+                      height:'100%',width:`${pct}%`,borderRadius:6,transition:'width 0.25s',
+                      background:done?'linear-gradient(90deg,#18C77A,#2EE6A0)':'linear-gradient(90deg,#0066FF,#1787FF)',
+                    }}/>
+                  </div>
+
+                  {/* Checklist items — tap to toggle received/pending */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8}}>
+                    {checklist.map((item,i)=>(
+                      <button key={item.id||i} onClick={()=>handleToggleItem(req,i)}
+                        title={item.received?'Mark as pending':'Mark as received'}
+                        style={{
+                          display:'flex',alignItems:'center',gap:9,padding:'9px 12px',borderRadius:10,
+                          textAlign:'left',cursor:'pointer',transition:'all 0.15s',
+                          background:item.received?'rgba(24,199,122,0.08)':'rgba(10,24,56,0.5)',
+                          border:`1px solid ${item.received?'rgba(24,199,122,0.35)':`${C.border}30`}`,
+                        }}>
+                        {item.received ? (
+                          <CheckCircle2 size={15} style={{color:C.green,flexShrink:0}}/>
+                        ) : (
+                          <span style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${C.muted}`,flexShrink:0}}/>
+                        )}
+                        <span style={{
+                          fontSize:12,fontWeight:item.received?700:500,
+                          color:item.received?C.green:C.subtle,
+                          textDecoration:item.received?'line-through':'none',
+                        }}>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </ERPPanel>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
           SENT FORMS LIST
       ══════════════════════════════════════════════════════════ */}
       {view === 'list' && (
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {formsError && <ErrorBanner msg={formsError} />}
+
           {/* Custom saved forms */}
           {savedForms.length > 0 && (
             <ERPPanel>
@@ -280,14 +589,14 @@ export default function ERPRequirements() {
                     <div style={{width:36,height:36,borderRadius:10,background:'rgba(0,102,255,0.12)',border:`1px solid ${C.borderHi}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>📝</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:700,color:C.text}}>{form.name}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{form.fields.length} fields · Created {form.createdAt}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{(form.fields||[]).length} fields · Created {form.createdAt || fmtMs(toMs(form.createdAt))}</div>
                     </div>
                     <div style={{display:'flex',gap:8}}>
                       <ERPBtn size="sm" variant="primary" onClick={()=>{setShowSend(form);setSendClient('');setSentDone(false);}}>
                         <Send size={11}/> Send
                       </ERPBtn>
                       <ERPBtn size="sm" variant="secondary" onClick={()=>handleEditForm(form)}>Edit</ERPBtn>
-                      <ERPBtn size="sm" variant="danger" onClick={()=>handleDeleteForm(form.id)}>
+                      <ERPBtn size="sm" variant="danger" onClick={()=>setDelForm(form)}>
                         <Trash2 size={11}/>
                       </ERPBtn>
                     </div>
@@ -298,20 +607,22 @@ export default function ERPRequirements() {
           )}
 
           {/* Sent forms */}
-          {sentForms.length === 0 ? (
-            <ERPEmpty icon="📋" title="No forms sent yet" sub='Click "Templates" to pick a built-in form, or "Form Builder" to create a custom one.' />
-          ) : sentForms.map((form,i)=>{
+          {!formsLoaded ? (
+            <ERPPanel><Spinner/></ERPPanel>
+          ) : sentForms.length === 0 ? (
+            <ERPEmpty icon="📋" title="No forms sent yet" sub='Click "Form Templates" to pick a built-in form, or "Form Builder" to create a custom one.' />
+          ) : sentForms.map(form=>{
             const isTemplate = !form.isCustom;
-            const tpl  = isTemplate ? TEMPLATES[form.formType] : null;
+            const tpl  = isTemplate ? findFormTpl(form.formType) : null;
             return (
               <ERPPanel key={form.id}>
-                <div style={{padding:'16px 20px',display:'flex',alignItems:'center',gap:14}}>
+                <div style={{padding:'16px 20px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                   <div style={{
                     width:44,height:44,borderRadius:12,flexShrink:0,
                     background:'rgba(0,102,255,0.1)',border:`1px solid ${C.borderHi}`,
                     display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,
                   }}>{tpl?.icon||'📝'}</div>
-                  <div style={{flex:1,minWidth:0}}>
+                  <div style={{flex:1,minWidth:200}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                       <span style={{fontSize:13,fontWeight:800,color:C.text}}>{tpl?.label||form.formType}</span>
                       <ERPBadge
@@ -322,18 +633,18 @@ export default function ERPRequirements() {
                     </div>
                     <div style={{fontSize:11,color:C.muted,marginTop:3}}>
                       Client: <strong style={{color:C.subtle}}>{form.clientName}</strong>
-                      <span style={{marginLeft:16}}>Sent: {form.sentAt}</span>
+                      <span style={{marginLeft:16}}>Sent: {form.sentAt || fmtMs(toMs(form.createdAt))}</span>
                       {form.filledAt&&<span style={{marginLeft:16,color:C.green}}>Filled: {form.filledAt}</span>}
                     </div>
                   </div>
-                  <div style={{display:'flex',gap:8,flexShrink:0}}>
+                  <div style={{display:'flex',gap:8,flexShrink:0,flexWrap:'wrap'}}>
                     {(form.status==='filled'||form.status==='reviewed') && (
                       <ERPBtn size="sm" variant="secondary" onClick={()=>setShowFilled(form)}>
                         <Eye size={12}/> View Response
                       </ERPBtn>
                     )}
                     {form.status==='filled' && (
-                      <ERPBtn size="sm" variant="success" onClick={()=>handleMarkReviewed(form.id)}>
+                      <ERPBtn size="sm" variant="success" onClick={()=>handleMarkReviewed(form)}>
                         <CheckCircle2 size={12}/> Reviewed
                       </ERPBtn>
                     )}
@@ -352,7 +663,7 @@ export default function ERPRequirements() {
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          TEMPLATES
+          FORM TEMPLATES (question-form templates)
       ══════════════════════════════════════════════════════════ */}
       {view === 'templates' && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
@@ -368,7 +679,7 @@ export default function ERPRequirements() {
               <div style={{fontSize:28,marginBottom:10}}>{tpl.icon}</div>
               <div style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:4}}>{tpl.label}</div>
               <div style={{fontSize:11,color:C.muted,marginBottom:14}}>{tpl.fields.length} questions · Includes {tpl.fields.filter(f=>f.type==='file').length > 0 ? 'file upload' : 'text & choice fields'}</div>
-              <div style={{display:'flex',gap:8}}>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <ERPBtn size="sm" variant="primary" onClick={()=>{setShowSend({...tpl,name:tpl.label});setSendClient('');setSentDone(false);}}>
                   <Send size={11}/> Send to Client
                 </ERPBtn>
@@ -385,7 +696,7 @@ export default function ERPRequirements() {
           FORM BUILDER
       ══════════════════════════════════════════════════════════ */}
       {view === 'builder' && (
-        <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:16,alignItems:'start'}}>
+        <div className="req-split" style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:16,alignItems:'start'}}>
 
           {/* Builder canvas */}
           <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -544,7 +855,7 @@ export default function ERPRequirements() {
             ))}
 
             {/* Add field + Save */}
-            <div style={{display:'flex',gap:10}}>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
               <ERPBtn variant="secondary" onClick={addField} style={{flex:1,justifyContent:'center'}}>
                 <Plus size={13}/> Add Field
               </ERPBtn>
@@ -557,7 +868,7 @@ export default function ERPRequirements() {
           </div>
 
           {/* Preview panel */}
-          <ERPPanel style={{position:'sticky',top:0}}>
+          <ERPPanel className="req-sticky" style={{position:'sticky',top:0}}>
             <ERPPanelHeader title="Preview" icon="👁️" />
             <div style={{padding:16,maxHeight:600,overflowY:'auto'}}>
               <div style={{fontSize:11,color:C.muted,marginBottom:12}}>Client will see this form:</div>
@@ -605,11 +916,77 @@ export default function ERPRequirements() {
         </div>
       )}
 
+      {/* ── NEW CLIENT REQUIREMENT MODAL ── */}
+      <ERPModal isOpen={showNewReq} onClose={()=>setShowNewReq(false)} title="New Client Requirement" width={460}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <ERPSelect label="Client" value={reqClientId} onChange={e=>setReqClientId(e.target.value)}
+            placeholder="Select client..." required
+            options={clients.map(c=>({value:c.id,label:`${c.name}${c.company?` — ${c.company}`:''}`}))} />
+          <ERPSelect label="Service / Requirement Template" value={reqTplId} onChange={e=>setReqTplId(e.target.value)}
+            placeholder="Select service template..." required
+            options={reqTpls.map(t=>({value:t.id,label:t.serviceName||t.name||t.id}))} />
+          {reqTpls.find(t=>t.id===reqTplId) && (() => {
+            const tpl = reqTpls.find(t=>t.id===reqTplId);
+            const items = (tpl.checklist||[]).map(c => typeof c==='string' ? c : (c.label??'')).filter(Boolean);
+            return (
+              <div style={{padding:'10px 14px',borderRadius:10,background:'rgba(10,24,56,0.6)',border:`1px solid ${C.border}40`}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.subtle,marginBottom:6}}>📋 Document checklist ({items.length} items)</div>
+                {items.slice(0,4).map((c,i)=>(
+                  <div key={i} style={{fontSize:11,color:C.muted,padding:'2px 0'}}>• {c}</div>
+                ))}
+                {items.length>4 && <div style={{fontSize:10,color:C.muted,fontStyle:'italic',marginTop:3}}>+ {items.length-4} more…</div>}
+              </div>
+            );
+          })()}
+          <div style={{fontSize:11,color:C.cyan,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`,borderRadius:10,padding:'9px 12px'}}>
+            ℹ️ The checklist is <strong>copied</strong> into this requirement — later edits to the template will not change this record.
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <ERPBtn variant="secondary" onClick={()=>setShowNewReq(false)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" disabled={!reqClientId||!reqTplId||creatingReq} onClick={handleCreateReq} style={{flex:1,justifyContent:'center'}}>
+              {creatingReq?'Creating…':'Create Requirement'}
+            </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* ── DELETE CONFIRMATION — requirement ── */}
+      <ERPModal isOpen={!!delReq} onClose={()=>setDelReq(null)} title="Delete Requirement?" width={400}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{fontSize:12,color:C.subtle,lineHeight:1.6}}>
+            Delete the <strong style={{color:C.text}}>{delReq?.serviceName}</strong> requirement checklist for{' '}
+            <strong style={{color:C.text}}>{delReq?.clientName}</strong>?
+            {delReq?.receivedCount>0 && (
+              <span style={{display:'block',marginTop:8,color:C.amber}}>
+                {delReq.receivedCount} item(s) are already marked received. This cannot be undone.
+              </span>
+            )}
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <ERPBtn variant="secondary" onClick={()=>setDelReq(null)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="danger" onClick={()=>handleDeleteReq(delReq)} style={{flex:1,justifyContent:'center'}}>Delete</ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* ── DELETE CONFIRMATION — custom form ── */}
+      <ERPModal isOpen={!!delForm} onClose={()=>setDelForm(null)} title="Delete Custom Form?" width={400}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{fontSize:12,color:C.subtle,lineHeight:1.6}}>
+            Delete the custom form <strong style={{color:C.text}}>{delForm?.name}</strong>? This cannot be undone.
+          </div>
+          <div style={{display:'flex',gap:10}}>
+            <ERPBtn variant="secondary" onClick={()=>setDelForm(null)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="danger" onClick={()=>handleDeleteForm(delForm)} style={{flex:1,justifyContent:'center'}}>Delete</ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
       {/* ── SEND FORM MODAL ── */}
       <ERPModal isOpen={!!showSend&&!sentDone} onClose={()=>{setShowSend(null);setSendClient('');}} title="Send Form to Client" width={420}>
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
           <div style={{display:'flex',gap:12,padding:'12px 14px',borderRadius:10,background:'rgba(0,102,255,0.08)',border:`1px solid ${C.borderHi}`,alignItems:'center'}}>
-            <span style={{fontSize:22}}>{TEMPLATES[showSend?.name||'']?.icon||'📝'}</span>
+            <span style={{fontSize:22}}>{showSend?.icon||findFormTpl(showSend?.name||'')?.icon||'📝'}</span>
             <div>
               <div style={{fontSize:13,fontWeight:700,color:C.text}}>{showSend?.name||showSend?.label}</div>
               <div style={{fontSize:11,color:C.muted}}>{showSend?.fields?.length||'?'} questions</div>
@@ -617,7 +994,7 @@ export default function ERPRequirements() {
           </div>
           <ERPSelect label="Send to Client" value={sendClient} onChange={e=>setSendClient(e.target.value)}
             placeholder="Select client..." required
-            options={CLIENTS.map(c=>({value:c.id,label:`${c.name} — ${c.company}`}))} />
+            options={clients.map(c=>({value:c.id,label:`${c.name}${c.company?` — ${c.company}`:''}`}))} />
           <div style={{display:'flex',gap:10}}>
             <ERPBtn variant="secondary" onClick={()=>setShowSend(null)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
             <ERPBtn variant="primary" disabled={!sendClient||sending} onClick={handleSend} style={{flex:1,justifyContent:'center'}}>
@@ -644,50 +1021,72 @@ export default function ERPRequirements() {
       {/* ── VIEW FILLED RESPONSE MODAL ── */}
       <ERPModal isOpen={!!showFilled} onClose={()=>setShowFilled(null)} title={`Response — ${showFilled?.clientName}`} width={540}>
         {showFilled && (()=>{
-          const tpl    = TEMPLATES[showFilled.formType];
-          const filled = DEV_FILLED[showFilled.id] || {};
-          if (!tpl) return <div style={{color:C.muted,fontSize:12,padding:8}}>No template found for this form type.</div>;
+          // Prefer the field snapshot embedded at send time; fall back to the
+          // built-in template lookup for older docs sent before embedding.
+          const fields = (showFilled.fields && showFilled.fields.length)
+            ? showFilled.fields
+            : (findFormTpl(showFilled.formType)?.fields || []);
+          const filled = showFilled.answers || DEV_FILLED[showFilled.id] || {};
+          if (!fields.length) return <div style={{color:C.muted,fontSize:12,padding:8}}>No field definitions stored for this form.</div>;
+          // File answers may be {name,url}, an array of them, or a plain
+          // string (legacy/dev). Normalise to a displayable list.
+          const fileList = (v) => {
+            const arr = Array.isArray(v) ? v : [v];
+            return arr.filter(Boolean).map(f =>
+              typeof f === 'string' ? { name:f, url:null } : { name:f?.name||'File', url:f?.url||null });
+          };
           return (
             <div style={{display:'flex',flexDirection:'column',gap:14}}>
               <div style={{display:'flex',gap:10,alignItems:'center',padding:'10px 14px',borderRadius:10,background:'rgba(0,102,255,0.08)',border:`1px solid ${C.borderHi}`}}>
-                <span style={{fontSize:22}}>{tpl.icon}</span>
+                <span style={{fontSize:22}}>{findFormTpl(showFilled.formType)?.icon || '📝'}</span>
                 <div>
-                  <div style={{fontSize:13,fontWeight:700,color:C.text}}>{tpl.label}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:C.text}}>{showFilled.formType}</div>
                   <div style={{fontSize:11,color:C.muted}}>Filled by {showFilled.clientName} on {showFilled.filledAt}</div>
                 </div>
                 <ERPBadge status="Completed" label="Filled" />
               </div>
-              {tpl.fields.map(field=>{
+              {fields.map(field=>{
                 const val = filled[field.id];
-                if (!val) return null;
+                if (!val || (Array.isArray(val) && val.length===0)) return null;
                 const isFile = field.type==='file';
                 return (
                   <div key={field.id} style={{borderBottom:`1px solid ${C.border}20`,paddingBottom:12}}>
                     <div style={{fontSize:11,fontWeight:600,color:C.muted,marginBottom:5}}>{field.label}</div>
                     {isFile ? (
-                      <div style={{display:'flex',gap:8,alignItems:'center',padding:'8px 12px',borderRadius:8,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`}}>
-                        <Upload size={14} style={{color:C.cyan}}/>
-                        <span style={{fontSize:12,color:C.cyan,fontWeight:600}}>{val}</span>
+                      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                        {fileList(val).map((f,i)=>(
+                          <div key={i} style={{display:'flex',gap:8,alignItems:'center',padding:'8px 12px',borderRadius:8,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`}}>
+                            <Upload size={14} style={{color:C.cyan,flexShrink:0}}/>
+                            {f.url ? (
+                              <a href={f.url} target="_blank" rel="noopener noreferrer"
+                                style={{fontSize:12,color:C.cyan,fontWeight:600,textDecoration:'underline'}}>
+                                {f.name}
+                              </a>
+                            ) : (
+                              <span style={{fontSize:12,color:C.cyan,fontWeight:600}}>{f.name}</span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ) : Array.isArray(val) ? (
                       <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                         {val.map(v=>(
-                          <span key={v} style={{padding:'3px 10px',borderRadius:20,fontSize:11,background:'rgba(0,102,255,0.12)',color:C.cyan,border:`1px solid ${C.borderHi}`,fontWeight:600}}>{v}</span>
+                          <span key={String(v)} style={{padding:'3px 10px',borderRadius:20,fontSize:11,background:'rgba(0,102,255,0.12)',color:C.cyan,border:`1px solid ${C.borderHi}`,fontWeight:600}}>{String(v)}</span>
                         ))}
                       </div>
                     ) : (
-                      <div style={{fontSize:12,color:C.text,fontWeight:600,padding:'8px 12px',borderRadius:8,background:'rgba(10,24,56,0.5)',border:`1px solid ${C.border}20`}}>{val}</div>
+                      <div style={{fontSize:12,color:C.text,fontWeight:600,padding:'8px 12px',borderRadius:8,background:'rgba(10,24,56,0.5)',border:`1px solid ${C.border}20`}}>{String(val)}</div>
                     )}
                   </div>
                 );
               })}
               <div style={{display:'flex',gap:10}}>
                 {showFilled.status==='filled' && (
-                  <ERPBtn variant="success" onClick={()=>{handleMarkReviewed(showFilled.id);setShowFilled(null);}} style={{flex:1,justifyContent:'center'}}>
+                  <ERPBtn variant="success" onClick={()=>{handleMarkReviewed(showFilled);setShowFilled(null);}} style={{flex:1,justifyContent:'center'}}>
                     <CheckCircle2 size={13}/> Mark Reviewed
                   </ERPBtn>
                 )}
-                <ERPBtn variant="primary" style={{flex:1,justifyContent:'center'}} onClick={()=>setShowFilled(null)}>
+                <ERPBtn variant="primary" style={{flex:1,justifyContent:'center'}} onClick={()=>navigate('/erp/quotations')}>
                   Create Quotation →
                 </ERPBtn>
               </div>

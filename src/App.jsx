@@ -21,6 +21,7 @@ const PricingPage         = lazy(() => import('./pages/PricingPage'));
 const InsightsPage        = lazy(() => import('./pages/InsightsPage'));
 const InsightDetailPage   = lazy(() => import('./pages/InsightDetailPage'));
 const ContactPage         = lazy(() => import('./pages/ContactPage'));
+const QRServicePage       = lazy(() => import('./pages/QRServicePage'));
 const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
 const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
@@ -98,6 +99,7 @@ function WebsiteRoutes() {
             <Route path="/" element={<HomePage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} />} />
             <Route path="/about" element={<PublicPage><AboutPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/services" element={<PublicPage><ServicesPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
+            <Route path="/services/qr/:slug" element={<PublicPage><QRServicePage onOpenQuote={handleOpenQuote} /></PublicPage>} />
             <Route path="/services/:slug" element={<PublicPage><ServiceDetailPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/solutions" element={<PublicPage><SolutionsPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/projects" element={<PublicPage><ProjectsPage onOpenQuote={handleOpenQuote} /></PublicPage>} />

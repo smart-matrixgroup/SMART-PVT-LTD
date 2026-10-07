@@ -1,13 +1,20 @@
-﻿import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../../config/firebase';
+import React, { useState, useEffect } from 'react';
+import {
+  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDocs,
+  query, where, serverTimestamp
+} from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { db, auth, isFirebaseConfigured, createClientAuthAccount } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
-  ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar,
+  ERPModal, ERPInput, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
-import { Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText } from 'lucide-react';
+import {
+  Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText, Pencil, Trash2,
+  Key, Shield, CheckCircle2, RotateCcw
+} from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
 
@@ -22,7 +29,7 @@ const DEV_CLIENTS = [
 const DEV_PROJECTS = {
   C001: [
     { id:'P001', title:'Corporate Website Redesign', status:'In Progress', completion:65 },
-    { id:'P002', title:'SMARTORIX ERP Setup',        status:'Completed',   completion:100 },
+    { id:'P002', title:'SMART ERP Setup',            status:'Completed',   completion:100 },
   ],
   C002: [
     { id:'P003', title:'Restaurant POS System',      status:'advance_paid', completion:40 },
@@ -36,32 +43,274 @@ const DEV_PROJECTS = {
   ],
 };
 
+const EMPTY_FORM = { name:'', company:'', email:'', phone:'', clientSince:'', createAccount:true, password:'' };
+
+async function countWhere(col, field, value) {
+  const snap = await getDocs(query(collection(db, col), where(field, '==', value)));
+  return snap.size;
+}
+
 export default function ERPClients() {
   const { isDevSession } = useAuth();
-  const [clients,   setClients]   = useState(DEV_CLIENTS);
+  const live = isFirebaseConfigured && !isDevSession;
+  const [clients,   setClients]   = useState([]);
+  const [projects,  setProjects]  = useState([]);
   const [search,    setSearch]    = useState('');
   const [selected,  setSelected]  = useState(null);
-  const [showAdd,   setShowAdd]   = useState(false);
-  const [addForm,   setAddForm]   = useState({ name:'', company:'', email:'', phone:'', clientSince:'' });
+  const [showForm,  setShowForm]  = useState(false);
+  const [editId,    setEditId]    = useState(null);
+  const [form,      setForm]      = useState(EMPTY_FORM);
+  const [saving,    setSaving]    = useState(false);
+  const [delTarget, setDelTarget] = useState(null);
+  const [delError,  setDelError]  = useState('');
+  const [delBusy,   setDelBusy]   = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [notice,    setNotice]    = useState(null); // { kind:'ok'|'error', msg }
+  const [pwModal,   setPwModal]   = useState(null); // { client, password, busy, error }
 
   useEffect(() => {
-    if (!isFirebaseConfigured || isDevSession) return;
-    const q = query(collection(db, 'clients'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, snap => setClients(snap.docs.map(d => ({ id:d.id, ...d.data() }))));
-  }, [isDevSession]);
+    if (!live) return;
+    const unsubC = onSnapshot(collection(db, 'clients'), snap => {
+      setClients(snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(c => c.status !== 'deleted'));
+    }, err => console.error('Clients listener error', err));
+    const unsubP = onSnapshot(collection(db, 'projects'), snap => {
+      setProjects(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+    }, err => console.error('Projects listener error', err));
+    return () => { unsubC(); unsubP(); };
+  }, [live]);
 
   const filtered = clients.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.company.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
+    (c.name||'').toLowerCase().includes(search.toLowerCase()) ||
+    (c.company||'').toLowerCase().includes(search.toLowerCase()) ||
+    (c.email||'').toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectedProjects = selected ? (DEV_PROJECTS[selected.id] || []) : [];
+  const selectedProjects = selected
+    ? (live
+        ? projects.filter(p => p.clientId === selected.id)
+        : (DEV_PROJECTS[selected.id] || []))
+    : [];
+
+  const openAdd = () => {
+    setEditId(null);
+    setForm(EMPTY_FORM);
+    setSaveError('');
+    setShowForm(true);
+  };
+
+  const openEdit = (c, e) => {
+    if (e) e.stopPropagation();
+    setEditId(c.id);
+    setForm({
+      name: c.name || '',
+      company: c.company || '',
+      email: c.loginEmail || c.email || '',
+      phone: c.phone || '',
+      clientSince: c.clientSince || '',
+      createAccount: false,
+      password: '',
+    });
+    setSaveError('');
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.email.trim()) {
+      setSaveError('Name and email are required.');
+      return;
+    }
+    if (!editId && form.createAccount && (!form.password || form.password.length < 6)) {
+      setSaveError('Password must be at least 6 characters.');
+      return;
+    }
+    setSaveError('');
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      company: form.company.trim(),
+      email: form.email.trim(),
+      loginEmail: form.email.trim(),
+      phone: form.phone.trim(),
+      clientSince: form.clientSince.trim(),
+      status: 'active',
+    };
+    try {
+      if (editId) {
+        setClients(p => p.map(c => c.id === editId ? { ...c, ...payload } : c));
+        if (selected?.id === editId) setSelected(s => ({ ...s, ...payload }));
+        if (live) await updateDoc(doc(db, 'clients', editId), { ...payload, updatedAt: serverTimestamp() });
+        setNotice({ kind: 'ok', msg: `Client ${form.name} updated.` });
+      } else {
+        if (live && form.createAccount) {
+          // Provision client auth user and store at clients/{uid}
+          const uid = await createClientAuthAccount(form.email.trim(), form.password);
+          const clientData = {
+            id: uid,
+            authUid: uid,
+            ...payload,
+            hasPortalAccount: true,
+            projects: 0,
+            invoices: 0,
+            createdAt: serverTimestamp(),
+          };
+          await setDoc(doc(db, 'clients', uid), clientData);
+          setClients(p => [clientData, ...p]);
+          setNotice({ kind: 'ok', msg: `Client ${form.name} created with portal login account (${form.email}).` });
+        } else {
+          const local = { id: `C${Date.now()}`, projects: 0, invoices: 0, hasPortalAccount: false, ...payload };
+          if (live) {
+            const ref = await addDoc(collection(db, 'clients'), {
+              ...payload, hasPortalAccount: false, projects: 0, invoices: 0, createdAt: serverTimestamp(),
+            });
+            setClients(p => [{ ...local, id: ref.id }, ...p]);
+          } else {
+            setClients(p => [local, ...p]);
+          }
+          setNotice({ kind: 'ok', msg: `Client ${form.name} saved.` });
+        }
+      }
+      setShowForm(false);
+      setForm(EMPTY_FORM);
+      setEditId(null);
+    } catch (err) {
+      console.error(err);
+      const msg = err.code === 'auth/email-already-in-use'
+        ? 'That email already has a login account. Use a different email.'
+        : err.code === 'auth/weak-password'
+        ? 'Password is too weak (minimum 6 characters).'
+        : (err.message || "Couldn't save the client. Please try again.");
+      setSaveError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendPasswordReset = async (c, e) => {
+    if (e) e.stopPropagation();
+    const targetEmail = c.loginEmail || c.email;
+    if (!targetEmail) return;
+    try {
+      if (live) {
+        await sendPasswordResetEmail(auth, targetEmail);
+      }
+      setNotice({ kind: 'ok', msg: `Password reset instructions sent to ${targetEmail}.` });
+    } catch (err) {
+      console.error(err);
+      setNotice({ kind: 'error', msg: err.message || 'Could not send password reset email.' });
+    }
+  };
+
+  const handleCreateAccountForClient = async () => {
+    if (!pwModal?.client || !pwModal.password || pwModal.password.length < 6) {
+      setPwModal(p => ({ ...p, error: 'Password must be at least 6 characters.' }));
+      return;
+    }
+    setPwModal(p => ({ ...p, busy: true, error: '' }));
+    try {
+      const client = pwModal.client;
+      if (live) {
+        const uid = await createClientAuthAccount(client.email.trim(), pwModal.password);
+        await setDoc(doc(db, 'clients', uid), {
+          ...client,
+          id: uid,
+          authUid: uid,
+          loginEmail: client.email.trim(),
+          hasPortalAccount: true,
+          updatedAt: serverTimestamp(),
+        });
+        if (client.id !== uid) {
+          try { await deleteDoc(doc(db, 'clients', client.id)); } catch (e) {}
+        }
+      }
+      setNotice({ kind: 'ok', msg: `Portal login account activated for ${client.name} (${client.email}).` });
+      setPwModal(null);
+    } catch (err) {
+      console.error(err);
+      const isAlreadyInUse = err.code === 'auth/email-already-in-use' || String(err.message).includes('email-already-in-use');
+      setPwModal(p => ({
+        ...p,
+        busy: false,
+        error: isAlreadyInUse
+          ? `The email "${p.client?.email}" is already registered in Firebase. Use another email or reset their password.`
+          : (err.message || 'Account creation failed.')
+      }));
+    }
+  };
+
+  const requestDelete = (c, e) => {
+    if (e) e.stopPropagation();
+    setDelError('');
+    setDelTarget(c);
+  };
+
+  const confirmDelete = async () => {
+    if (!delTarget) return;
+    setDelBusy(true);
+    setDelError('');
+    try {
+      let quotes = 0, projs = 0, pays = 0;
+      if (live) {
+        [quotes, projs, pays] = await Promise.all([
+          countWhere('quotations', 'clientId', delTarget.id),
+          countWhere('projects', 'clientId', delTarget.id),
+          countWhere('payments', 'clientId', delTarget.id),
+        ]);
+      } else {
+        projs = (DEV_PROJECTS[delTarget.id] || []).length;
+        pays = Number(delTarget.invoices || 0);
+      }
+
+      if (quotes + projs + pays > 0) {
+        setDelError(
+          `Cannot permanently delete: this client has ${projs} project(s), ${quotes} quotation(s), and ${pays} payment record(s). Archive instead to keep history.`
+        );
+        setDelBusy(false);
+        return;
+      }
+
+      setClients(p => p.filter(c => c.id !== delTarget.id));
+      if (selected?.id === delTarget.id) setSelected(null);
+      if (live) await deleteDoc(doc(db, 'clients', delTarget.id));
+      setDelTarget(null);
+    } catch (err) {
+      console.error(err);
+      setDelError(err.message || 'Delete failed.');
+    } finally {
+      setDelBusy(false);
+    }
+  };
+
+  const archiveClient = async () => {
+    if (!delTarget) return;
+    setDelBusy(true);
+    try {
+      setClients(p => p.map(c => c.id === delTarget.id ? { ...c, status: 'archived' } : c));
+      if (selected?.id === delTarget.id) setSelected(s => ({ ...s, status: 'archived' }));
+      if (live) await updateDoc(doc(db, 'clients', delTarget.id), { status: 'archived', archivedAt: serverTimestamp() });
+      setDelTarget(null);
+      setDelError('');
+    } catch (err) {
+      setDelError(err.message || 'Archive failed.');
+    } finally {
+      setDelBusy(false);
+    }
+  };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
 
-      {/* Top bar */}
+      {notice && (
+        <div style={{
+          padding:'10px 14px', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'space-between',
+          background: notice.kind==='ok' ? 'rgba(24,199,122,0.12)' : 'rgba(240,90,103,0.12)',
+          border: `1px solid ${notice.kind==='ok' ? 'rgba(24,199,122,0.35)' : 'rgba(240,90,103,0.35)'}`,
+          color: notice.kind==='ok' ? C.green : C.red, fontSize:12, fontWeight:600,
+        }}>
+          <span>{notice.msg}</span>
+          <button onClick={()=>setNotice(null)} style={{ background:'none', border:'none', color:'inherit', cursor:'pointer', fontSize:14 }}>✕</button>
+        </div>
+      )}
+
       <div style={{ display:'flex', gap:10, alignItems:'center' }}>
         <div style={{ position:'relative', flex:1, maxWidth:320 }}>
           <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:C.muted }} />
@@ -76,7 +325,7 @@ export default function ERPClients() {
             onBlur={e=>e.target.style.borderColor=C.border}
           />
         </div>
-        <ERPBtn variant="primary" onClick={() => setShowAdd(true)}>
+        <ERPBtn variant="primary" onClick={openAdd}>
           <Plus size={13} /> Add Client
         </ERPBtn>
         <div style={{ marginLeft:'auto', fontSize:12, color:C.muted }}>
@@ -84,10 +333,8 @@ export default function ERPClients() {
         </div>
       </div>
 
-      {/* Grid */}
       <div style={{ display:'grid', gridTemplateColumns: selected ? '1fr 380px' : 'repeat(auto-fill,minmax(280px,1fr))', gap:14 }}>
 
-        {/* Client cards */}
         {!selected && filtered.map((c, i) => (
           <div key={c.id}
             onClick={() => setSelected(c)}
@@ -108,7 +355,6 @@ export default function ERPClients() {
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.boxShadow = 'none';
             }}>
-            {/* Top glow */}
             <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${COLORS[i%COLORS.length]}50,transparent)` }} />
 
             <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
@@ -117,12 +363,23 @@ export default function ERPClients() {
                 <div style={{ fontSize:13, fontWeight:800, color:C.text }}>{c.name}</div>
                 <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{c.company}</div>
               </div>
-              <ERPBadge status={c.status || 'active'} />
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
+                <ERPBadge status={c.status || 'active'} />
+                {(c.hasPortalAccount || c.authUid) ? (
+                  <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:5, background:'rgba(24,199,122,0.15)', color:C.green, border:'1px solid rgba(24,199,122,0.3)', display:'inline-flex', alignItems:'center', gap:3 }}>
+                    <CheckCircle2 size={9} /> Portal Active
+                  </span>
+                ) : (
+                  <span style={{ fontSize:9, fontWeight:600, padding:'2px 6px', borderRadius:5, background:'rgba(255,255,255,0.05)', color:C.muted }}>
+                    No Portal
+                  </span>
+                )}
+              </div>
             </div>
 
             <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:5 }}>
               <div style={{ fontSize:11, color:C.muted, display:'flex', gap:6 }}>
-                <Mail size={11} style={{ color:C.cyan, flexShrink:0, marginTop:1 }} />{c.email}
+                <Mail size={11} style={{ color:C.cyan, flexShrink:0, marginTop:1 }} />{c.loginEmail || c.email}
               </div>
               <div style={{ fontSize:11, color:C.muted, display:'flex', gap:6 }}>
                 <Phone size={11} style={{ color:C.green, flexShrink:0, marginTop:1 }} />{c.phone}
@@ -141,10 +398,18 @@ export default function ERPClients() {
                 </div>
               ))}
             </div>
+
+            <div style={{ marginTop:12, display:'flex', gap:6, flexWrap:'wrap' }} onClick={e=>e.stopPropagation()}>
+              <ERPBtn size="sm" variant="secondary" onClick={(e)=>openEdit(c,e)}><Pencil size={11}/> Edit</ERPBtn>
+              <ERPBtn size="sm" variant="secondary" onClick={(e)=>handleSendPasswordReset(c,e)} title="Send Password Reset Email"><Key size={11}/> Reset PW</ERPBtn>
+              {!(c.hasPortalAccount || c.authUid) && (
+                <ERPBtn size="sm" variant="primary" onClick={(e)=>{ e.stopPropagation(); setPwModal({ client:c, password:'', busy:false, error:'' }); }}><Shield size={11}/> Create Login</ERPBtn>
+              )}
+              <ERPBtn size="sm" variant="danger" onClick={(e)=>requestDelete(c,e)}><Trash2 size={11}/> Delete</ERPBtn>
+            </div>
           </div>
         ))}
 
-        {/* List view when client selected */}
         {selected && (
           <ERPPanel>
             <ERPPanelHeader title="All Clients" icon="👥" />
@@ -170,14 +435,12 @@ export default function ERPClients() {
           </ERPPanel>
         )}
 
-        {/* Client detail */}
         {selected && (
           <ERPPanel style={{ alignSelf:'flex-start' }}>
             <ERPPanelHeader title="Client Profile" icon="👤"
               action={<span style={{cursor:'pointer'}} onClick={()=>setSelected(null)}>✕</span>} />
             <div style={{ padding:18, display:'flex', flexDirection:'column', gap:16 }}>
 
-              {/* Header */}
               <div style={{ display:'flex', gap:14, alignItems:'center' }}>
                 <ERPAvatar name={selected.name} color={C.blue} size={50} />
                 <div>
@@ -187,7 +450,6 @@ export default function ERPClients() {
                 </div>
               </div>
 
-              {/* Contact */}
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
                   { icon:<Mail size={12}/>,     label:'Email',   val:selected.email,      color:C.cyan  },
@@ -202,7 +464,6 @@ export default function ERPClients() {
                 ))}
               </div>
 
-              {/* Stats */}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
                 {[
                   { label:'Projects', val:selected.projects||selectedProjects.length, color:'#0066FF' },
@@ -219,7 +480,6 @@ export default function ERPClients() {
                 ))}
               </div>
 
-              {/* Projects list */}
               {selectedProjects.length > 0 && (
                 <div>
                   <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:8 }}>Projects</div>
@@ -241,8 +501,48 @@ export default function ERPClients() {
                 </div>
               )}
 
-              {/* Quick actions */}
+              {/* Portal Login Account Card */}
+              <div style={{
+                padding: '12px 14px', borderRadius: 12,
+                background: 'rgba(0,102,255,0.06)', border: `1px solid ${C.blue}30`,
+                display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Shield size={13} style={{ color: C.cyan }} /> Portal Access
+                  </span>
+                  {(selected.hasPortalAccount || selected.authUid) ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: C.green, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={11} /> Active
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: C.amber }}>
+                      Not Provisioned
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted }}>
+                  Login: <strong style={{ color: C.text }}>{selected.loginEmail || selected.email}</strong>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <ERPBtn size="sm" variant="secondary" onClick={(e) => handleSendPasswordReset(selected, e)} style={{ flex: 1, justifyContent: 'center' }}>
+                    <Key size={12} /> Reset PW
+                  </ERPBtn>
+                  {!(selected.hasPortalAccount || selected.authUid) && (
+                    <ERPBtn size="sm" variant="primary" onClick={() => setPwModal({ client: selected, password: '', busy: false, error: '' })} style={{ flex: 1, justifyContent: 'center' }}>
+                      <Shield size={12} /> Create Login
+                    </ERPBtn>
+                  )}
+                </div>
+              </div>
+
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <ERPBtn variant="secondary" onClick={()=>openEdit(selected)} style={{ justifyContent:'center' }}>
+                  <Pencil size={13} /> Edit Client
+                </ERPBtn>
+                <ERPBtn variant="danger" onClick={()=>requestDelete(selected)} style={{ justifyContent:'center' }}>
+                  <Trash2 size={13} /> Delete Client
+                </ERPBtn>
                 <ERPBtn variant="primary" style={{ justifyContent:'center' }}>
                   <FolderKanban size={13} /> New Project
                 </ERPBtn>
@@ -271,21 +571,107 @@ export default function ERPClients() {
         )}
       </div>
 
-      {/* ── Add client modal ── */}
-      <ERPModal isOpen={showAdd} onClose={()=>setShowAdd(false)} title="Add New Client" width={460}>
+      <ERPModal isOpen={showForm} onClose={()=>{setShowForm(false);setEditId(null);}} title={editId ? 'Update Client' : 'Add New Client'} width={460}>
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          <ERPInput label="Full Name" value={addForm.name} onChange={e=>setAddForm(p=>({...p,name:e.target.value}))} required placeholder="e.g. John Perera" />
-          <ERPInput label="Company" value={addForm.company} onChange={e=>setAddForm(p=>({...p,company:e.target.value}))} placeholder="e.g. Perera Holdings Pvt Ltd" />
-          <ERPInput label="Email" value={addForm.email} type="email" onChange={e=>setAddForm(p=>({...p,email:e.target.value}))} required placeholder="john@company.com" />
-          <ERPInput label="Phone / WhatsApp" value={addForm.phone} type="tel" onChange={e=>setAddForm(p=>({...p,phone:e.target.value}))} placeholder="+94 77 000 0000" />
+          <ERPInput label="Full Name" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} required placeholder="e.g. John Perera" />
+          <ERPInput label="Company" value={form.company} onChange={e=>setForm(p=>({...p,company:e.target.value}))} placeholder="e.g. Perera Holdings Pvt Ltd" />
+          <ERPInput label="Email" value={form.email} type="email" onChange={e=>setForm(p=>({...p,email:e.target.value}))} required placeholder="john@company.com" />
+          <ERPInput label="Phone / WhatsApp" value={form.phone} type="tel" onChange={e=>setForm(p=>({...p,phone:e.target.value}))} placeholder="+94 77 000 0000" />
+          <ERPInput label="Client since" value={form.clientSince} onChange={e=>setForm(p=>({...p,clientSince:e.target.value}))} placeholder="e.g. March 2024" />
+
+          {!editId && (
+            <div style={{
+              padding: '12px 14px', borderRadius: 10,
+              background: 'rgba(0,102,255,0.06)', border: `1px solid ${C.blue}35`,
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: C.text, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={form.createAccount}
+                  onChange={e => setForm(p => ({ ...p, createAccount: e.target.checked }))}
+                />
+                <span>Create Client Portal Login Account</span>
+              </label>
+
+              {form.createAccount && (
+                <ERPInput
+                  label="Initial Password"
+                  type="password"
+                  value={form.password}
+                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                  placeholder="Min 6 characters (e.g. Client@1234)"
+                  required
+                />
+              )}
+            </div>
+          )}
+
+          {saveError && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {saveError}
+            </div>
+          )}
           <div style={{ display:'flex', gap:10 }}>
-            <ERPBtn variant="secondary" onClick={()=>setShowAdd(false)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
-            <ERPBtn variant="primary" onClick={()=>{
-              setClients(p=>[...p,{id:`C${Date.now()}`,status:'active',projects:0,invoices:0,...addForm}]);
-              setShowAdd(false);
-              setAddForm({name:'',company:'',email:'',phone:'',clientSince:''});
-            }} style={{flex:1,justifyContent:'center'}}>
-              <Plus size={13}/> Add Client
+            <ERPBtn variant="secondary" onClick={()=>{setShowForm(false);setEditId(null);}} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" onClick={handleSave} disabled={saving} style={{flex:1,justifyContent:'center'}}>
+              {saving ? 'Saving...' : (editId ? 'Update Client' : 'Add Client')}
+            </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      <ERPModal isOpen={!!delTarget} onClose={()=>{setDelTarget(null);setDelError('');}} title="Delete Client?" width={460}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ fontSize:12, color:C.muted, lineHeight:1.5 }}>
+            Permanently delete <strong style={{color:C.text}}>{delTarget?.name}</strong>? If this client has quotations, projects, or payments, deletion is blocked so history stays intact.
+          </div>
+          {delError && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {delError}
+            </div>
+          )}
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            <ERPBtn variant="secondary" onClick={()=>{setDelTarget(null);setDelError('');}} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            {delError ? (
+              <ERPBtn variant="secondary" onClick={archiveClient} disabled={delBusy} style={{flex:1,justifyContent:'center'}}>
+                {delBusy ? 'Saving...' : 'Archive instead'}
+              </ERPBtn>
+            ) : (
+              <ERPBtn variant="danger" onClick={confirmDelete} disabled={delBusy} style={{flex:1,justifyContent:'center'}}>
+                {delBusy ? 'Checking...' : 'Confirm Delete'}
+              </ERPBtn>
+            )}
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* Create Login Account Modal for existing client */}
+      <ERPModal isOpen={!!pwModal} onClose={()=>setPwModal(null)} title="Create Portal Login Account" width={440}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ fontSize:12, color:C.muted, lineHeight:1.5 }}>
+            Create a Client Portal account for <strong style={{color:C.text}}>{pwModal?.client?.name}</strong> using email <strong style={{color:C.cyan}}>{pwModal?.client?.email}</strong>.
+          </div>
+
+          <ERPInput
+            label="Initial Password"
+            type="password"
+            value={pwModal?.password || ''}
+            onChange={e => setPwModal(p => ({ ...p, password: e.target.value }))}
+            placeholder="Min 6 characters (e.g. Client@1234)"
+            required
+          />
+
+          {pwModal?.error && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {pwModal.error}
+            </div>
+          )}
+
+          <div style={{ display:'flex', gap:10 }}>
+            <ERPBtn variant="secondary" onClick={()=>setPwModal(null)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" onClick={handleCreateAccountForClient} disabled={pwModal?.busy} style={{flex:1,justifyContent:'center'}}>
+              {pwModal?.busy ? 'Creating...' : 'Activate Portal Account'}
             </ERPBtn>
           </div>
         </div>

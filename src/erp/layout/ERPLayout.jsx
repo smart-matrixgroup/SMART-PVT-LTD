@@ -34,11 +34,21 @@ export default function ERPLayout() {
   const location = useLocation();
   const { isDevSession } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [leadCount, setLeadCount]   = useState(0);
   const [msgCount,  setMsgCount]    = useState(0);
   const [notifications, setNotifications] = useState(DEV_NOTIFICATIONS);
 
   const meta = PAGE_META[location.pathname] || { title: 'ERP', subtitle: '' };
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   // Live lead count from Firestore
   useEffect(() => {
@@ -49,6 +59,13 @@ export default function ERPLayout() {
     const q = query(collection(db, 'leads'), where('status', '==', 'New'));
     return onSnapshot(q, snap => setLeadCount(snap.size));
   }, [isDevSession]);
+
+  const toggleSidebar = () => {
+    if (isMobile) setMobileOpen(o => !o);
+    else setCollapsed(c => !c);
+  };
+
+  const sidebarWidth = isMobile ? 0 : (collapsed ? 64 : 224);
 
   return (
     <div style={{
@@ -81,11 +98,28 @@ export default function ERPLayout() {
       <div style={{ position:'fixed', width:500, height:500, borderRadius:'50%', background:'rgba(0,102,255,0.06)', filter:'blur(100px)', top:-150, right:-100, pointerEvents:'none', zIndex:0 }} />
       <div style={{ position:'fixed', width:350, height:350, borderRadius:'50%', background:'rgba(0,217,255,0.04)', filter:'blur(80px)', bottom:50, left:50, pointerEvents:'none', zIndex:0 }} />
 
-      {/* ── Sidebar ── */}
-      <div style={{ position: 'relative', zIndex: 20, flexShrink: 0, transition: 'width 0.3s', width: collapsed ? 64 : 224 }}>
+      {/* Mobile overlay */}
+      {isMobile && mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 40 }}
+        />
+      )}
+
+      {/* ── Sidebar (desktop rail + mobile drawer) ── */}
+      <div style={{
+        position: isMobile ? 'fixed' : 'relative',
+        zIndex: 50,
+        flexShrink: 0,
+        height: '100%',
+        width: isMobile ? 224 : sidebarWidth,
+        transform: isMobile && !mobileOpen ? 'translateX(-105%)' : 'none',
+        transition: 'transform 0.25s ease, width 0.3s',
+        boxShadow: isMobile && mobileOpen ? '8px 0 32px rgba(0,0,0,0.45)' : 'none',
+      }}>
         <ERPSidebar
-          collapsed={collapsed}
-          onToggle={() => setCollapsed(c => !c)}
+          collapsed={!isMobile && collapsed}
+          onToggle={toggleSidebar}
           badges={{ leads: leadCount, messages: msgCount }}
         />
       </div>
@@ -95,8 +129,8 @@ export default function ERPLayout() {
         <ERPTopbar
           title={meta.title}
           subtitle={meta.subtitle}
-          onToggleSidebar={() => setCollapsed(c => !c)}
-          sidebarCollapsed={collapsed}
+          onToggleSidebar={toggleSidebar}
+          sidebarCollapsed={isMobile ? !mobileOpen : collapsed}
           notifications={notifications}
         />
 

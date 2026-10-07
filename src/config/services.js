@@ -2,7 +2,7 @@ export const services = [
   {
     id: "erp-pos",
     slug: "erp-pos",
-    title: "SMARTORIX ERP with POS",
+    title: "SMART ERP with POS",
     subtitle: "Unified Enterprise & Restaurant Management System",
     category: "Software & Cloud",
     shortDesc: "Cloud-connected business and restaurant ERP & POS system covering billing, table management, orders, inventory, expenses, staff controls, and real-time financial reporting.",
@@ -11,7 +11,7 @@ export const services = [
     startingPrice: "Subscription & Custom Deployment",
     priceNote: "Tiered pricing based on modules and active terminal count",
     heroImage: "/images/erp-preview.png",
-    overview: "SMARTORIX is an integrated business management platform engineered for retail, restaurants, and service enterprises. It eliminates operational friction by syncing point-of-sale terminals, inventory tracking, kitchen display workflows, staff permissions, and executive accounting in real-time.",
+    overview: "SMART ERP is an integrated business management platform engineered for retail, restaurants, and service enterprises. It eliminates operational friction by syncing point-of-sale terminals, inventory tracking, kitchen display workflows, staff permissions, and executive accounting in real-time.",
     features: [
       { name: "Fast POS Billing", desc: "Touch-optimized fast checkout with split billing, discounts, barcode scanning, and multi-payment gateways." },
       { name: "Table & Floor Management", desc: "Live restaurant floor maps, table status indicators, and dine-in reservation tracking." },
@@ -32,9 +32,9 @@ export const services = [
     ],
     timeline: "1 - 3 Weeks depending on branch scale",
     faqs: [
-      { q: "Can SMARTORIX work offline?", a: "Yes. SMARTORIX includes local caching so your billing and orders continue even if your internet connection drops, synchronizing automatically once restored." },
+      { q: "Can SMART ERP work offline?", a: "Yes. SMART ERP includes local caching so your billing and orders continue even if your internet connection drops, synchronizing automatically once restored." },
       { q: "Can it integrate with existing barcode scanners and receipt printers?", a: "Yes, it supports standard ESC/POS printers, USB/Bluetooth barcode scanners, and electronic cash drawers." },
-      { q: "Is it suitable for multi-branch businesses?", a: "Absolutely. SMARTORIX features centralized multi-outlet management with synchronized pricing, warehouse stock transfers, and branch-level reporting." }
+      { q: "Is it suitable for multi-branch businesses?", a: "Absolutely. SMART ERP features centralized multi-outlet management with synchronized pricing, warehouse stock transfers, and branch-level reporting." }
     ]
   },
   {
@@ -311,6 +311,127 @@ export const services = [
     faqs: [
       { q: "How do you assist with external audits?", a: "We prepare all underlying supporting schedules, reconciliations, and trial balances so the external audit completes smoothly without delays or discrepancies." }
     ]
+  },
+  {
+    id: "company-registration",
+    slug: "company-registration",
+    title: "Company Registration (Pvt Ltd)",
+    subtitle: "Complete e-ROC Company Incorporation & Statutory Registration",
+    category: "Corporate & Legal",
+    shortDesc: "End-to-end Private Limited company incorporation under the Companies Act No. 7 of 2007. Name approval, Articles of Association, Form 1, Form 18, Form 19, and bank account setup.",
+    icon: "Building2",
+    badge: "Official Service",
+    startingPrice: "Standard Package",
+    priceNote: "Includes ROC government registration fees and statutory documentation",
+    overview: "Form your legal business entity seamlessly. SMART Pvt Ltd handles every stage of your company incorporation through the Department of the Registrar of Companies (ROC Sri Lanka), delivering official incorporation certificates, articles, and corporate seals.",
+    features: [
+      { name: "Company Name Reservation & Approval", desc: "Verification and reservation of your chosen business name with the Registrar of Companies." },
+      { name: "Statutory Documentation (Form 1, 18 & 19)", desc: "Drafting of company incorporation forms, Director consent letters, and Secretary declarations." },
+      { name: "Articles of Association Drafting", desc: "Customized or standard Model Articles defining shareholder rights, governance, and share capital." },
+      { name: "Company Secretary Appointment Support", desc: "Filing of registered corporate secretary credentials as legally mandated by Sri Lankan law." },
+      { name: "Corporate Seal & Bank Account Opening", desc: "Issuance of certified digital/physical copies and bank introduction letters for corporate account setup." }
+    ],
+    deliverables: [
+      "Official Certificate of Incorporation (Form 2A)",
+      "Registered Articles of Association (e-ROC certified)",
+      "Form 1 (Application), Form 18 (Directors), and Form 19 (Secretaries)",
+      "Company Seal and statutory register setup",
+      "Corporate bank account introduction pack"
+    ],
+    timeline: "3 - 7 Business Days",
+    faqs: [
+      { q: "How many directors are required to form a Private Limited company?", a: "Under Sri Lankan company law, a minimum of one director and one shareholder is required (they can be the same individual)." },
+      { q: "Can foreign nationals register a company in Sri Lanka?", a: "Yes, subject to standard 100% foreign ownership sectors or specific regulatory approval per the Board of Investment (BOI) guidelines." }
+    ]
+  },
+  {
+    id: "tax-registration",
+    slug: "tax-registration",
+    title: "Tax Registration & TIN Setup",
+    subtitle: "Mandatory Taxpayer Identification Number & IRD RAMIS Profile",
+    category: "Finance & Compliance",
+    shortDesc: "Fast-track registration for mandatory Taxpayer Identification Number (TIN), VAT registration, and Inland Revenue Department (IRD) RAMIS portal activation for individuals and businesses.",
+    icon: "FileCheck",
+    badge: "Mandatory Compliance",
+    startingPrice: "Fixed Fee",
+    priceNote: "Government compliance assistance with rapid turnaround",
+    overview: "Under Sri Lankan statutory requirements, obtaining a Taxpayer Identification Number (TIN) is mandatory for individuals aged 18 and above, as well as all registered companies. SMART Pvt Ltd ensures swift, error-free registration on the IRD RAMIS portal.",
+    features: [
+      { name: "Individual TIN Registration", desc: "Assistance with NIC verification, document upload, and issuance of official TIN certificate." },
+      { name: "Corporate TIN Registration", desc: "Company TIN profile setup using Certificate of Incorporation and Form 18 documents." },
+      { name: "RAMIS Portal Activation & Credential Setup", desc: "Secure activation of e-Services on the Inland Revenue RAMIS online platform." },
+      { name: "VAT & SSCL Registration", desc: "Value Added Tax and Social Security Contribution Levy registration for eligible turnover businesses." }
+    ],
+    deliverables: [
+      "Official IRD TIN Certificate",
+      "RAMIS portal active login credentials",
+      "Tax type enrollment confirmations (Income Tax, VAT, SSCL)",
+      "Initial compliance orientation guide"
+    ],
+    timeline: "1 - 3 Business Days",
+    faqs: [
+      { q: "Is TIN registration mandatory?", a: "Yes, under current Sri Lankan Inland Revenue regulations, TIN registration is mandatory for all citizens over 18 years and all registered business entities." }
+    ]
+  },
+  {
+    id: "income-tax",
+    slug: "income-tax",
+    title: "Income Tax Filings & Computations",
+    subtitle: "Corporate & Individual Income Tax Computations & RAMIS E-Filing",
+    category: "Finance & Compliance",
+    shortDesc: "Annual income tax computation, allowable deduction optimization, statement of financial position preparation, and timely filing of Statement of Estimated Tax (SET) and Final Returns.",
+    icon: "Receipt",
+    badge: "Annual Statutory",
+    startingPrice: "Annual Package",
+    priceNote: "Scaled by business turnover and complexity of revenue streams",
+    overview: "Navigate annual tax filing with maximum clarity and zero penalties. Our finance specialists compute your exact taxable income, apply allowable deductions and capital allowances according to Inland Revenue Act No. 24 of 2017, and submit verified returns.",
+    features: [
+      { name: "Comprehensive Tax Liability Computation", desc: "Detailed calculation of assessable income, qualifying deductions, and net tax payable." },
+      { name: "Statement of Estimated Tax (SET) Filing", desc: "Timely quarterly installment calculations and payment slip generation." },
+      { name: "Corporate Income Tax Return (CIT)", desc: "Preparation of annual company returns with complete audited financial attachments." },
+      { name: "Individual & Sole Proprietorship Returns", desc: "Filing personal income tax returns for directors, professionals, and business owners." },
+      { name: "Tax Clearance Certificate Assistance", desc: "Coordination with IRD assessors for company closure, tender, or migration clearance." }
+    ],
+    deliverables: [
+      "Certified Income Tax Computation Workpapers",
+      "Acknowledgement receipt of filed return from IRD RAMIS",
+      "Quarterly installment payment schedule with pay-in slips",
+      "Tax saving deduction summary report"
+    ],
+    timeline: "Scheduled per IRD statutory deadlines (Nov 30)",
+    faqs: [
+      { q: "What documents are required for filing Corporate Income Tax?", a: "Audited financial statements, bank statements, previous tax computations, and details of advance tax payments (WHT/AIT)." }
+    ]
+  },
+  {
+    id: "website-development",
+    slug: "website-development",
+    title: "Website Development & Design",
+    subtitle: "Modern, Mobile-First Business Websites & Web Applications",
+    category: "Web & Mobile",
+    shortDesc: "Professional web development covering corporate websites, e-commerce storefronts, customer portals, and web applications built with React, Next.js, and modern cloud stacks.",
+    icon: "Globe",
+    badge: "High Impact",
+    startingPrice: "Custom Quotation",
+    priceNote: "Based on design requirements, pages, and interactive functionality",
+    overview: "Your website is the digital front door of your enterprise. We engineer fast, responsive, and visually striking websites designed to elevate your brand prestige, engage visitors, and convert leads into loyal customers.",
+    features: [
+      { name: "Responsive Mobile-First Architecture", desc: "Flawless rendering across phones, tablets, and desktop displays." },
+      { name: "Fast Load Speeds & Modern Tech Stack", desc: "Engineered with React, Vite, and Tailwind CSS for instant load times and 90+ Lighthouse scores." },
+      { name: "SEO Optimisation & Schema Markup", desc: "Engineered for high search engine visibility on Google and Bing." },
+      { name: "WhatsApp & Lead Conversion Tools", desc: "Interactive quote calculators, inquiry modals, and instant WhatsApp chat connectivity." }
+    ],
+    deliverables: [
+      "Custom responsive website source code",
+      "Domain DNS and SSL HTTPS security configuration",
+      "Cloud deployment on Firebase or custom hosting",
+      "Contact and lead capture integration"
+    ],
+    timeline: "1 - 3 Weeks",
+    faqs: [
+      { q: "Can my website include online payment accepting?", a: "Yes, we integrate leading payment gateways including PayHere, Stripe, and direct bank transfer slips." }
+    ]
   }
 ];
+
 

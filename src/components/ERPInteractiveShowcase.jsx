@@ -64,7 +64,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
             Run More of Your Business from <span className="gradient-text-cyan">One Smart Platform</span>
           </h2>
           <p className="text-sm sm:text-base text-text-muted mt-3">
-            <strong>SMARTORIX ERP & POS</strong> synchronizes touch billing, restaurant floor tables, kitchen queues, multi-store stock depletion, and financial ledgers in real-time.
+            <strong>SMART ERP & POS</strong> synchronizes touch billing, restaurant floor tables, kitchen queues, multi-store stock depletion, and financial ledgers in real-time.
           </p>
         </div>
 
@@ -80,7 +80,7 @@ export default function ERPInteractiveShowcase({ onOpenQuote }) {
                 <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
               </div>
               <span className="text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
-                <LayoutGrid className="w-3.5 h-3.5 text-primary-cyan" /> SMARTORIX Core v2.4 (Live Demo View)
+                <LayoutGrid className="w-3.5 h-3.5 text-primary-cyan" /> SMART ERP Core v2.4 (Live Demo View)
               </span>
             </div>
 

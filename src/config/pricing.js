@@ -50,8 +50,8 @@ export const pricingTiers = [
     serviceSlug: "business-website"
   },
   {
-    id: "smartorix-erp",
-    name: "SMARTORIX ERP + POS",
+    id: "smart-erp",
+    name: "SMART ERP + POS",
     category: "Software & Cloud",
     badge: "Flagship Platform",
     price: "Custom Tier",

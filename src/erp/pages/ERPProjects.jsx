@@ -1,14 +1,18 @@
-﻿import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  collection, onSnapshot, doc, updateDoc, deleteDoc, getDocs,
+  query, where, serverTimestamp
+} from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { staffList } from '../../config/staff';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
-  ERPModal, ERPSelect, ERPEmpty, ERPAvatar,
+  ERPModal, ERPSelect, ERPInput, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
-import { CheckCircle2, Circle, UserPlus, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { formatWhen } from '../formatWhen';
+import { CheckCircle2, Circle, ExternalLink, Pencil, Trash2 } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
 const STATUS_OPTS = [
@@ -69,24 +73,63 @@ const DEV_PROJECTS = [
   },
 ];
 
+// Phase 3 C — dev fixtures for the real work-assignment integration.
+const DEV_ASSIGNMENTS = [
+  { id:'w1', projectId:'P001', title:'Frontend build',       staffId:'dev-staff-001', staffName:'Ashan Perera',     status:'In Progress', progress:65, deadline:'2026-10-12' },
+  { id:'w2', projectId:'P001', title:'API integration',      staffId:'dev-staff-002', staffName:'Nimali Silva',     status:'Assigned',    progress:20, deadline:'2026-10-20' },
+  { id:'w3', projectId:'P002', title:'POS module hardening', staffId:'dev-staff-003', staffName:'Ruwan Jayasuriya', status:'In Progress', progress:40, deadline:'2026-10-30' },
+];
+
 export default function ERPProjects() {
   const { isDevSession } = useAuth();
-  const [projects,  setProjects]   = useState(DEV_PROJECTS);
+  const live = isFirebaseConfigured && !isDevSession;
+  const navigate = useNavigate();
+  const [projects,  setProjects]   = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [selected,  setSelected]   = useState(null);
   const [filter,    setFilter]     = useState('All');
-  const [showAssign, setShowAssign] = useState(false);
   const [saving,    setSaving]     = useState(false);
+  const [showEdit,  setShowEdit]   = useState(false);
+  const [editForm,  setEditForm]   = useState({ title:'', serviceType:'', clientName:'', clientCompany:'', status:'In Progress', completion:0 });
+  const [delTarget, setDelTarget]  = useState(null);
+  const [delError,  setDelError]   = useState('');
+  const [delBusy,   setDelBusy]    = useState(false);
+  const [saveError, setSaveError]  = useState('');
+  const [loadError, setLoadError]  = useState('');
 
   useEffect(() => {
-    if (!isFirebaseConfigured || isDevSession) return;
-    const q = query(collection(db,'projects'), orderBy('createdAt','desc'));
-    return onSnapshot(q, snap => setProjects(snap.docs.map(d=>({id:d.id,...d.data()}))));
-  }, [isDevSession]);
+    if (!live) return;
+    return onSnapshot(collection(db,'projects'), snap => {
+      setProjects(snap.docs.map(d=>({id:d.id,...d.data()})).filter(p => p.status !== 'deleted'));
+      setLoadError('');
+    }, err => {
+      console.error('Projects listener error', err);
+      setLoadError(
+        err.code === 'permission-denied'
+          ? "Permission denied — deploy the updated Firestore rules and make sure you're signed in as an admin."
+          : (err.message || "Couldn't load projects. Refresh the page to retry.")
+      );
+    });
+  }, [live]);
+
+  // Phase 3 C — real work assignments (Staff → Work) shown on project
+  // cards/detail. Staff names travel with the assignment document.
+  useEffect(() => {
+    if (!live) return;
+    return onSnapshot(collection(db, 'workAssignments'), snap => {
+      setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, err => console.error('Work assignments listener error', err));
+  }, [live]);
+
+  // Initials + colour for compact staff chips.
+  const initialsOf = name => (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const chipColor  = name => COLORS[(name || '').length % COLORS.length];
 
   const filters = ['All','In Progress','advance_paid','quotation_sent','Completed'];
   const filtered = filter==='All' ? projects : projects.filter(p=>p.status===filter);
 
   const selProj = selected ? projects.find(p=>p.id===selected) : null;
+  const projAs  = selProj ? assignments.filter(a=>a.projectId===selProj.id) : [];
 
   // Toggle milestone
   const toggleMilestone = async (projId, mIdx) => {
@@ -106,17 +149,6 @@ export default function ERPProjects() {
     setSaving(false);
   };
 
-  // Toggle staff
-  const toggleStaff = async (projId, staffId) => {
-    const proj = projects.find(p=>p.id===projId);
-    const current = proj.assignedStaff || [];
-    const updated = current.includes(staffId) ? current.filter(id=>id!==staffId) : [...current,staffId];
-    setProjects(prev=>prev.map(p=>p.id===projId?{...p,assignedStaff:updated}:p));
-    if (isFirebaseConfigured && !isDevSession) {
-      try { await updateDoc(doc(db,'projects',projId),{assignedStaff:updated}); } catch(e){ console.error(e); }
-    }
-  };
-
   // Update status
   const updateStatus = async (projId, status) => {
     setProjects(prev=>prev.map(p=>p.id===projId?{...p,status}:p));
@@ -129,8 +161,113 @@ export default function ERPProjects() {
   const updateCompletion = async (projId, val) => {
     const pct = Math.max(0, Math.min(100, Number(val)));
     setProjects(prev=>prev.map(p=>p.id===projId?{...p,completion:pct}:p));
-    if (isFirebaseConfigured && !isDevSession) {
+    if (live) {
       try { await updateDoc(doc(db,'projects',projId),{completion:pct,updatedAt:serverTimestamp()}); } catch(e){ console.error(e); }
+    }
+  };
+
+  const openEdit = (proj, e) => {
+    if (e) e.stopPropagation();
+    setSelected(proj.id);
+    setEditForm({
+      title: proj.title || '',
+      serviceType: proj.serviceType || '',
+      clientName: proj.clientName || '',
+      clientCompany: proj.clientCompany || '',
+      status: proj.status || 'In Progress',
+      completion: proj.completion || 0,
+    });
+    setSaveError('');
+    setShowEdit(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selected) return;
+    if (!editForm.title.trim()) {
+      setSaveError('Project title is required.');
+      return;
+    }
+    setSaveError('');
+    setSaving(true);
+    const patch = {
+      title: editForm.title.trim(),
+      serviceType: editForm.serviceType.trim(),
+      clientName: editForm.clientName.trim(),
+      clientCompany: editForm.clientCompany.trim(),
+      status: editForm.status,
+      completion: Math.max(0, Math.min(100, Number(editForm.completion)||0)),
+    };
+    setProjects(prev => prev.map(p => p.id === selected ? { ...p, ...patch } : p));
+    if (live) {
+      try {
+        await updateDoc(doc(db,'projects',selected), { ...patch, updatedAt: serverTimestamp() });
+        setShowEdit(false);
+      } catch(e){
+        console.error(e);
+        setSaveError(e.message || "Couldn't save the project. Please try again.");
+      }
+    } else {
+      setShowEdit(false);
+    }
+    setSaving(false);
+  };
+
+  const requestDelete = (proj, e) => {
+    if (e) e.stopPropagation();
+    setDelError('');
+    setDelTarget(proj);
+  };
+
+  const confirmDelete = async () => {
+    if (!delTarget) return;
+    setDelBusy(true);
+    setDelError('');
+    try {
+      // Payments & receipts live inside quotations (no separate invoices
+      // collection), so any linked quotation blocks permanent deletion.
+      let quotes = 0;
+      let workCount = 0;
+      if (live) {
+        const [byId, byTitle, byAssignments] = await Promise.all([
+          getDocs(query(collection(db,'quotations'), where('projectId','==', delTarget.id))),
+          getDocs(query(collection(db,'quotations'), where('projectTitle','==', delTarget.title))),
+          getDocs(query(collection(db,'workAssignments'), where('projectId','==', delTarget.id))),
+        ]);
+        quotes = byId.size + byTitle.size;
+        workCount = byAssignments.size;
+      }
+      if (quotes > 0 || workCount > 0) {
+        const reasons = [];
+        if (quotes > 0) reasons.push(`${quotes} linked quotation(s)`);
+        if (workCount > 0) reasons.push(`${workCount} staff task assignment(s)`);
+        setDelError(`Cannot permanently delete: ${reasons.join(' and ')} exist. Archive the project instead — history is kept.`);
+        setDelBusy(false);
+        return;
+      }
+      setProjects(prev => prev.filter(p => p.id !== delTarget.id));
+      if (selected === delTarget.id) setSelected(null);
+      if (live) await deleteDoc(doc(db,'projects', delTarget.id));
+      setDelTarget(null);
+    } catch (err) {
+      console.error(err);
+      setDelError(err.message || 'Delete failed.');
+    } finally {
+      setDelBusy(false);
+    }
+  };
+
+  const archiveProject = async () => {
+    if (!delTarget) return;
+    setDelBusy(true);
+    try {
+      setProjects(prev => prev.map(p => p.id === delTarget.id ? { ...p, status: 'archived' } : p));
+      if (live) await updateDoc(doc(db,'projects', delTarget.id), { status: 'archived', archivedAt: serverTimestamp() });
+      setDelTarget(null);
+      setDelError('');
+    } catch (err) {
+      setDelError(err.message || 'Archive failed.');
+    } finally {
+      setDelBusy(false);
     }
   };
 
@@ -156,12 +293,24 @@ export default function ERPProjects() {
         <div style={{marginLeft:'auto',fontSize:12,color:C.muted,display:'flex',alignItems:'center'}}>{filtered.length} projects</div>
       </div>
 
+      {/* Load error banner */}
+      {loadError && (
+        <div style={{
+          display:'flex', alignItems:'center', gap:10,
+          padding:'10px 14px', borderRadius:10,
+          background:'rgba(240,90,103,0.1)', border:'1px solid rgba(240,90,103,0.35)',
+          fontSize:11, color:C.red, lineHeight:1.5,
+        }}>
+          ⚠️ {loadError}
+        </div>
+      )}
+
       {/* Main grid */}
       <div style={{ display:'grid', gridTemplateColumns: selProj ? '1fr 420px' : 'repeat(auto-fill,minmax(320px,1fr))', gap:16 }}>
 
         {/* Project cards (when no selection) */}
         {!selProj && filtered.map((proj, i) => {
-          const staff = (proj.assignedStaff||[]).map(id=>staffList.find(s=>s.id===id)).filter(Boolean);
+          const projAs = assignments.filter(a=>a.projectId===proj.id);
           const done  = (proj.milestones||[]).filter(m=>m.done).length;
           return (
             <div key={proj.id}
@@ -193,17 +342,22 @@ export default function ERPProjects() {
               </div>
 
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{display:'flex',gap:-4}}>
-                  {staff.length>0 ? staff.map(s=>(
-                    <div key={s.id} title={`${s.name} — ${s.role}`} style={{
-                      width:24,height:24,borderRadius:'50%',background:s.avatarColor||'#0066FF',
+                <div style={{display:'flex'}}>
+                  {projAs.length>0 ? projAs.slice(0,4).map(a=>(
+                    <div key={a.id} title={`${a.staffName} — ${a.title} (${a.status})`} style={{
+                      width:24,height:24,borderRadius:'50%',background:chipColor(a.staffName),
                       display:'flex',alignItems:'center',justifyContent:'center',
-                      fontSize:9,fontWeight:800,color:'#fff',
+                      fontSize:8.5,fontWeight:800,color:'#fff',
                       border:'2px solid #040D1F',marginLeft:-6,
-                    }}>{s.avatar}</div>
+                    }}>{initialsOf(a.staffName)}</div>
                   )) : <span style={{fontSize:10,color:C.muted}}>No staff assigned</span>}
+                  {projAs.length>4 && <span style={{fontSize:10,color:C.muted,marginLeft:6,alignSelf:'center'}}>+{projAs.length-4}</span>}
                 </div>
-                <span style={{fontSize:10,color:C.muted}}>{proj.createdAt}</span>
+                <span style={{fontSize:10,color:C.muted}}>{formatWhen(proj.createdAt)}</span>
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:12}} onClick={e=>e.stopPropagation()}>
+                <ERPBtn size="sm" variant="secondary" onClick={(e)=>openEdit(proj,e)}><Pencil size={12}/> Edit</ERPBtn>
+                <ERPBtn size="sm" variant="danger" onClick={(e)=>requestDelete(proj,e)}><Trash2 size={12}/> Delete</ERPBtn>
               </div>
             </div>
           );
@@ -273,6 +427,15 @@ export default function ERPProjects() {
                 </div>
               </div>
 
+              <div style={{display:'flex',gap:8}}>
+                <ERPBtn size="sm" variant="secondary" onClick={()=>openEdit(selProj)} style={{flex:1,justifyContent:'center'}}>
+                  <Pencil size={12}/> Edit / Update
+                </ERPBtn>
+                <ERPBtn size="sm" variant="danger" onClick={()=>requestDelete(selProj)} style={{flex:1,justifyContent:'center'}}>
+                  <Trash2 size={12}/> Delete
+                </ERPBtn>
+              </div>
+
               {/* Milestones */}
               <div>
                 <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:10}}>
@@ -306,42 +469,44 @@ export default function ERPProjects() {
                 )}
               </div>
 
-              {/* Assigned staff */}
+              {/* Work assignments (real data from Staff → Work, Phase 3) */}
               <div>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.8px'}}>
-                    Assigned Staff ({(selProj.assignedStaff||[]).length})
+                    Work Assignments ({projAs.length})
                   </div>
-                  <ERPBtn size="sm" variant="secondary" onClick={()=>setShowAssign(true)}>
-                    <UserPlus size={12} /> Manage
+                  <ERPBtn size="sm" variant="secondary" onClick={()=>navigate('/erp/staff?tab=work')}>
+                    <ExternalLink size={12} /> Manage
                   </ERPBtn>
                 </div>
-                {(selProj.assignedStaff||[]).length === 0 ? (
-                  <div style={{fontSize:11,color:C.muted,fontStyle:'italic'}}>No staff assigned yet.</div>
+                {projAs.length === 0 ? (
+                  <div style={{fontSize:11,color:C.muted,fontStyle:'italic'}}>
+                    No work assigned yet — assign staff from Staff → Work.
+                  </div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    {(selProj.assignedStaff||[]).map(id=>{
-                      const s = staffList.find(x=>x.id===id);
-                      if(!s) return null;
-                      return (
-                        <div key={id} style={{
-                          display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
-                          borderRadius:10,background:'rgba(10,24,56,0.6)',border:`1px solid ${C.border}30`,
-                        }}>
+                    {projAs.map(a=>(
+                      <div key={a.id} style={{
+                        padding:'9px 12px',
+                        borderRadius:10,background:'rgba(10,24,56,0.6)',border:`1px solid ${C.border}30`,
+                      }}>
+                        <div style={{display:'flex',alignItems:'center',gap:10}}>
                           <div style={{
-                            width:32,height:32,borderRadius:9,flexShrink:0,
-                            background:`linear-gradient(135deg,${s.avatarColor},${s.avatarColor}99)`,
+                            width:28,height:28,borderRadius:8,flexShrink:0,
+                            background:chipColor(a.staffName),
                             display:'flex',alignItems:'center',justifyContent:'center',
-                            color:'#fff',fontWeight:800,fontSize:13,
-                          }}>{s.avatar}</div>
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:12,fontWeight:700,color:C.text}}>{s.name}</div>
-                            <div style={{fontSize:10,color:C.muted}}>{s.role}</div>
+                            color:'#fff',fontWeight:800,fontSize:10,
+                          }}>{initialsOf(a.staffName)}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</div>
+                            <div style={{fontSize:10,color:C.muted}}>{a.staffName}{a.deadline ? ` · due ${a.deadline}` : ''}</div>
                           </div>
-                          <ERPBadge status={s.status} size="sm" />
+                          <ERPBadge status={a.status} size="sm" />
+                          <span style={{fontSize:10,fontWeight:800,color:C.cyan,minWidth:32,textAlign:'right'}}>{a.progress||0}%</span>
                         </div>
-                      );
-                    })}
+                        <div style={{marginTop:7}}><ERPProgress value={a.progress||0} /></div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -356,42 +521,49 @@ export default function ERPProjects() {
         )}
       </div>
 
-      {/* Assign staff modal */}
-      <ERPModal isOpen={showAssign && !!selProj} onClose={()=>setShowAssign(false)} title={`Assign Staff — ${selProj?.title}`} width={440}>
-        <div style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{fontSize:11,color:C.muted,marginBottom:4}}>Click to toggle assignment. ✓ = currently assigned.</div>
-          {staffList.map(s => {
-            const isAss = (selProj?.assignedStaff||[]).includes(s.id);
-            return (
-              <div key={s.id} onClick={()=>toggleStaff(selProj.id,s.id)}
-                style={{
-                  display:'flex',alignItems:'center',gap:12,padding:'12px',
-                  borderRadius:12,cursor:'pointer',transition:'all 0.15s',
-                  background:isAss?'rgba(0,102,255,0.1)':'rgba(10,24,56,0.6)',
-                  border:`1px solid ${isAss?C.borderHi:C.border+'50'}`,
-                }}
-                onMouseEnter={e=>e.currentTarget.style.opacity='0.85'}
-                onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-                <div style={{
-                  width:36,height:36,borderRadius:10,flexShrink:0,
-                  background:`linear-gradient(135deg,${s.avatarColor},${s.avatarColor}99)`,
-                  display:'flex',alignItems:'center',justifyContent:'center',
-                  color:'#fff',fontWeight:800,fontSize:14,
-                }}>{s.avatar}</div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.text}}>{s.name}</div>
-                  <div style={{fontSize:10,color:C.muted}}>{s.role} · {s.department}</div>
-                </div>
-                <ERPBadge status={s.status} size="sm" />
-                {isAss && <CheckCircle2 size={16} style={{color:C.green,flexShrink:0}} />}
-              </div>
-            );
-          })}
-          <ERPBtn variant="primary" onClick={()=>setShowAssign(false)} style={{justifyContent:'center',marginTop:6}}>
-            Done
-          </ERPBtn>
+      {/* Edit / update project modal */}
+      <ERPModal isOpen={showEdit} onClose={()=>setShowEdit(false)} title="Edit Project" width={460}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <ERPInput label="Project Title" value={editForm.title} required
+            onChange={e=>setEditForm(p=>({...p,title:e.target.value}))}
+            placeholder="e.g. Corporate Website Redesign" />
+          <ERPInput label="Service Type" value={editForm.serviceType}
+            onChange={e=>setEditForm(p=>({...p,serviceType:e.target.value}))}
+            placeholder="e.g. ERP & POS System" />
+          <ERPInput label="Client Name" value={editForm.clientName}
+            onChange={e=>setEditForm(p=>({...p,clientName:e.target.value}))} />
+          <ERPInput label="Client Company" value={editForm.clientCompany}
+            onChange={e=>setEditForm(p=>({...p,clientCompany:e.target.value}))} />
+          <ERPSelect label="Status" value={editForm.status}
+            onChange={e=>setEditForm(p=>({...p,status:e.target.value}))}
+            options={STATUS_OPTS} />
+          <div>
+            <label style={{display:'block',fontSize:11,fontWeight:600,color:C.subtle,marginBottom:6}}>
+              Completion %
+            </label>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <input type="range" min={0} max={100} value={Number(editForm.completion)||0}
+                onChange={e=>setEditForm(p=>({...p,completion:Number(e.target.value)}))}
+                style={{flex:1,accentColor:C.blue}} />
+              <span style={{fontSize:13,fontWeight:800,color:C.cyan,minWidth:36,textAlign:'right'}}>
+                {Number(editForm.completion)||0}%
+              </span>
+            </div>
+          </div>
+          {saveError && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {saveError}
+            </div>
+          )}
+          <div style={{display:'flex',gap:10}}>
+            <ERPBtn variant="secondary" onClick={()=>setShowEdit(false)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" onClick={saveEdit} disabled={saving} style={{flex:1,justifyContent:'center'}}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </ERPBtn>
+          </div>
         </div>
       </ERPModal>
+
     </div>
   );
 }

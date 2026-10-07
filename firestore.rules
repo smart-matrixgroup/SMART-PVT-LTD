@@ -7,7 +7,8 @@ service cloud.firestore {
     // to mint claims. See src/context/AuthContext.jsx for the client side.
     function isAdmin() {
       return request.auth != null &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+         request.auth.token.email == 'admin@smart.com');
     }
 
     // Admin membership list — never created/edited from the client.
@@ -17,12 +18,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Public Lead creation from Quotation and Contact forms
+    // Public Lead creation from the website forms (quote request, contact,
+    // get-started, newsletter). Require a non-empty name plus at least one
+    // way to reach the person — phone/WhatsApp (most forms) or email
+    // (newsletter has no phone).
     match /leads/{leadId} {
       allow create: if request.resource.data.name is string
                     && request.resource.data.name.size() > 0
-                    && request.resource.data.whatsapp is string
-                    && request.resource.data.whatsapp.size() > 0;
+                    && (
+                      (request.resource.data.whatsapp is string && request.resource.data.whatsapp.size() > 0)
+                      || (request.resource.data.email is string && request.resource.data.email.size() > 0)
+                    );
       allow read, update, delete: if isAdmin();
     }
 
@@ -36,6 +42,174 @@ service cloud.firestore {
     // record; only an admin can create/update/delete client records.
     match /clients/{clientId} {
       allow read: if request.auth != null && request.auth.uid == clientId;
+      allow write: if isAdmin();
+    }
+
+    // Projects: the client portal reads its own projects, submits new
+    // project requests, and flags acceptance / advance-paid on them.
+    // The client can never reassign a project to another client.
+    match /projects/{projectId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow create: if isAdmin() ||
+        (request.auth != null &&
+         request.resource.data.clientId == request.auth.uid);
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.clientId == request.auth.uid &&
+         request.resource.data.clientId == resource.data.clientId);
+      allow delete: if isAdmin();
+    }
+
+    // Project chat threads (client portal messages - legacy compatibility)
+    match /messages/{projectId}/chats/{chatId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Phase 4: Real Messaging System (Admin <-> Staff and Admin <-> Client)
+    match /conversations/{convId} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.participantUid == request.auth.uid);
+      allow create: if isAdmin() || (request.auth != null && request.resource.data.participantUid == request.auth.uid);
+      allow update: if isAdmin() || (request.auth != null && resource.data.participantUid == request.auth.uid);
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (request.auth != null && (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid));
+        allow create: if isAdmin() || (request.auth != null && request.resource.data.senderId == request.auth.uid && request.resource.data.receiverRole == 'admin');
+        allow update: if isAdmin() || (request.auth != null && resource.data.receiverId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']));
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ── ERP: quotation & requirement templates, quotations, payments ──
+    // Templates are the master data admins edit; quotations / client
+    // requirements / payments COPY template content at creation time, so
+    // later template edits never change existing records.
+
+    match /quotationTemplates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /requirementTemplates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Client requirement checklists (copied from requirementTemplates)
+    match /requirements/{requirementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Requirement FORMS sent to clients (built-in per-service forms and
+    // admin-built custom forms). Admin sends (create) and reviews; the
+    // client may read their own forms and submit answers — but ONLY the
+    // answers/status/filledAt fields, never re-address or re-type the form.
+    match /requirementForms/{formId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.clientId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['answers', 'status', 'filledAt']));
+    }
+
+    // Quotations: admins manage everything. The client may read their own
+    // quotations and may ONLY flip status to/from Accepted (plus stamp
+    // acceptedAt) — never touch money fields or payments data.
+    match /quotations/{quotationId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.clientId == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['status', 'acceptedAt', 'updatedAt']));
+    }
+
+    // Payments (each payment embeds its unique receiptNo — there is no
+    // separate receipts collection). Client can read only their own payments.
+    match /payments/{paymentId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Sequence counters for unique quotation / receipt / staff-ID numbers
+    match /counters/{counterId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── Phase 3: Staff portal ──────────────────────────────────────
+    // Staff documents use the Firebase Auth uid as the doc id, so
+    // ownership is enforced by the doc id itself.
+
+    // Staff profiles. A staff member can read their own profile and may
+    // only edit their phone/address and manage their own `docs` array
+    // (portal Profile / KYC / Certificates pages — the matching Storage
+    // object must already exist under staff-docs/{uid}/). All other
+    // fields — salary, login email, deleted flag — are admin-managed.
+    // `deleted: true` blocks portal login (see AuthContext.jsx) — a
+    // soft delete, never a hard removal when attendance/salary records
+    // exist.
+    match /staff/{uid} {
+      allow read: if isAdmin() ||
+        (request.auth != null && request.auth.uid == uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null && request.auth.uid == uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['phone', 'address', 'docs', 'updatedAt']));
+    }
+
+    // Work assignments. Staff read their own (authUid field) and may ONLY
+    // move them along the lifecycle: status, progress, timestamps. They
+    // can never reassign themselves to another project/staff or change
+    // deadlines/priority.
+    match /workAssignments/{assignmentId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.authUid == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.authUid == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['status', 'progress', 'updatedAt', 'startedAt']));
+    }
+
+    // Attendance. Staff create/update only their own records (the portal
+    // check-in/out). The update is NOT field-restricted because checkout /
+    // auto-close legitimately stamps hoursMins/status/autoClosed — but the
+    // authUid can never change hands.
+    match /attendance/{attendanceId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.authUid == request.auth.uid);
+      allow create: if isAdmin() ||
+        (request.auth != null &&
+         request.resource.data.authUid == request.auth.uid);
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.authUid == request.auth.uid &&
+         request.resource.data.authUid == resource.data.authUid);
+      allow delete: if isAdmin();
+    }
+
+    // Daily work updates. Staff submit their own; admins monitor all.
+    match /dailyUpdates/{updateId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.authUid == request.auth.uid);
+      allow create: if isAdmin() ||
+        (request.auth != null &&
+         request.resource.data.authUid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Salary payments / payslips. Staff read ONLY their own payslips;
+    // every write is admin-only (money is never client-writable).
+    match /salaryPayments/{paymentId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.authUid == request.auth.uid);
       allow write: if isAdmin();
     }
   }

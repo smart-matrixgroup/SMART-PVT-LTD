@@ -11,7 +11,7 @@ const MILESTONES = [
 ];
 
 const CASE_STUDIES = [
-  {emoji:'🍽️',title:'Mehala Restaurant Chain',desc:'Deployed SMARTORIX POS across 3 branches, reducing order errors by 94% and improving table turnover by 40%.', tags:['ERP/POS','Restaurant','Multi-Branch'],color:'#F5B942'},
+  {emoji:'🍽️',title:'Mehala Restaurant Chain',desc:'Deployed SMART POS across 3 branches, reducing order errors by 94% and improving table turnover by 40%.', tags:['ERP/POS','Restaurant','Multi-Branch'],color:'#F5B942'},
   {emoji:'🛒',title:'KA Retail Supermarket',desc:'Barcode POS with multi-location inventory — checkout time reduced from 3 min to 45 sec per customer.',tags:['POS','Retail','Barcode'],color:'#18C77A'},
   {emoji:'💼',title:'PN Accounting Services',desc:'Digital migration from manual books — 5 years of records digitized, IRD compliance achieved in 2 weeks.',tags:['Accounting','Tax','Compliance'],color:'#8B5CF6'},
   {emoji:'🌐',title:'Perera Holdings Website',desc:'Corporate website with 15 pages, dark/light theme, SEO — generating 300% more inquiry leads.',tags:['Website','SEO','Lead Generation'],color:'#0066FF'},

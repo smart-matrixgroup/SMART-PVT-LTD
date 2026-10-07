@@ -91,7 +91,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
       name: "Restaurant POS System",
       category: "Food & Beverage",
       image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80",
-      slug: "smartorix-restaurant-pos"
+      slug: "smart-restaurant-pos"
     },
     {
       name: "Corporate Website",
@@ -109,7 +109,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
       name: "Hotel Management",
       category: "Hospitality Industry",
       image: "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80",
-      slug: "smartorix-restaurant-pos"
+      slug: "smart-restaurant-pos"
     }
   ];
 
@@ -117,7 +117,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
   const homeFaqs = [
     {
       q: "What services does SMART Pvt Ltd offer?",
-      a: "We provide complete technology and business solutions including custom software development, SMARTORIX ERP & POS, corporate & portfolio websites, mobile applications, business automation, accounting setup, tax return filing, and audit assurance support."
+      a: "We provide complete technology and business solutions including custom software development, SMART ERP & POS, corporate & portfolio websites, mobile applications, business automation, accounting setup, tax return filing, and audit assurance support."
     },
     {
       q: "How much does a website cost?",
@@ -129,7 +129,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
     },
     {
       q: "Can I get a custom ERP for my business?",
-      a: "Yes! SMARTORIX is modular and can be customized specifically for retail stores, restaurant chains, distribution warehouses, or service companies with offline POS sync."
+      a: "Yes! SMART ERP is modular and can be customized specifically for retail stores, restaurant chains, distribution warehouses, or service companies with offline POS sync."
     },
     {
       q: "Do you offer ongoing support?",
@@ -450,7 +450,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
       </section>
 
       {/* =========================================================================
-          4. OUR PRODUCT: SMARTORIX ERP with POS (Royal Blue Gradient Banner)
+          4. OUR PRODUCT: SMART ERP with POS (Royal Blue Gradient Banner)
          ========================================================================= */}
       <section className="py-16 bg-gradient-to-br from-[#0A2540] via-[#06112B] to-[#0A1838] text-white relative overflow-hidden border-y border-[#20345D]">
         
@@ -464,7 +464,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
                 OUR PRODUCT
               </span>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-                SMARTORIX ERP <br />
+                SMART ERP <br />
                 <span className="text-[#00D9FF]">with POS</span>
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
@@ -489,7 +489,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
               {/* Action Buttons */}
               <div className="pt-4 flex items-center gap-3">
                 <button
-                  onClick={() => onOpenQuote("SMARTORIX ERP")}
+                  onClick={() => onOpenQuote("SMART ERP")}
                   className="px-5 py-2.5 rounded-full text-xs font-bold text-white bg-[#0066FF] hover:bg-blue-600 shadow-md shadow-blue-500/30 transition-all flex items-center gap-1.5"
                 >
                   View Demo <ArrowRight className="w-3.5 h-3.5" />
@@ -514,7 +514,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                     <span className="text-[13px] font-bold text-slate-300 ml-2">
-                      SMARTORIX Live Dashboard
+                      SMART ERP Live Dashboard
                     </span>
                   </div>
                   <span className="text-[12px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">

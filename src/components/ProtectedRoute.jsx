@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export default function ProtectedRoute({ role, children }) {
+export default function ProtectedRoute({ role, redirectTo = '/client-login', children }) {
   const { currentUser, role: userRole, loading } = useAuth();
 
   if (loading) {
@@ -14,7 +14,7 @@ export default function ProtectedRoute({ role, children }) {
   }
 
   if (!currentUser || userRole !== role) {
-    return <Navigate to="/client-login" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   return children;

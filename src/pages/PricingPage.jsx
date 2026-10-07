@@ -10,7 +10,7 @@ export default function PricingPage({ onOpenQuote, onOpenClientRequest }) {
     <div className="pt-28 pb-20 space-y-20">
       <SEO 
         title="Transparent Pricing & Packages" 
-        description="Clear, honest pricing for portfolio websites (from LKR 15,000), corporate web platforms, SMARTORIX ERP, and bespoke software systems."
+        description="Clear, honest pricing for portfolio websites (from LKR 15,000), corporate web platforms, SMART ERP, and bespoke software systems."
       />
 
       {/* Hero Header */}

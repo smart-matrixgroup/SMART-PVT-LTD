@@ -36,10 +36,15 @@ export const STATUS = {
   'Paid':                 { color: C.green,  bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)', label: 'Paid'               },
   'Pending':              { color: C.amber,  bg: 'rgba(245,185,66,0.12)', border: 'rgba(245,185,66,0.3)', label: 'Pending'            },
   'active':               { color: C.green,  bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)', label: 'Active'             },
+  'archived':             { color: C.muted,  bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)',label: 'Archived'           },
+  'inactive':             { color: C.muted,  bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)',label: 'Inactive'           },
   'busy':                 { color: C.amber,  bg: 'rgba(245,185,66,0.12)', border: 'rgba(245,185,66,0.3)', label: 'Busy'               },
   'on-leave':             { color: C.muted,  bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)',label: 'On Leave'           },
   'draft':                { color: C.muted,  bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)',label: 'Draft'              },
   'sent':                 { color: C.cyan,   bg: 'rgba(0,217,255,0.1)',   border: 'rgba(0,217,255,0.3)',  label: 'Sent'               },
+  // Quotation lifecycle (stored capitalized on the quotation doc)
+  'Draft':                { color: C.muted,  bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)',label: 'Draft'              },
+  'Sent':                 { color: C.cyan,   bg: 'rgba(0,217,255,0.1)',   border: 'rgba(0,217,255,0.3)',  label: 'Sent'               },
 };
 
 // ── Badge ──────────────────────────────────────────────────────────
@@ -84,6 +89,18 @@ export function ERPPanel({ children, style = {}, className = '' }) {
   );
 }
 
+// ── Icon Helper ────────────────────────────────────────────────────
+function renderERPIcon(icon, defaultSize = 16, defaultColor = C.cyan) {
+  if (!icon) return null;
+  if (typeof icon === 'string') return icon;
+  if (React.isValidElement(icon)) return icon;
+  if (typeof icon === 'function' || (typeof icon === 'object' && icon !== null && (icon.$$typeof || icon.render))) {
+    const IconComponent = icon;
+    return <IconComponent size={defaultSize} color={defaultColor} style={{ flexShrink: 0 }} />;
+  }
+  return null;
+}
+
 // ── Panel Header ───────────────────────────────────────────────────
 export function ERPPanelHeader({ title, action, icon }) {
   return (
@@ -93,7 +110,11 @@ export function ERPPanelHeader({ title, action, icon }) {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {icon && <span style={{ fontSize: 14 }}>{icon}</span>}
+        {icon && (
+          <span style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center' }}>
+            {renderERPIcon(icon, 15, C.cyan)}
+          </span>
+        )}
         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{title}</span>
       </div>
       {action && (
@@ -146,7 +167,7 @@ export function ERPStatCard({ icon, value, label, change, changeUp, color = C.bl
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 18, position: 'relative',
         boxShadow: `0 4px 12px ${color}25`,
-      }}>{icon}</div>
+      }}>{renderERPIcon(icon, 20, color)}</div>
 
       <div style={{ fontSize: 28, fontWeight: 900, color: C.text, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{label}</div>
@@ -347,7 +368,9 @@ export function ERPTable({ headers=[], rows=[], onRowClick }) {
 export function ERPEmpty({ icon='📭', title, sub, action }) {
   return (
     <div style={{ padding:'48px 24px', textAlign:'center' }}>
-      <div style={{ fontSize:36, marginBottom:12 }}>{icon}</div>
+      <div style={{ fontSize:36, marginBottom:12, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {renderERPIcon(icon, 36, C.muted)}
+      </div>
       <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:6 }}>{title}</div>
       {sub && <div style={{ fontSize:12, color:C.muted, maxWidth:280, margin:'0 auto' }}>{sub}</div>}
       {action && <div style={{ marginTop:16 }}>{action}</div>}

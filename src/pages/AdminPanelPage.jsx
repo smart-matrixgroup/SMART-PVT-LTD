@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
+import { toMillis } from '../erp/formatWhen';
 import SEO from '../components/SEO';
 import { staffList, getStaffByIds, STATUS_COLORS } from '../config/staff';
 import {
@@ -142,6 +143,7 @@ export default function AdminPanelPage() {
   const [projects, setProjects]    = useState([]);
   const [selected, setSelected]    = useState(null);
   const [copied,   setCopied]      = useState('');
+  const [leadsError, setLeadsError] = useState('');
 
   // Assign modal state
   const [assignProject, setAssignProject] = useState(null); // project being assigned
@@ -151,13 +153,21 @@ export default function AdminPanelPage() {
   const clientRequests = allLeads.filter(r => r.type === 'client_request');
   const quoteLeads     = allLeads.filter(r => r.type !== 'client_request');
 
-  // Live leads from Firestore (all types)
+  // Live leads from Firestore (all types).
+  // NOTE: no orderBy('createdAt') in the query — Firestore silently drops
+  // documents missing that field, which made leads "load then disappear".
+  // Sort client-side instead so every lead stays visible.
   useEffect(() => {
-    if (isDevSession) { setAllLeads([]); return; }
-    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setAllLeads(snap.docs.map(d => ({ leadId: d.id, ...d.data() })));
-    }, (err) => console.error('Leads listener error', err));
+    if (isDevSession || !isFirebaseConfigured) { setAllLeads([]); return; }
+    const unsubscribe = onSnapshot(collection(db, 'leads'), (snap) => {
+      const rows = snap.docs.map(d => ({ leadId: d.id, ...d.data() }));
+      rows.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+      setAllLeads(rows);
+      setLeadsError('');
+    }, (err) => {
+      console.error('Leads listener error', err);
+      setLeadsError(err.message || "Couldn't load leads.");
+    });
     return unsubscribe;
   }, [isDevSession]);
 
@@ -179,10 +189,12 @@ export default function AdminPanelPage() {
       ]);
       return;
     }
-    const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, snap => {
-      setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    // No orderBy — same disappearing-documents pitfall as the leads query.
+    return onSnapshot(collection(db, 'projects'), snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rows.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+      setProjects(rows);
+    }, (err) => console.error('Projects listener error', err));
   }, []);
 
   const handleLogout = async () => {
@@ -320,6 +332,12 @@ You can track your project progress, invoices and support tickets from your dash
           {/* ── Main content ────────────────────────────────── */}
           <main className="flex-1 min-w-0 space-y-5">
 
+            {leadsError && (
+              <div className="rounded-2xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-xs text-red-600 dark:text-red-300">
+                {leadsError}
+              </div>
+            )}
+
             {/* ══ CLIENT REQUESTS TAB ═══════════════════════════ */}
             {tab === 'client_requests' && (
               <div className="space-y-5">
@@ -390,7 +408,7 @@ You can track your project progress, invoices and support tickets from your dash
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-lg font-bold text-[#0A1E3F] dark:text-white">Quote Leads</h2>
-                    <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">Submitted via Quote Modal</p>
+                    <p className="text-xs text-[#5B6E88] dark:text-text-muted mt-0.5">All website form submissions — quote request, contact, newsletter</p>
                   </div>
                   <span className="text-xs text-[#5B6E88] dark:text-text-muted">{quoteLeads.length} total</span>
                 </div>

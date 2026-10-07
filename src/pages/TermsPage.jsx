@@ -7,7 +7,7 @@ export default function TermsPage() {
     <div className="pt-28 pb-20">
       <SEO 
         title="Terms & Conditions" 
-        description="SMART Pvt Ltd terms and conditions governing software development contracts, SMARTORIX ERP subscriptions, and professional services."
+        description="SMART Pvt Ltd terms and conditions governing software development contracts, SMART ERP subscriptions, and professional services."
       />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -32,7 +32,7 @@ export default function TermsPage() {
             <section className="space-y-2">
               <h2 className="text-base font-bold text-white">2. Intellectual Property & Ownership</h2>
               <p>
-                Upon receipt of full contract payment, the bespoke custom software artifacts developed specifically for a client belong exclusively to that client. SMARTORIX ERP core engine licenses remain the proprietary IP of SMART Pvt Ltd with continuous operational usage granted to the subscriber.
+                Upon receipt of full contract payment, the bespoke custom software artifacts developed specifically for a client belong exclusively to that client. SMART ERP core engine licenses remain the proprietary IP of SMART Pvt Ltd with continuous operational usage granted to the subscriber.
               </p>
             </section>
 

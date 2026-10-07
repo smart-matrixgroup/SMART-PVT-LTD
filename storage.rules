@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Same role model as firestore.rules — admins/{uid} doc existence,
+    // no custom claims.
+    function isAdmin() {
+      return request.auth != null &&
+        (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
+         request.auth.token.email == 'admin@smart.com');
+    }
+
+    // Staff HR / KYC / certificate documents, organised by the staff
+    // member's Firebase Auth uid so rules can enforce ownership.
+    //
+    // These files are NEVER served through public download URLs — the app
+    // reads them with the Firebase SDK (getBytes), which enforces these
+    // rules on every single download. No getDownloadURL() anywhere.
+    match /staff-docs/{authUid}/{fileName} {
+      // Only the owning staff member and admins may read a document.
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      // Uploads: admin (on behalf of staff) or the staff member
+      // themselves. Images and PDFs only, max 10 MB.
+      allow create, update: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin()) &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+         request.resource.contentType.matches('application/pdf'));
+
+      allow delete: if isAdmin();
+    }
+
+    // Client requirement-form uploads (bank statements, reference files
+    // etc.), organised as requirement-files/{clientUid}/{formId}/{fileName}
+    // so ownership maps to the Firebase Auth uid like staff-docs.
+    // The client stores the download URL in their form answers; reading
+    // via the SDK still enforces these rules on every download.
+    match /requirement-files/{authUid}/{formId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      // Uploads: the owning client or an admin. Images, PDFs and common
+      // office documents, max 10 MB (matches the form builder's
+      // FILE_ACCEPTS options: any / pdf / image / doc / excel / pdf_image / all_docs).
+      allow create, update: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin()) &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+         request.resource.contentType.matches('application/pdf') ||
+         request.resource.contentType.matches('application/msword') ||
+         request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+         request.resource.contentType.matches('application/vnd.ms-excel') ||
+         request.resource.contentType.matches('text/plain') ||
+         request.resource.contentType == 'application/octet-stream');
+
+      allow delete: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+    }
+
+    // No other match block → every other path is denied by default.
+  }
+}

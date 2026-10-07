@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { company } from '../../config/company';
 import {
   LayoutDashboard, Bell, Users, FolderKanban,
   ClipboardList, Receipt, FileText, UserCheck,
   MessageCircle, BarChart3, Trophy, Settings,
-  LogOut, ChevronRight, Briefcase
+  LogOut, ChevronRight, Briefcase, FileStack, QrCode
 } from 'lucide-react';
 
 const NAV = [
@@ -23,7 +24,9 @@ const NAV = [
     items: [
       { path: '/erp/requirements', label: 'Requirements', icon: ClipboardList },
       { path: '/erp/quotations',   label: 'Quotations',   icon: Receipt       },
+      { path: '/erp/templates',    label: 'Templates',    icon: FileStack     },
       { path: '/erp/invoices',     label: 'Invoices',     icon: FileText      },
+      { path: '/erp/qr-services',  label: 'QR Services',  icon: QrCode        },
     ]
   },
   {
@@ -68,38 +71,50 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
         background: 'linear-gradient(90deg, transparent, rgba(0,217,255,0.6), transparent)'
       }} />
 
-      {/* Logo */}
-      <div className={`flex items-center gap-3 px-4 py-5 border-b ${collapsed ? 'justify-center px-2' : ''}`}
-        style={{ borderColor: 'rgba(32,52,93,0.5)' }}>
-        <div className="erp-logo-3d shrink-0" style={{
-          width: 38, height: 38,
-          background: 'linear-gradient(135deg, #0066FF, #00D9FF)',
-          borderRadius: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 15px rgba(0,102,255,0.5), 0 0 0 1px rgba(0,217,255,0.2), inset 0 1px 0 rgba(255,255,255,0.2)',
-          transform: 'perspective(80px) rotateX(5deg) rotateY(-5deg)',
-          transition: 'transform 0.3s',
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-          onMouseEnter={e => e.currentTarget.style.transform = 'perspective(80px) rotateX(0deg) rotateY(0deg)'}
-          onMouseLeave={e => e.currentTarget.style.transform = 'perspective(80px) rotateX(5deg) rotateY(-5deg)'}
-        >
-          <img
-            src="/logos/SMART_LOGO_ONLY_HEAD_CMP.png"
-            alt="SMART"
-            style={{ width: 26, height: 26, objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
-            onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }}
-          />
-          <span style={{ display:'none', color:'#fff', fontWeight:900, fontSize:16 }}>S</span>
+      {/* Logo — SAME brand files as the public website (company.logos).
+          Expanded: full dark-mode logo. Collapsed: head-only mark. */}
+      <div className={`flex items-center gap-2.5 px-3 py-4 border-b ${collapsed ? 'justify-center px-2' : ''}`}
+        style={{ borderColor: 'rgba(32,52,93,0.5)', minHeight: 72 }}>
+        <img
+          src={collapsed ? company.logos.adminCollapsed : company.logos.admin}
+          alt="SMART Pvt Ltd"
+          style={{
+            height: collapsed ? 36 : 42,
+            width: 'auto',
+            maxWidth: collapsed ? 40 : 148,
+            objectFit: 'contain',
+            objectPosition: 'left center',
+            display: 'block',
+            flexShrink: 0,
+          }}
+          onError={(e) => {
+            if (e.currentTarget.dataset.fb === 'done') {
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.nextElementSibling;
+              if (fallback) fallback.style.display = 'flex';
+              return;
+            }
+            e.currentTarget.dataset.fb = 'done';
+            e.currentTarget.src = company.logos.adminFallback;
+          }}
+        />
+        <div style={{
+          display: 'none', alignItems: 'center', gap: 8,
+          minWidth: 0,
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 9, flexShrink: 0,
+            background: 'linear-gradient(135deg, #0066FF, #00D9FF)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 900, fontSize: 14,
+          }}>S</div>
+          {!collapsed && (
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>SMART Pvt Ltd</div>
+              <div style={{ fontSize: 9, color: 'rgba(0,217,255,0.85)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>ERP System</div>
+            </div>
+          )}
         </div>
-
-        {!collapsed && (
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '0.5px' }}>SMARTORIX</div>
-            <div style={{ fontSize: 9, color: 'rgba(0,217,255,0.85)', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase' }}>ERP System</div>
-          </div>
-        )}
       </div>
 
       {/* Nav */}
