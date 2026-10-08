@@ -19,6 +19,7 @@ const ERPQRServices   = lazy(() => import('./pages/ERPQRServices'));
 const ERPAnalytics    = lazy(() => import('./pages/ERPAnalytics'));
 const ERPAchievements = lazy(() => import('./pages/ERPAchievements'));
 const ERPSettings     = lazy(() => import('./pages/ERPSettings'));
+const ERPAccessRules  = lazy(() => import('./pages/ERPAccessRules'));
 
 function ERPFallback() {
   return (
@@ -54,6 +55,7 @@ export default function ERPApp() {
         <Route path="analytics"         element={<Suspense fallback={<ERPFallback/>}><ERPAnalytics /></Suspense>} />
         <Route path="achievements"      element={<Suspense fallback={<ERPFallback/>}><ERPAchievements /></Suspense>} />
         <Route path="settings"          element={<Suspense fallback={<ERPFallback/>}><ERPSettings /></Suspense>} />
+        <Route path="access-rules"      element={<Suspense fallback={<ERPFallback/>}><ERPAccessRules /></Suspense>} />
         <Route path="*"                 element={<Navigate to="/erp" replace />} />
       </Route>
     </Routes>

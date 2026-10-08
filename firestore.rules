@@ -202,7 +202,9 @@ service cloud.firestore {
       allow create: if isAdmin() ||
         (request.auth != null &&
          request.resource.data.authUid == request.auth.uid);
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null && resource.data.authUid == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
     // Salary payments / payslips. Staff read ONLY their own payslips;
@@ -210,6 +212,12 @@ service cloud.firestore {
     match /salaryPayments/{paymentId} {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.authUid == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // System Settings & Access Control Rules
+    match /settings/{settingId} {
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
   }

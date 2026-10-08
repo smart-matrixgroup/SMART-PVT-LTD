@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, Search, Menu, X, ChevronRight } from 'lucide-react';
 
-export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], actions }) {
+export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], onMarkAllRead, actions }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const [search, setSearch] = useState('');
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -93,7 +93,9 @@ export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCol
             }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Notifications</span>
               {unreadCount > 0 && (
-                <span style={{ fontSize: 10, color: '#00D9FF', cursor: 'pointer', fontWeight: 600 }}>
+                <span
+                  onClick={() => onMarkAllRead && onMarkAllRead()}
+                  style={{ fontSize: 10, color: '#00D9FF', cursor: 'pointer', fontWeight: 600 }}>
                   Mark all read
                 </span>
               )}

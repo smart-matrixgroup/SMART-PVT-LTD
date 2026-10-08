@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import ERPSidebar from './ERPSidebar';
@@ -30,6 +30,17 @@ const DEV_NOTIFICATIONS = [
   { icon: '📝', text: 'Requirement form filled by Kumar A.', time: '2 hr ago', read: true },
 ];
 
+// "2 min ago" style stamp for live lead notifications
+const relTime = (ts) => {
+  if (!ts?.toDate) return 'just now';
+  const mins = Math.floor((Date.now() - ts.toDate().getTime()) / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs} hr ago`;
+  return `${Math.floor(hrs / 24)} d ago`;
+};
+
 export default function ERPLayout() {
   const location = useLocation();
   const { isDevSession } = useAuth();
@@ -39,6 +50,10 @@ export default function ERPLayout() {
   const [leadCount, setLeadCount]   = useState(0);
   const [msgCount,  setMsgCount]    = useState(0);
   const [notifications, setNotifications] = useState(DEV_NOTIFICATIONS);
+  // Live website/QR request notifications (bell dropdown)
+  const [liveNotifs, setLiveNotifs] = useState([]);
+  const [readIds,    setReadIds]    = useState([]);
+  const seededNotifs = useRef(false);
 
   const meta = PAGE_META[location.pathname] || { title: 'ERP', subtitle: '' };
 
@@ -59,6 +74,40 @@ export default function ERPLayout() {
     const q = query(collection(db, 'leads'), where('status', '==', 'New'));
     return onSnapshot(q, snap => setLeadCount(snap.size));
   }, [isDevSession]);
+
+  // ── Live admin notifications ─────────────────────────────────────
+  // Every website request form submission (including QR-scan requests)
+  // lands in `leads`. Mirror the newest ones into the topbar bell so the
+  // admin is pinged the moment a customer submits. Leads that already
+  // existed when the admin opened ERP start as read — only NEW arrivals
+  // show the unread dot.
+  useEffect(() => {
+    if (!isFirebaseConfigured || isDevSession) return;
+    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'), limit(8));
+    return onSnapshot(q, snap => {
+      const items = snap.docs.map(d => {
+        const L = d.data();
+        const viaQR = String(L.page || '').includes('/services/qr/');
+        return {
+          id:   d.id,
+          icon: viaQR ? '📱' : '🌐',
+          text: `New request: ${L.name || 'Guest'} — ${L.service || 'Service'}${L.company ? ` (${L.company})` : ''} · ${L.phone || L.email || ''}${viaQR ? ' · via QR scan' : ''}`,
+          time: relTime(L.createdAt),
+        };
+      });
+      setLiveNotifs(items);
+      if (!seededNotifs.current) {
+        seededNotifs.current = true;
+        setReadIds(items.map(i => i.id));
+      }
+    });
+  }, [isDevSession]);
+
+  const useLiveNotifs = isFirebaseConfigured && !isDevSession;
+  const bellNotifications = useLiveNotifs
+    ? liveNotifs.map(n => ({ ...n, read: readIds.includes(n.id) }))
+    : DEV_NOTIFICATIONS;
+  const markAllNotifsRead = () => setReadIds(liveNotifs.map(n => n.id));
 
   const toggleSidebar = () => {
     if (isMobile) setMobileOpen(o => !o);
@@ -131,7 +180,8 @@ export default function ERPLayout() {
           subtitle={meta.subtitle}
           onToggleSidebar={toggleSidebar}
           sidebarCollapsed={isMobile ? !mobileOpen : collapsed}
-          notifications={notifications}
+          notifications={bellNotifications}
+          onMarkAllRead={markAllNotifsRead}
         />
 
         {/* Page content */}

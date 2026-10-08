@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { services } from '../config/services';
 import { company } from '../config/company';
@@ -23,14 +23,18 @@ export default function QRServicePage({ onOpenQuote }) {
   // Normalize slug matching
   const scannedSlug = (slug || '').toLowerCase().trim();
 
-  // Find scanned service (check slug, id, or close match)
-  const scannedService = useMemo(() => {
+  // Find scanned service (check slug, id, or close match).
+  // `recognized` stays false when NOTHING matches — then we must not
+  // auto-open the request form for a service the customer never scanned.
+  const exactMatch = useMemo(() => {
     return (
       services.find(s => s.slug?.toLowerCase() === scannedSlug || s.id?.toLowerCase() === scannedSlug) ||
       services.find(s => s.title?.toLowerCase().includes(scannedSlug)) ||
-      services[0]
+      null
     );
   }, [scannedSlug]);
+  const recognized = !!exactMatch;
+  const scannedService = exactMatch || services[0];
 
   const ScannedIcon = ICON_MAP[scannedService?.icon] || Sparkles;
 
@@ -47,6 +51,19 @@ export default function QRServicePage({ onOpenQuote }) {
   const whatsappUrl = `https://wa.me/${company.contact.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(
     `Hello SMART Pvt Ltd, I scanned the QR code for ${scannedService?.title}. I would like more information.`
   )}`;
+
+  // ── Scan → straight into the request form ────────────────────────
+  // A customer who scanned a service QR lands here expecting the request
+  // form. Open it once (short delay so the page paints first) with the
+  // scanned service already selected. The "Request Quotation" button and
+  // every other CTA still work exactly as before.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!onOpenQuote || autoOpened.current || !recognized || !scannedService) return;
+    autoOpened.current = true;
+    const t = setTimeout(() => onOpenQuote(scannedService.title), 700);
+    return () => clearTimeout(t);
+  }, [onOpenQuote, recognized, scannedService]);
 
   return (
     <div className="min-h-screen bg-[#070D1F] text-slate-100 selection:bg-blue-600 selection:text-white">
@@ -94,6 +111,12 @@ export default function QRServicePage({ onOpenQuote }) {
           <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-indigo-600/15 blur-3xl pointer-events-none" />
 
           {/* Scanned Badge */}
+          {!recognized && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-semibold mb-4">
+              <ShieldCheck size={14} className="mt-0.5 flex-shrink-0" />
+              <span>This QR code could not be matched to a service — showing our flagship service instead. Browse all services below or request any service directly.</span>
+            </div>
+          )}
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs font-bold uppercase tracking-wider mb-6">
             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
             Scanned Service Highlight

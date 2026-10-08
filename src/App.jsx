@@ -22,6 +22,7 @@ const InsightsPage        = lazy(() => import('./pages/InsightsPage'));
 const InsightDetailPage   = lazy(() => import('./pages/InsightDetailPage'));
 const ContactPage         = lazy(() => import('./pages/ContactPage'));
 const QRServicePage       = lazy(() => import('./pages/QRServicePage'));
+const ClientRequestQRPage = lazy(() => import('./pages/ClientRequestQRPage'));
 const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
 const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
@@ -73,6 +74,8 @@ function StandaloneRoutes() {
         <Route path="/staff-portal" element={
           <ProtectedRoute role="staff" redirectTo="/staff-login"><StaffPortalApp /></ProtectedRoute>
         } />
+        <Route path="/request" element={<ClientRequestQRPage />} />
+        <Route path="/qr-request" element={<ClientRequestQRPage />} />
         <Route path="*" element={<ERPFallback />} />
       </Routes>
     </Suspense>
@@ -83,9 +86,16 @@ function StandaloneRoutes() {
 function WebsiteRoutes() {
   const [isQuoteOpen,         setIsQuoteOpen]         = useState(false);
   const [quoteService,        setQuoteService]         = useState('');
+  const [quoteSource,         setQuoteSource]          = useState('Quote Request');
   const [isClientRequestOpen, setIsClientRequestOpen]  = useState(false);
 
-  const handleOpenQuote          = (s = '') => { setQuoteService(s); setIsQuoteOpen(true); };
+  const handleOpenQuote          = (s = '') => {
+    setQuoteService(s);
+    // Tag leads opened from a scanned service QR page so the ERP can tell
+    // QR-scan requests apart from ordinary website quote requests.
+    setQuoteSource(window.location.pathname.startsWith('/services/qr/') ? 'QR Scan' : 'Quote Request');
+    setIsQuoteOpen(true);
+  };
   const handleCloseQuote         = ()       => setIsQuoteOpen(false);
   const handleOpenClientRequest  = ()       => setIsClientRequestOpen(true);
   const handleCloseClientRequest = ()       => setIsClientRequestOpen(false);
@@ -110,6 +120,8 @@ function WebsiteRoutes() {
             <Route path="/contact" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
             <Route path="/locations" element={<PublicPage><ContactPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
             <Route path="/client-login" element={<PublicPage><ClientLoginPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+            <Route path="/request" element={<ClientRequestQRPage />} />
+            <Route path="/qr-request" element={<ClientRequestQRPage />} />
             <Route path="/privacy" element={<PublicPage><PrivacyPolicyPage /></PublicPage>} />
             <Route path="/terms" element={<PublicPage><TermsPage /></PublicPage>} />
             <Route path="/erp-system" element={<Navigate to="/erp" replace />} />
@@ -119,7 +131,7 @@ function WebsiteRoutes() {
       </main>
       <Footer onOpenQuote={() => handleOpenQuote()} />
       <WhatsAppButton />
-      <QuoteModal isOpen={isQuoteOpen} onClose={handleCloseQuote} initialService={quoteService} />
+      <QuoteModal isOpen={isQuoteOpen} onClose={handleCloseQuote} initialService={quoteService} source={quoteSource} />
       <ClientRequestForm isOpen={isClientRequestOpen} onClose={handleCloseClientRequest} />
     </div>
   );

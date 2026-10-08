@@ -209,6 +209,7 @@ export default function ClientDashboardPage() {
   const [chatSending,setChatSending]   = useState(false);
   const [unreadMsgCount,setUnreadMsgCount] = useState(0);
   const chatEndRef                     = useRef(null);
+  const chatInputRef                   = useRef(null);
 
   const [showReport,setShowReport]   = useState(false);
   const [reportSid,setReportSid]     = useState(null);
@@ -343,6 +344,8 @@ export default function ClientDashboardPage() {
       console.error('Failed to send message', err);
     } finally {
       setChatSending(false);
+      // keep the typing flow unbroken: focus returns to the input after send
+      setTimeout(()=>chatInputRef.current?.focus(),0);
     }
   };
 
@@ -359,6 +362,8 @@ export default function ClientDashboardPage() {
     if(!isFirebaseConfigured||isDevSession){setMessages(p=>[...p,m]);}
     else{try{await addDoc(collection(db,'messages',selProject.id,'chats'),{senderId:uid,senderName:client.name,senderRole:'client',text:msgText.trim(),timestamp:serverTimestamp(),sessionId:sid});}catch(e){console.error(e);}}
     setMsgText('');setMsgSending(false);
+    // keep typing flow unbroken: focus returns to the input after send
+    setTimeout(()=>msgInputRef.current?.focus(),0);
   };
   const acceptQuote=async(id)=>{
     if(!isFirebaseConfigured||isDevSession){setProjects(p=>p.map(x=>x.id===id?{...x,status:'quotation_accepted'}:x));return;}
@@ -1710,6 +1715,7 @@ export default function ClientDashboardPage() {
             padding:'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center',background:'#141C2E'
           }}>
             <input
+              ref={chatInputRef}
               type="text"
               value={chatInput}
               onChange={e=>setChatInput(e.target.value)}
@@ -1731,6 +1737,7 @@ export default function ClientDashboardPage() {
             <button
               type="submit"
               disabled={!chatInput.trim()||chatSending}
+              onMouseDown={e=>e.preventDefault()}
               style={{
                 width:42,height:42,borderRadius:'50%',border:'none',cursor:'pointer',
                 background:'linear-gradient(135deg,#4F46E5,#7C3AED)',display:'flex',alignItems:'center',justifyContent:'center',

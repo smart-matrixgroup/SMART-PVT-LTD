@@ -1,12 +1,14 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { ERPPanel, ERPPanelHeader, ERPBtn, ERPInput, ERPTextarea, C } from '../components/ERPui';
-import { Save, Shield, Bell, Building, User, Lock } from 'lucide-react';
+import { Save, Shield, Bell, Building, User, Lock, ShieldCheck } from 'lucide-react';
 import { company } from '../../config/company';
+import ERPAccessRules from './ERPAccessRules';
 
 const SECTIONS = [
   {id:'company',  label:'Company Info',     icon:<Building size={14}/> },
   {id:'admin',    label:'Admin Profile',    icon:<User size={14}/>     },
-  {id:'security', label:'Security',         icon:<Shield size={14}/>   },
+  {id:'security', label:'Security',         icon:<Lock size={14}/>     },
+  {id:'rules',    label:'Access Rules',     icon:<ShieldCheck size={14}/> },
   {id:'notify',   label:'Notifications',    icon:<Bell size={14}/>     },
 ];
 
@@ -143,6 +145,11 @@ export default function ERPSettings() {
               </ERPBtn>
             </div>
           </ERPPanel>
+        )}
+
+        {/* ── Access Rules & Restrictions ── */}
+        {section==='rules' && (
+          <ERPAccessRules />
         )}
 
         {/* ── Notifications ── */}

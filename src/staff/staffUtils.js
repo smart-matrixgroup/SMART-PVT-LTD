@@ -4,8 +4,8 @@
 //  date/attendance/CSV/money utilities + shared constants.
 // ─────────────────────────────────────────────────────────────────
 import { doc, runTransaction } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import { toInt } from '../erp/money';
+import { db } from '../config/firebase.js';
+import { toInt } from '../erp/money.js';
 
 /** Transactional unique number — same scheme as ERPQuotations:
  *  nextNumber('staff','STF') → 'STF-2026-0001'. Falls back to a
@@ -133,4 +133,98 @@ export function downloadCsv(filename, headers, rows) {
 /** Whole-rupee net pay for a salary structure (matches src/erp/money.js semantics). */
 export function computeNet(basic, allowances, deductions) {
   return Math.max(0, (Number(basic) || 0) + (Number(allowances) || 0) - (Number(deductions) || 0));
+}
+
+// ── Daily Routine Work Log Helpers ────────────────────────────────
+export const DAILY_LOG_STATUSES = ['Completed', 'Pending'];
+
+export function parseLunchMinutes(lunchStr) {
+  if (!lunchStr) return 0;
+  const s = String(lunchStr).toLowerCase();
+  if (s.includes('1.5') || s.includes('90 min')) return 90;
+  if (s.includes('1 hr') || s.includes('1 hour') || s.includes('60 min')) return 60;
+  if (s.includes('45 min')) return 45;
+  if (s.includes('30 min')) return 30;
+  // If time range like "1:00 - 2:00" or "13:00 - 14:00"
+  if (s.includes('-')) {
+    const parts = s.split('-');
+    if (parts.length === 2) return 60; // standard 1 hr window
+  }
+  const match = s.match(/(\d+)\s*(?:m|min)/);
+  if (match) return Number(match[1]);
+  const hrMatch = s.match(/(\d+)\s*(?:h|hr|hour)/);
+  if (hrMatch) return Number(hrMatch[1]) * 60;
+  return 60; // default 1 hour if unspecified
+}
+
+export function calculateWorkHours(startTime, endTime, lunchStr = '1 hr') {
+  if (!startTime || !endTime) return '—';
+  const [sh, sm] = String(startTime).split(':').map(Number);
+  const [eh, em] = String(endTime).split(':').map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return '—';
+  let startMinutes = sh * 60 + sm;
+  let endMinutes = eh * 60 + em;
+  if (endMinutes < startMinutes) endMinutes += 24 * 60; // span midnight
+  let totalMins = endMinutes - startMinutes;
+  const breakMins = parseLunchMinutes(lunchStr);
+  if (breakMins > 0 && totalMins > breakMins) {
+    totalMins -= breakMins;
+  }
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours} hrs`;
+}
+
+export function calculateTaskDuration(startTime, endTime) {
+  if (!startTime || !endTime) return '—';
+  const [sh, sm] = String(startTime).split(':').map(Number);
+  const [eh, em] = String(endTime).split(':').map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return '—';
+  let startMinutes = sh * 60 + sm;
+  let endMinutes = eh * 60 + em;
+  if (endMinutes < startMinutes) endMinutes += 24 * 60;
+  const diff = endMinutes - startMinutes;
+  const hrs = diff / 60;
+  return Number.isInteger(hrs) ? `${hrs}.0 hrs` : `${hrs.toFixed(1)} hrs`;
+}
+
+export function calculateAttendanceHours(arrival, lunchStart, lunchEnd, departure) {
+  let lunchDurationMins = 0;
+  if (lunchStart && lunchEnd) {
+    const [lsh, lsm] = String(lunchStart).split(':').map(Number);
+    const [leh, lem] = String(lunchEnd).split(':').map(Number);
+    if (!isNaN(lsh) && !isNaN(lsm) && !isNaN(leh) && !isNaN(lem)) {
+      let ls = lsh * 60 + lsm;
+      let le = leh * 60 + lem;
+      if (le < ls) le += 24 * 60;
+      lunchDurationMins = Math.max(0, le - ls);
+    }
+  }
+
+  let totalWorkMins = 0;
+  if (arrival && departure) {
+    const [ah, am] = String(arrival).split(':').map(Number);
+    const [dh, dm] = String(departure).split(':').map(Number);
+    if (!isNaN(ah) && !isNaN(am) && !isNaN(dh) && !isNaN(dm)) {
+      let a = ah * 60 + am;
+      let d = dh * 60 + dm;
+      if (d < a) d += 24 * 60;
+      totalWorkMins = Math.max(0, d - a - lunchDurationMins);
+    }
+  }
+
+  const lunchHrs = lunchDurationMins / 60;
+  const workHrs = totalWorkMins / 60;
+
+  return {
+    lunchDuration: lunchDurationMins > 0 ? (Number.isInteger(lunchHrs) ? `${lunchHrs}.0 hrs` : `${lunchHrs.toFixed(1)} hrs`) : '—',
+    totalWorkHours: totalWorkMins > 0 ? (Number.isInteger(workHrs) ? `${workHrs}.0 hrs` : `${workHrs.toFixed(1)} hrs`) : '—',
+  };
+}
+
+export function getDayName(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { weekday: 'long' });
 }

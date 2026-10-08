@@ -5,16 +5,19 @@
 //  search param so links survive refresh.
 //
 //  Every section reads only the signed-in member's data (authUid /
-//  staff doc id == Firebase Auth uid). The security rules are the
-//  real enforcement layer — the UI simply never queries beyond it.
+//  staff doc id == Firebase Auth uid). Respects Admin Access Rules
+//  configured in ERP → Access Rules (/erp/access-rules).
 // ─────────────────────────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { company } from '../config/company';
 import {
   C, ERPPanel, ERPPanelHeader, ERPBtn, ERPEmpty,
 } from '../erp/components/ERPui';
+import { DEFAULT_ACCESS_RULES } from '../config/accessRules';
 import MyDashboard  from './sections/MyDashboard';
 import MyWork       from './sections/MyWork';
 import DailyUpdate  from './sections/DailyUpdate';
@@ -22,36 +25,38 @@ import MyAttendance from './sections/MyAttendance';
 import MyProfile, { MyDocuments } from './sections/MyProfile';
 import MySalary     from './sections/MySalary';
 import StaffMessages from './sections/StaffMessages';
+import StaffClientProjects from './sections/StaffClientProjects';
 import {
   LayoutDashboard, Briefcase, ClipboardList, Activity, Timer,
   CalendarCheck, User, IdCard, Award, Wallet, Receipt, MessageSquare,
-  LogOut, Menu,
+  LogOut, Menu, FolderKanban, Lock, ShieldAlert
 } from 'lucide-react';
 
 const MENU = [
   { group: 'Main', items: [
-    { id: 'dashboard',    label: 'Dashboard',            icon: LayoutDashboard },
+    { id: 'dashboard',    label: 'Dashboard',            icon: LayoutDashboard, ruleKey: null },
   ]},
   { group: 'Work', items: [
-    { id: 'work',         label: 'Assigned Work',        icon: Briefcase },
-    { id: 'daily',        label: 'Daily Work Update',    icon: ClipboardList },
-    { id: 'progress',     label: 'Work Progress',        icon: Activity },
+    { id: 'work',         label: 'Assigned Work',        icon: Briefcase, ruleKey: 'allowStaffWork' },
+    { id: 'daily',        label: 'Daily Work Update',    icon: ClipboardList, ruleKey: 'allowStaffDailyLog' },
+    { id: 'progress',     label: 'Work Progress',        icon: Activity, ruleKey: 'allowStaffWork' },
+    { id: 'client_projects', label: 'Client Projects',   icon: FolderKanban, ruleKey: 'allowStaffClientProjects' },
   ]},
   { group: 'Time', items: [
-    { id: 'checkout',     label: 'Check-in / Check-out', icon: Timer },
-    { id: 'attendance',   label: 'Attendance',           icon: CalendarCheck },
+    { id: 'checkout',     label: 'Check-in / Check-out', icon: Timer, ruleKey: 'allowStaffAttendance' },
+    { id: 'attendance',   label: 'Attendance',           icon: CalendarCheck, ruleKey: 'allowStaffAttendance' },
   ]},
   { group: 'Personal', items: [
-    { id: 'profile',      label: 'Profile',              icon: User },
-    { id: 'kyc',          label: 'KYC Documents',        icon: IdCard },
-    { id: 'certificates', label: 'Certificates',         icon: Award },
+    { id: 'profile',      label: 'Profile',              icon: User, ruleKey: null },
+    { id: 'kyc',          label: 'KYC Documents',        icon: IdCard, ruleKey: 'allowStaffDocuments' },
+    { id: 'certificates', label: 'Certificates',         icon: Award, ruleKey: 'allowStaffDocuments' },
   ]},
   { group: 'Pay', items: [
-    { id: 'salary',       label: 'Salary',               icon: Wallet },
-    { id: 'payslips',     label: 'Payslips',             icon: Receipt },
+    { id: 'salary',       label: 'Salary',               icon: Wallet, ruleKey: 'allowStaffSalary' },
+    { id: 'payslips',     label: 'Payslips',             icon: Receipt, ruleKey: 'allowStaffSalary' },
   ]},
   { group: 'Other', items: [
-    { id: 'messages',     label: 'Messages',             icon: MessageSquare },
+    { id: 'messages',     label: 'Messages',             icon: MessageSquare, ruleKey: 'allowStaffMessages' },
   ]},
 ];
 
@@ -73,20 +78,50 @@ const PORTAL_CSS = `
   }
 `;
 
-function Section({ page, onNavigate }) {
+function RestrictionScreen({ title, onNavigate }) {
+  return (
+    <div style={{ maxWidth: 480, margin: '50px auto', padding: '0 16px' }}>
+      <ERPPanel style={{ padding: '36px 24px', textAlign: 'center' }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 16, background: 'rgba(240,90,103,0.12)',
+          color: C.red, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px'
+        }}>
+          <Lock size={28} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 8 }}>
+          {title || 'Section Access Restricted'}
+        </div>
+        <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
+          This page is currently restricted for your staff account by the Administrator.
+          If your duties require access, please contact management.
+        </div>
+        <ERPBtn variant="secondary" onClick={() => onNavigate('dashboard')} style={{ margin: '0 auto' }}>
+          Back to Dashboard
+        </ERPBtn>
+      </ERPPanel>
+    </div>
+  );
+}
+
+function Section({ page, onNavigate, isAllowed }) {
+  if (!isAllowed) {
+    return <RestrictionScreen title={TITLES[page]} onNavigate={onNavigate} />;
+  }
+
   switch (page) {
-    case 'work':         return <MyWork variant="assigned" />;
-    case 'progress':     return <MyWork variant="progress" />;
-    case 'daily':        return <DailyUpdate />;
-    case 'checkout':     return <MyAttendance variant="checkout" />;
-    case 'attendance':   return <MyAttendance variant="attendance" />;
-    case 'profile':      return <MyProfile />;
-    case 'kyc':          return <MyDocuments category="kyc" icon={IdCard} />;
-    case 'certificates': return <MyDocuments category="certificate" icon={Award} />;
-    case 'salary':       return <MySalary variant="salary" />;
-    case 'payslips':     return <MySalary variant="payslips" />;
-    case 'messages':     return <StaffMessages />;
-    default:             return <MyDashboard onNavigate={onNavigate} />;
+    case 'work':            return <MyWork variant="assigned" />;
+    case 'progress':        return <MyWork variant="progress" />;
+    case 'daily':           return <DailyUpdate />;
+    case 'client_projects': return <StaffClientProjects isRestricted={false} />;
+    case 'checkout':        return <MyAttendance variant="checkout" />;
+    case 'attendance':      return <MyAttendance variant="attendance" />;
+    case 'profile':         return <MyProfile />;
+    case 'kyc':             return <MyDocuments category="kyc" icon={IdCard} />;
+    case 'certificates':    return <MyDocuments category="certificate" icon={Award} />;
+    case 'salary':          return <MySalary variant="salary" />;
+    case 'payslips':        return <MySalary variant="payslips" />;
+    case 'messages':        return <StaffMessages />;
+    default:                return <MyDashboard onNavigate={onNavigate} />;
   }
 }
 
@@ -94,14 +129,36 @@ function Section({ page, onNavigate }) {
 export default function StaffPortalApp() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const { staffProfile, loading, logout } = useAuth();
+  const { staffProfile, loading, logout, isFirebaseConfigured, isDevSession } = useAuth();
+  const live = isFirebaseConfigured && !isDevSession;
   const [navOpen, setNavOpen] = useState(false);
+  const [accessRules, setAccessRules] = useState(DEFAULT_ACCESS_RULES);
 
   const page = params.get('page') || 'dashboard';
   const setPage = id => {
     setParams(id === 'dashboard' ? {} : { page: id });
     setNavOpen(false);
   };
+
+  // Sync access rules from Firestore or local cache
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('smart_access_rules');
+      if (cached) setAccessRules(p => ({ ...p, ...JSON.parse(cached) }));
+    } catch { /* ignore */ }
+
+    if (!live) return;
+
+    const unsub = onSnapshot(doc(db, 'settings', 'accessRules'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setAccessRules(prev => ({ ...prev, ...data }));
+        localStorage.setItem('smart_access_rules', JSON.stringify(data));
+      }
+    }, () => {});
+
+    return unsub;
+  }, [live]);
 
   const handleLogout = async () => {
     await logout();
@@ -147,7 +204,20 @@ export default function StaffPortalApp() {
     );
   }
 
-  const initials = (staffProfile.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  // Check if current user is allowed on specific item
+  const staffId = staffProfile.id || '';
+  const memberOverride = accessRules.memberOverrides?.[staffId] || {};
+
+  const isItemAllowed = (item) => {
+    if (!item.ruleKey) return true;
+    if (memberOverride[item.ruleKey] !== undefined) {
+      return Boolean(memberOverride[item.ruleKey]);
+    }
+    return Boolean(accessRules[item.ruleKey] ?? true);
+  };
+
+  const currentItem = MENU.flatMap(g => g.items).find(i => i.id === page);
+  const isCurrentPageAllowed = currentItem ? isItemAllowed(currentItem) : true;
 
   return (
     <div style={{ minHeight: '100vh', background: '#040D1F' }}>
@@ -189,6 +259,8 @@ export default function StaffPortalApp() {
               {group.items.map(item => {
                 const active = page === item.id;
                 const Icon = item.icon;
+                const allowed = isItemAllowed(item);
+
                 return (
                   <button
                     key={item.id}
@@ -198,13 +270,17 @@ export default function StaffPortalApp() {
                       padding: '9px 12px', marginBottom: 2, borderRadius: 10, border: 'none',
                       cursor: 'pointer', textAlign: 'left',
                       background: active ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'transparent',
-                      color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+                      color: active ? '#fff' : allowed ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
                       fontSize: 12.5, fontWeight: active ? 800 : 600,
                       boxShadow: active ? '0 4px 14px rgba(0,102,255,0.35)' : 'none',
+                      transition: 'all 0.15s'
                     }}
                   >
                     <Icon size={15} style={{ flexShrink: 0 }} />
-                    {item.label}
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {!allowed && (
+                      <Lock size={12} style={{ color: C.red, opacity: 0.8 }} title="Restricted by Admin" />
+                    )}
                   </button>
                 );
               })}
@@ -248,34 +324,24 @@ export default function StaffPortalApp() {
             </div>
           </div>
 
-          <div style={{
-            width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
-            background: 'linear-gradient(135deg,#0066FF,#00D9FF)', color: '#fff',
-            fontSize: 12.5, fontWeight: 800,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {initials}
-          </div>
-
           <button
             onClick={handleLogout}
             title="Sign out"
             style={{
-              background: 'rgba(240,90,103,0.12)', border: '1px solid rgba(240,90,103,0.35)',
-              color: '#F05A67', borderRadius: 10, padding: '7px 9px', cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center',
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 8, padding: '7px 10px', color: 'rgba(255,255,255,0.75)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700,
             }}
           >
-            <LogOut size={15} />
+            <LogOut size={13} /> Sign out
           </button>
         </header>
 
-        <main style={{ padding: 20 }}>
-          <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-            <Section page={page} onNavigate={setPage} />
-          </div>
+        <main style={{ padding: '20px 24px 60px', maxWidth: 1200, margin: '0 auto' }}>
+          <Section page={page} onNavigate={setPage} isAllowed={isCurrentPageAllowed} />
         </main>
       </div>
+
     </div>
   );
 }

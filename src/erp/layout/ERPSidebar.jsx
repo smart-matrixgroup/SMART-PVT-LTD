@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Bell, Users, FolderKanban,
   ClipboardList, Receipt, FileText, UserCheck,
   MessageCircle, BarChart3, Trophy, Settings,
-  LogOut, ChevronRight, Briefcase, FileStack, QrCode
+  LogOut, ChevronRight, Briefcase, FileStack, QrCode, ShieldCheck
 } from 'lucide-react';
 
 const NAV = [
@@ -32,8 +32,9 @@ const NAV = [
   {
     section: 'Team',
     items: [
-      { path: '/erp/staff',    label: 'Staff',    icon: UserCheck   },
-      { path: '/erp/messages', label: 'Messages', icon: MessageCircle, badge: 'messages' },
+      { path: '/erp/staff',        label: 'Staff',        icon: UserCheck   },
+      { path: '/erp/access-rules', label: 'Access Rules', icon: ShieldCheck },
+      { path: '/erp/messages',     label: 'Messages',     icon: MessageCircle, badge: 'messages' },
     ]
   },
   {

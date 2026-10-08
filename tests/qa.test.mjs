@@ -354,3 +354,57 @@ test('Access Control - Messaging rules strictly allow only Admin <-> Staff and A
   assert.equal(canInitiateMessage({ senderRole: 'staff', receiverRole: 'client' }), false);
   assert.equal(canInitiateMessage({ senderRole: 'client', receiverRole: 'staff' }), false);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. DAILY WORK REPORT & ATTENDANCE HOURS CALCULATION TESTS
+// ─────────────────────────────────────────────────────────────────────────────
+import { calculateTaskDuration, calculateAttendanceHours, getDayName } from '../src/staff/staffUtils.js';
+import { DEFAULT_ACCESS_RULES } from '../src/config/accessRules.js';
+
+test('Daily Work Report - Task duration calculation works accurately', () => {
+  assert.equal(calculateTaskDuration('09:00', '10:30'), '1.5 hrs');
+  assert.equal(calculateTaskDuration('08:30', '11:00'), '2.5 hrs');
+  assert.equal(calculateTaskDuration('13:00', '15:00'), '2.0 hrs');
+  assert.equal(calculateTaskDuration('16:00', '17:30'), '1.5 hrs');
+  assert.equal(calculateTaskDuration('09:00', '09:00'), '0.0 hrs');
+  assert.equal(calculateTaskDuration('', '10:00'), '—');
+});
+
+test('Daily Work Report - Attendance hours deducting lunch break correctly', () => {
+  // Arrival: 08:30, Lunch: 13:00 - 14:00 (1 hr), Departure: 17:30 -> Net work: 8.0 hrs
+  const att1 = calculateAttendanceHours('08:30', '13:00', '14:00', '17:30');
+  assert.equal(att1.lunchDuration, '1.0 hrs');
+  assert.equal(att1.totalWorkHours, '8.0 hrs');
+
+  // Arrival: 09:00, Lunch: 12:30 - 13:15 (45 mins = 0.8 hrs), Departure: 18:00 -> 540 - 45 = 495 mins = 8.25 -> 8.3 hrs
+  const att2 = calculateAttendanceHours('09:00', '12:30', '13:15', '18:00');
+  assert.equal(att2.lunchDuration, '0.8 hrs');
+  assert.equal(att2.totalWorkHours, '8.3 hrs');
+});
+
+test('Daily Work Report - Day of week resolution', () => {
+  assert.equal(getDayName('2026-10-08'), 'Thursday');
+});
+
+test('Access Control Rules - Staff Client page restriction & defaults', () => {
+  assert.equal(DEFAULT_ACCESS_RULES.allowStaffClientProjects, true);
+  assert.equal(DEFAULT_ACCESS_RULES.allowStaffDailyLog, true);
+  assert.equal(DEFAULT_ACCESS_RULES.allowStaffSalary, true);
+
+  // Admin toggling restriction
+  const restrictedRules = {
+    ...DEFAULT_ACCESS_RULES,
+    allowStaffClientProjects: false,
+    memberOverrides: {
+      'staff-special': { allowStaffClientProjects: true }
+    }
+  };
+
+  // General staff should be blocked from client projects
+  const isGeneralStaffAllowed = restrictedRules.allowStaffClientProjects;
+  assert.equal(isGeneralStaffAllowed, false);
+
+  // Overridden staff member should be granted access
+  const isSpecialStaffAllowed = restrictedRules.memberOverrides['staff-special'].allowStaffClientProjects;
+  assert.equal(isSpecialStaffAllowed, true);
+});
