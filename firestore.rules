@@ -39,9 +39,12 @@ service cloud.firestore {
     }
 
     // Client portal data: the client can read (not write) their own
-    // record; only an admin can create/update/delete client records.
+    // record; admins read AND write everything (ERP Clients page,
+    // dashboard stats). Without isAdmin() on read the ERP dashboard's
+    // clients listener fails with permission-denied for admins.
     match /clients/{clientId} {
-      allow read: if request.auth != null && request.auth.uid == clientId;
+      allow read: if isAdmin() ||
+        (request.auth != null && request.auth.uid == clientId);
       allow write: if isAdmin();
     }
 
