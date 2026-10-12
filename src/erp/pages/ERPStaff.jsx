@@ -29,7 +29,7 @@ import ERPStaffAttendance  from './ERPStaffAttendance';
 import ERPStaffUpdates     from './ERPStaffUpdates';
 import ERPStaffSalary      from './ERPStaffSalary';
 
-const DEPARTMENTS = ['Engineering', 'Design', 'Finance', 'Operations', 'Management'];
+const DEPARTMENTS = ['Engineering', 'Design', 'Finance', 'Operations', 'Management', 'IT Intern'];
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
 const EMPTY_FORM = {
