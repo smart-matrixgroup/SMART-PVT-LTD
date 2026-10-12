@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { company } from '../config/company';
+import { services } from '../config/services';
 import { 
   Menu, X, Sun, Moon, Search, 
   User, ArrowRight 
@@ -9,10 +10,22 @@ import {
 
 export default function Navbar({ onOpenQuote }) {
   const { isDark, toggleTheme } = useTheme();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
+
+  // Live service/product search — matches title, category or short description
+  const searchMatches = searchQ.trim()
+    ? services
+        .filter(s => `${s.title} ${s.category} ${s.shortDesc || ''}`.toLowerCase().includes(searchQ.trim().toLowerCase()))
+        .slice(0, 6)
+    : [];
+
+  const closeSearch = () => { setSearchOpen(false); setSearchQ(''); };
 
   useEffect(() => {
     let previousScrollY = window.scrollY;
@@ -94,14 +107,52 @@ export default function Navbar({ onOpenQuote }) {
           {/* Right Action Controls */}
           <div className="hidden shrink-0 items-center gap-1.5 xl:flex">
             
-            {/* Search Button */}
-            <button
-              onClick={() => onOpenQuote()}
-              aria-label="Search"
-              className="p-2.5 text-[#64748B] transition-colors hover:text-[#0A1E3F] dark:text-text-muted dark:hover:text-white"
-            >
-              <Search className="w-4 h-4" />
-            </button>
+            {/* Service / Product Search */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-[#64748B] dark:text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQ}
+                aria-label="Search services and products"
+                placeholder="Search services..."
+                onChange={e => { setSearchQ(e.target.value); setSearchOpen(true); }}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    navigate(searchMatches[0] ? `/services/${searchMatches[0].slug}` : '/services');
+                    closeSearch();
+                  }
+                  if (e.key === 'Escape') setSearchOpen(false);
+                }}
+                className="w-36 2xl:w-44 rounded-lg bg-[#F4F8FC] dark:bg-navy-800 border border-[#D8E0E9] dark:border-surface-border pl-8 pr-2 py-2 text-xs text-[#0A1E3F] dark:text-white placeholder:text-[#8B9AAF] focus:outline-none focus:border-primary dark:focus:border-primary-electric transition-colors"
+              />
+
+              {searchOpen && searchQ.trim() && (
+                <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-900 shadow-xl overflow-hidden z-50">
+                  {searchMatches.length === 0 ? (
+                    <div className="px-4 py-3 text-xs text-[#5B6E88] dark:text-text-muted">
+                      No services found for "{searchQ}".
+                    </div>
+                  ) : (
+                    searchMatches.map(s => (
+                      <button
+                        key={s.slug}
+                        type="button"
+                        onClick={() => { navigate(`/services/${s.slug}`); closeSearch(); }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-[#F0F6FF] dark:hover:bg-navy-800 transition-colors border-b border-[#EDF2F8] dark:border-surface-border last:border-0"
+                      >
+                        <div className="text-xs font-bold text-[#0A1E3F] dark:text-white">{s.title}</div>
+                        <div className="text-[10px] text-[#5B6E88] dark:text-text-muted mt-0.5 truncate">
+                          {s.category} · {s.shortDesc}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Theme Toggle (Sun / Moon) */}
             <button

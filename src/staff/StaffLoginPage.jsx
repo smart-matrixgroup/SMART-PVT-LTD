@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { company } from '../config/company';
-import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle, LogIn } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle, LogIn, ArrowLeft, Eraser } from 'lucide-react';
 
 export default function StaffLoginPage() {
   const navigate = useNavigate();
@@ -126,6 +126,34 @@ export default function StaffLoginPage() {
           }}>
             {loading ? 'Signing in…' : <>Sign In <ArrowRight size={14} /></>}
           </button>
+
+          {/* Clear + Back to Website */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => { setEmail(''); setPassword(''); setError(''); }}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              <Eraser size={13} /> Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              style={{
+                flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
+                color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              <ArrowLeft size={13} /> Back to Website
+            </button>
+          </div>
         </form>
 
         {/* Dev hint (only when Firebase env is not configured) */}

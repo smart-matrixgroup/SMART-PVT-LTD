@@ -100,9 +100,46 @@ export function attendanceStatus(checkInMs, checkOutMs) {
 export const ATTENDANCE_STATUSES = ['Present', 'Late', 'Half Day', 'Absent'];
 
 // ── Shared vocabularies ──────────────────────────────────────────
-export const ASSIGNMENT_STATUSES = ['Assigned', 'In Progress', 'On Hold', 'Completed'];
+// 'Accepted' sits between Assigned and In Progress: the staff member
+// confirms the work in their portal before the clock starts.
+export const ASSIGNMENT_STATUSES = ['Assigned', 'Accepted', 'In Progress', 'On Hold', 'Completed'];
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 export const STAFF_STATUSES = ['active', 'busy', 'on-leave', 'inactive'];
+
+// ── Work matching ────────────────────────────────────────────────
+// Which staff profile fits a client's project type. Matched against the
+// staff role + department + skills text, so it works with whatever the
+// admin typed when creating the staff member (no schema required).
+const SERVICE_FIT = [
+  { test: /mobile|android|ios|flutter|react native/i,
+    fits: ['mobile', 'android', 'ios', 'flutter', 'engineering', 'developer', 'qa', 'testing'] },
+  { test: /erp|pos|inventory|restaurant|hotel|software|system|api|backend|integrat/i,
+    fits: ['erp', 'pos', 'backend', 'node', 'engineer', 'developer', 'full stack', 'software', 'qa', 'business analyst', 'project'] },
+  { test: /website|web|landing|seo|e-?commerce|portfolio|blog/i,
+    fits: ['web', 'front', 'full stack', 'react', 'engineer', 'developer', 'design', 'ui', 'ux', 'seo', 'content'] },
+  { test: /design|brand|logo|ui\/?ux|graphic|video|creative/i,
+    fits: ['design', 'ui', 'ux', 'graphic', 'brand', 'creative', 'content', 'video'] },
+  { test: /account|tax|vat|audit|bookkeep|payroll|financ|statement/i,
+    fits: ['account', 'tax', 'audit', 'finance', 'bookkeep', 'payroll', 'commerce'] },
+  { test: /support|maintenance|hosting|training|manage/i,
+    fits: ['support', 'operation', 'manage', 'project', 'devops', 'system'] },
+];
+
+/** True when this staff member's profile fits the project's service type.
+ *  An unknown service type is never a blocker — everything fits. */
+export function staffFitsService(staff, serviceType) {
+  const rule = SERVICE_FIT.find(r => r.test.test(String(serviceType || '')));
+  if (!rule) return true;
+  const text = `${staff?.role || ''} ${staff?.department || ''} ${(staff?.skills || []).join(' ')}`.toLowerCase();
+  if (!text.trim()) return true;                 // no profile info → don't hide them
+  return rule.fits.some(k => text.includes(k));
+}
+
+/** Split a staff list into [suited, others] for the assignment picker. */
+export function splitStaffByFit(staffList, serviceType) {
+  const suited = staffList.filter(s => staffFitsService(s, serviceType));
+  return { suited, others: staffList.filter(s => !suited.includes(s)) };
+}
 
 export const DOC_CATEGORIES = [
   { id: 'kyc',         label: 'KYC Documents' },

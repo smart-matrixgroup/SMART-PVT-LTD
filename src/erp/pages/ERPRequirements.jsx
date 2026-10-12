@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { formatWhen } from '../formatWhen';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
   ERPModal, ERPInput, ERPSelect, ERPEmpty,
@@ -633,8 +634,8 @@ export default function ERPRequirements() {
                     </div>
                     <div style={{fontSize:11,color:C.muted,marginTop:3}}>
                       Client: <strong style={{color:C.subtle}}>{form.clientName}</strong>
-                      <span style={{marginLeft:16}}>Sent: {form.sentAt || fmtMs(toMs(form.createdAt))}</span>
-                      {form.filledAt&&<span style={{marginLeft:16,color:C.green}}>Filled: {form.filledAt}</span>}
+                      <span style={{marginLeft:16}}>Sent: {formatWhen(form.sentAt) || fmtMs(toMs(form.createdAt))}</span>
+                      {form.filledAt&&<span style={{marginLeft:16,color:C.green}}>Filled: {formatWhen(form.filledAt)}</span>}
                     </div>
                   </div>
                   <div style={{display:'flex',gap:8,flexShrink:0,flexWrap:'wrap'}}>
@@ -1041,7 +1042,7 @@ export default function ERPRequirements() {
                 <span style={{fontSize:22}}>{findFormTpl(showFilled.formType)?.icon || '📝'}</span>
                 <div>
                   <div style={{fontSize:13,fontWeight:700,color:C.text}}>{showFilled.formType}</div>
-                  <div style={{fontSize:11,color:C.muted}}>Filled by {showFilled.clientName} on {showFilled.filledAt}</div>
+                  <div style={{fontSize:11,color:C.muted}}>Filled by {showFilled.clientName} on {formatWhen(showFilled.filledAt) || '—'}</div>
                 </div>
                 <ERPBadge status="Completed" label="Filled" />
               </div>

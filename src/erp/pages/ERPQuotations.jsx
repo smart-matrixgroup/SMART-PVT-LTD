@@ -167,6 +167,7 @@ export default function ERPQuotations() {
   const [templates,  setTemplates]  = useState(live ? [] : QUOTATION_TEMPLATE_SEEDS.map(t => ({ id: seedId(t.serviceCode), ...t })));
   const [payments,   setPayments]   = useState([]);
   const [devPayments,setDevPayments]= useState([]);
+  const [proofs,     setProofs]     = useState([]);     // advance-payment receipt photos from client
 
   const [filter,     setFilter]     = useState('All');
   const [view,       setView]       = useState('list');   // 'list' | 'form'
@@ -230,6 +231,17 @@ export default function ERPQuotations() {
         .sort((a,b) => toMs(b.createdAt) - toMs(a.createdAt)));
     }, e => { console.error(e); });
   }, [selected, live, devPayments]);
+
+  // ── Payment receipt proofs uploaded by the client ───────────────
+  useEffect(() => {
+    if (!selected) { setProofs([]); return; }
+    if (!live) { setProofs([]); return; }
+    const q = query(collection(db, 'paymentProofs'), where('quotationId', '==', selected));
+    return onSnapshot(q, snap => {
+      setProofs(snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a,b) => toMs(b.createdAt) - toMs(a.createdAt)));
+    }, e => { console.error('paymentProofs listener error', e); });
+  }, [selected, live]);
 
   // ── Derived ──────────────────────────────────────────────────────
   const filtered = filter === 'All' ? quotes : quotes.filter(q => q.status === filter);
@@ -480,6 +492,21 @@ We've received your payment — thank you! 🙏
   const handleSend      = (qid) => patchQuote(qid, { status:'Sent', sentAt: serverTimestamp() });
   const handleAccept    = (qid) => patchQuote(qid, { status:'Accepted', acceptedAt: serverTimestamp() });
   const handleStartWork = (qid) => patchQuote(qid, { status:'In Progress' });
+
+  // ── Client-uploaded advance payment receipts ─────────────────────
+  // Verify marks the photo approved (then use Record Payment to stamp
+  // Advance Paid); Reject sends the client a reason so they re-upload.
+  const reviewProof = async (p, status) => {
+    let reviewNote = '';
+    if (status === 'Rejected') {
+      const reason = window.prompt('Reason for rejection (shown to the client):', 'Receipt not readable — please upload a clearer photo.');
+      if (reason === null) return;
+      reviewNote = reason || 'The receipt could not be verified.';
+    }
+    try {
+      await updateDoc(doc(db, 'paymentProofs', p.id), { status, reviewNote, reviewedAt: serverTimestamp() });
+    } catch (e) { console.error('Failed to review payment receipt', e); }
+  };
 
   // ── Duplicate (always creates a new Draft) ───────────────────────
   const handleDuplicate = async (q) => {
@@ -1074,6 +1101,47 @@ We've received your payment — thank you! 🙏
                         </div>
                       ))}
                     </div>
+
+                    {/* Advance payment receipt photos uploaded by the client */}
+                    {proofs.length > 0 && (
+                      <div>
+                        <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px', marginBottom:4 }}>
+                          Client Receipt Uploads ({proofs.filter(p => p.status === 'New').length ? `${proofs.filter(p => p.status === 'New').length} to review` : proofs.length})
+                        </div>
+                        {proofs.map(p => (
+                          <div key={p.id} style={{ padding:'8px 10px', borderRadius:9, background:'rgba(10,24,56,0.8)',
+                            border:`1px solid ${p.status==='Verified' ? 'rgba(24,199,122,0.35)' : p.status==='Rejected' ? 'rgba(240,90,103,0.35)' : 'rgba(245,158,11,0.35)'}`, marginBottom:6 }}>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                              <div style={{ fontSize:11, fontWeight:700, color:C.text }}>
+                                {formatLKR(p.amount)}
+                                {p.status==='New'     && <span style={{ color:'#D97706', fontSize:9, fontWeight:800, marginLeft:6 }}>• PENDING REVIEW</span>}
+                                {p.status==='Verified'&& <span style={{ color:C.green,  fontSize:9, fontWeight:800, marginLeft:6 }}>• VERIFIED ✓</span>}
+                                {p.status==='Rejected'&& <span style={{ color:C.red,    fontSize:9, fontWeight:800, marginLeft:6 }}>• REJECTED</span>}
+                              </div>
+                              {p.fileUrl && (
+                                <a href={p.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize:10, fontWeight:700, color:C.cyan, textDecoration:'none', display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                                  <Eye size={11}/> Photo
+                                </a>
+                              )}
+                            </div>
+                            <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>
+                              {p.fileName}
+                              {p.note ? ` · Note: ${p.note}` : ''}
+                              {p.reviewNote && p.status==='Rejected' ? ` · Rejected: ${p.reviewNote}` : ''}
+                            </div>
+                            {p.status==='New' && (
+                              <div style={{ display:'flex', gap:6, marginTop:6 }}>
+                                <ERPBtn size="sm" variant="success" onClick={() => reviewProof(p, 'Verified')}><CheckCircle2 size={11}/> Verify</ERPBtn>
+                                <ERPBtn size="sm" variant="danger"  onClick={() => reviewProof(p, 'Rejected')}><XCircle size={11}/> Reject</ERPBtn>
+                              </div>
+                            )}
+                            {p.status==='Verified' && (
+                              <div style={{ fontSize:9, color:C.green, marginTop:4 }}>Verified — record the advance payment below, then assign staff.</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Payment history */}
                     <div>

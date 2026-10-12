@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection, onSnapshot,
-  doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp
+  doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp,
+  query, where, getDocs
 } from 'firebase/firestore';
 import { createStaffAuthAccount, db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -66,7 +67,16 @@ export default function ERPLeads() {
     const unsub = onSnapshot(
       collection(db, 'leads'),
       (snap) => {
-        const rows = snap.docs.map(d => ({ leadId: d.id, ...d.data() }));
+        const rows = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            ...data,
+            id: d.id,
+            docId: d.id,
+            leadRef: data.leadId || d.id,
+            leadId: d.id,
+          };
+        });
         rows.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
         setLeads(rows);
         setLoadError('');
@@ -165,15 +175,32 @@ export default function ERPLeads() {
         });
         projectId = projRef.id;
 
-        // Update lead status + link the created account & project
-        await updateDoc(doc(db, 'leads', selected.leadId), {
+        // Find real Firestore doc ID (handles both doc.id and 'WEB-' references)
+        let targetDocId = selected.docId || selected.id;
+        if (!targetDocId || (selected.leadRef && targetDocId === selected.leadRef) || (typeof selected.leadId === 'string' && selected.leadId.startsWith('WEB-'))) {
+          try {
+            const searchId = selected.leadRef || selected.leadId;
+            const q = query(collection(db, 'leads'), where('leadId', '==', searchId));
+            const qSnap = await getDocs(q);
+            if (!qSnap.empty) {
+              targetDocId = qSnap.docs[0].id;
+            } else {
+              targetDocId = searchId || selected.leadId;
+            }
+          } catch {
+            targetDocId = selected.docId || selected.id || selected.leadId;
+          }
+        }
+
+        // Update lead status + link the created account & project (setDoc merge won't throw even if doc ID varies)
+        await setDoc(doc(db, 'leads', targetDocId), {
           status: 'Accepted', convertedClientId: uid, convertedProjectId: projectId,
           acceptedAt: serverTimestamp(),
-        });
+        }, { merge: true });
       }
 
       // Update local state
-      setLeads(prev => prev.map(l => l.leadId === selected.leadId
+      setLeads(prev => prev.map(l => (l.leadId === selected.leadId || l.id === selected.id || l.docId === selected.docId)
         ? { ...l, status: 'Accepted', convertedProjectId: projectId } : l));
       setAccDone(true);
     } catch (err) {
@@ -192,27 +219,50 @@ export default function ERPLeads() {
   const handleReject = async () => {
     if (!isDevSession && isFirebaseConfigured) {
       try {
-        await updateDoc(doc(db, 'leads', selected.leadId), {
+        let targetDocId = selected.docId || selected.id;
+        if (!targetDocId || (selected.leadRef && targetDocId === selected.leadRef) || (typeof selected.leadId === 'string' && selected.leadId.startsWith('WEB-'))) {
+          try {
+            const searchId = selected.leadRef || selected.leadId;
+            const q = query(collection(db, 'leads'), where('leadId', '==', searchId));
+            const qSnap = await getDocs(q);
+            if (!qSnap.empty) {
+              targetDocId = qSnap.docs[0].id;
+            } else {
+              targetDocId = searchId || selected.leadId;
+            }
+          } catch {
+            targetDocId = selected.docId || selected.id || selected.leadId;
+          }
+        }
+        await setDoc(doc(db, 'leads', targetDocId), {
           status: 'Rejected', rejectedReason: rejectReason, rejectedAt: serverTimestamp(),
-        });
+        }, { merge: true });
       } catch (err) { console.error(err); }
     }
-    setLeads(prev => prev.map(l => l.leadId === selected.leadId ? { ...l, status: 'Rejected' } : l));
+    setLeads(prev => prev.map(l => (l.leadId === selected.leadId || l.id === selected.id || l.docId === selected.docId) ? { ...l, status: 'Rejected' } : l));
     setShowReject(false);
     setRejectReason('');
     setSelected(null);
   };
 
   // ── Delete lead handler ──────────────────────────────────────────
-  const handleDeleteLead = async (leadId, e) => {
+  const handleDeleteLead = async (leadIdOrObj, e) => {
     if (e) e.stopPropagation();
     if (!window.confirm('Delete this lead permanently from the database?')) return;
     try {
+      const leadObj = typeof leadIdOrObj === 'object' ? leadIdOrObj : leads.find(l => l.leadId === leadIdOrObj || l.id === leadIdOrObj || l.leadRef === leadIdOrObj);
+      let targetDocId = leadObj?.docId || leadObj?.id || (typeof leadIdOrObj === 'string' ? leadIdOrObj : '');
       if (isFirebaseConfigured && !isDevSession) {
-        await deleteDoc(doc(db, 'leads', leadId));
+        if (!targetDocId || (leadObj?.leadRef && targetDocId === leadObj.leadRef) || (targetDocId && targetDocId.startsWith('WEB-'))) {
+          const searchKey = leadObj?.leadRef || targetDocId;
+          const q = query(collection(db, 'leads'), where('leadId', '==', searchKey));
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) targetDocId = qSnap.docs[0].id;
+        }
+        await deleteDoc(doc(db, 'leads', targetDocId));
       }
-      setLeads(prev => prev.filter(l => l.leadId !== leadId));
-      if (selected?.leadId === leadId) setSelected(null);
+      setLeads(prev => prev.filter(l => l.id !== targetDocId && l.docId !== targetDocId && l.leadId !== targetDocId && l.leadId !== leadIdOrObj));
+      if (selected?.id === targetDocId || selected?.docId === targetDocId || selected?.leadId === targetDocId || selected?.leadId === leadIdOrObj) setSelected(null);
     } catch (err) {
       console.error(err);
       if (err.code === 'permission-denied') {

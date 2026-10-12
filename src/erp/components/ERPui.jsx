@@ -31,6 +31,8 @@ export const STATUS = {
   'quotation_sent':       { color: C.cyan,   bg: 'rgba(0,217,255,0.1)',   border: 'rgba(0,217,255,0.3)',  label: 'Quote Sent'         },
   'quotation_accepted':   { color: C.violet, bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', label: 'Quote Accepted'     },
   'advance_paid':         { color: C.green,  bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)', label: 'Advance Paid'       },
+  'Assigned':             { color: C.violet, bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', label: 'Assigned'           },
+  'On Hold':              { color: C.amber,  bg: 'rgba(245,185,66,0.12)', border: 'rgba(245,185,66,0.3)', label: 'On Hold'            },
   'In Progress':          { color: C.blue,   bg: 'rgba(0,102,255,0.12)',  border: 'rgba(0,102,255,0.3)',  label: 'In Progress'        },
   'Completed':            { color: C.green,  bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)', label: 'Completed'          },
   'Paid':                 { color: C.green,  bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)', label: 'Paid'               },

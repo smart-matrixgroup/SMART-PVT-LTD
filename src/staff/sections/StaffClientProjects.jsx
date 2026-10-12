@@ -3,9 +3,13 @@
 //  Shown when Admin accepts / allows Staff Client Page Access
 //  in ERP → Access Rules (allowStaffClientProjects).
 //  If restricted by Admin, displays a locked restriction notice.
+//  The list is built from THIS staff member's work assignments — the
+//  client and project details the admin embedded at assignment time —
+//  because the rules only let staff read their own assignments, never
+//  the whole projects collection.
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPPanelHeader, ERPBadge, ERPEmpty, C } from '../../erp/components/ERPui';
@@ -36,8 +40,8 @@ const DEV_CLIENT_PROJECTS = [
     clientName: 'Rahul Mendis',
     clientCompany: 'RMG Trading Pvt Ltd',
     serviceType: 'ERP System',
-    status: 'requirements_pending',
-    completion: 20,
+    status: 'Assigned',
+    completion: 0,
     milestones: [
       { title: 'Requirements Gathering', done: true },
       { title: 'Database Schema Design', done: false },
@@ -58,9 +62,12 @@ const DEV_CLIENT_PROJECTS = [
   }
 ];
 
+const WORK_STATUSES = ['Assigned', 'Accepted', 'In Progress', 'On Hold', 'Completed'];
+
 export default function StaffClientProjects({ isRestricted }) {
-  const { isFirebaseConfigured, isDevSession } = useAuth();
+  const { staffProfile, isFirebaseConfigured, isDevSession } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
+  const uid = staffProfile?.id || '';
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,21 +85,42 @@ export default function StaffClientProjects({ isRestricted }) {
       setLoading(false);
       return;
     }
+    if (!uid) { setLoading(false); return; }
 
     const unsub = onSnapshot(
-      collection(db, 'projects'),
+      query(collection(db, 'workAssignments'), where('authUid', '==', uid)),
       (snap) => {
-        setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        // Collapse the assignments into one card per client project and
+        // surface the most advanced stage/progress for it.
+        const byKey = {};
+        snap.docs.map(d => ({ id: d.id, ...d.data() })).forEach(a => {
+          const key = a.projectId || a.projectTitle || a.title;
+          if (!key) return;
+          const cur = byKey[key];
+          const progress = Number(a.progress) || 0;
+          byKey[key] = {
+            id: key,
+            title: a.projectTitle || a.title,
+            clientName: a.clientName || '',
+            clientCompany: a.clientCompany || '',
+            serviceType: a.serviceType || '',
+            status: progress >= 100 ? 'Completed' : (a.status || 'Assigned'),
+            completion: Math.max(progress, cur?.completion || 0),
+            taskCount: (cur?.taskCount || 0) + 1,
+            milestones: [],
+          };
+        });
+        setProjects(Object.values(byKey));
         setLoading(false);
       },
       (err) => {
-        console.warn('Projects list notice:', err);
+        console.warn('Client projects list notice:', err);
         setLoading(false);
       }
     );
 
     return unsub;
-  }, [live, isRestricted]);
+  }, [live, uid, isRestricted]);
 
   // If Admin has restricted Staff from viewing Client Pages
   if (isRestricted) {
@@ -178,9 +206,7 @@ export default function StaffClientProjects({ isRestricted }) {
           }}
         >
           <option value="All">All Statuses</option>
-          <option value="In Progress">In Progress</option>
-          <option value="requirements_pending">Requirements Pending</option>
-          <option value="Completed">Completed</option>
+          {WORK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
@@ -196,7 +222,7 @@ export default function StaffClientProjects({ isRestricted }) {
           <ERPEmpty
             icon="📂"
             title="No client projects found"
-            sub={search ? 'No projects match your search.' : 'Projects created for clients appear here.'}
+            sub={search ? 'No projects match your search.' : 'Client projects you are assigned to appear here.'}
           />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -216,10 +242,17 @@ export default function StaffClientProjects({ isRestricted }) {
                     <div style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{p.title}</div>
                     <div style={{ fontSize: 11, color: C.muted, display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <Building size={11} style={{ color: C.cyan }} /> {p.clientCompany || 'Direct Client'}
+                        <Building size={11} style={{ color: C.cyan }} />
+                        {p.clientName || 'Client'}{p.clientCompany ? ` — ${p.clientCompany}` : ''}
                       </span>
                       <span>•</span>
                       <span>{p.serviceType || 'Custom Solution'}</span>
+                      {p.taskCount > 1 && (
+                        <>
+                          <span>•</span>
+                          <span>{p.taskCount} assigned tasks</span>
+                        </>
+                      )}
                     </div>
                   </div>
 

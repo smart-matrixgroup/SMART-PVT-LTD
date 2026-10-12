@@ -1,8 +1,11 @@
 // ─────────────────────────────────────────────────────────────────
 //  Phase 3 C (portal side) — Assigned Work & Work Progress.
 //  Staff see only their own workAssignments (Firestore rule filters
-//  by authUid). They can Start a task and update status + progress;
-//  those fields flow back to the admin Work page live via onSnapshot.
+//  by authUid). Each assignment carries a snapshot of the client and
+//  project it belongs to, so the staff member knows whose work they
+//  are doing. Lifecycle: Assigned → Accept → Start → update progress.
+//  Only status/progress/timestamps are writable here; the rules block
+//  everything else, and the updates flow back to admin live.
 //  variant: 'assigned' → actionable list · 'progress' → progress view
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
@@ -11,18 +14,25 @@ import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPSelect, ERPEmpty, ERPProgress, C } from '../../erp/components/ERPui';
 import { ASSIGNMENT_STATUSES, toMs, todayKey } from '../staffUtils';
-import { Play, Pencil, AlertTriangle, Clock } from 'lucide-react';
+import { Play, Pencil, AlertTriangle, Clock, CheckCircle2, Building } from 'lucide-react';
 
 const DEV_ASSIGNMENTS = [
   { id: 'wa1', projectId: 'P001', projectTitle: 'Corporate Website Redesign', title: 'Home page component build',
+    clientName: 'Demo Client', clientCompany: 'ABC Trading Pvt Ltd', serviceType: 'Corporate Business Website',
     description: 'Hero, features and footer sections', startDate: '2026-10-01', deadline: '2026-10-10',
     priority: 'High', status: 'In Progress', progress: 60, updatedAt: Date.now() },
   { id: 'wa2', projectId: 'P003', projectTitle: 'Restaurant POS System', title: 'Order screen UI',
+    clientName: 'Rahul Mendis', clientCompany: 'RMG Trading Pvt Ltd', serviceType: 'ERP & POS System',
     description: '', startDate: '2026-09-28', deadline: '2026-10-04',
-    priority: 'Critical', status: 'Assigned', progress: 0, updatedAt: Date.now() },
+    priority: 'Critical', status: 'Accepted', progress: 0, updatedAt: Date.now() },
   { id: 'wa3', projectId: '', projectTitle: '', title: 'Code review — quotation print layout',
+    clientName: 'Amali Senerath', clientCompany: 'AS Enterprises', serviceType: 'Mobile App',
     description: '', startDate: '2026-10-02', deadline: '2026-10-05',
     priority: 'Medium', status: 'Completed', progress: 100, updatedAt: Date.now() },
+  { id: 'wa4', projectId: 'P004', projectTitle: 'Annual Tax Filing', title: 'VAT return preparation',
+    clientName: 'Priya Nair', clientCompany: 'PN Accounting', serviceType: 'Accounting & Tax Services',
+    description: '', startDate: '2026-10-03', deadline: '2026-10-12',
+    priority: 'Low', status: 'Assigned', progress: 0, updatedAt: Date.now() },
 ];
 
 export default function MyWork({ variant = 'assigned' }) {
@@ -57,7 +67,7 @@ export default function MyWork({ variant = 'assigned' }) {
 
   const stats = {
     total: assignments.length,
-    active: assignments.filter(a => a.status === 'Assigned' || a.status === 'In Progress').length,
+    active: assignments.filter(a => ['Assigned', 'Accepted', 'In Progress'].includes(a.status)).length,
     overdue: assignments.filter(a => a.status !== 'Completed' && a.deadline && a.deadline < today).length,
     avg: assignments.length
       ? Math.round(assignments.reduce((s, a) => s + (Number(a.progress) || 0), 0) / assignments.length)
@@ -74,7 +84,11 @@ export default function MyWork({ variant = 'assigned' }) {
   const saveUpdate = async (a, patch) => {
     setBusy(true); setFormError(null);
     try {
-      const payload = { ...patch, updatedAt: serverTimestamp() };
+      // Dev mode keeps plain numbers in local state (no Firestore
+      // Timestamps leak into JSX).
+      const payload = live
+        ? { ...patch, updatedAt: serverTimestamp() }
+        : { ...patch, startedAt: patch.startedAt ? Date.now() : undefined, updatedAt: Date.now() };
       if (!live) setAssignments(p => p.map(x => x.id === a.id ? { ...x, ...payload, updatedAt: Date.now() } : x));
       else await updateDoc(doc(db, 'workAssignments', a.id), payload);
       setEditTarget(null);
@@ -82,6 +96,9 @@ export default function MyWork({ variant = 'assigned' }) {
     finally { setBusy(false); }
   };
 
+  // Accept confirms the handover; Start begins the clock. Admin and the
+  // client see both steps immediately.
+  const acceptWork = a => saveUpdate(a, { status: 'Accepted' });
   const startWork = a => saveUpdate(a, { status: 'In Progress', progress: Math.max(a.progress || 0, 5), startedAt: serverTimestamp() });
 
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: C.muted, fontSize: 13 }}>Loading your work…</div>;
@@ -140,6 +157,15 @@ export default function MyWork({ variant = 'assigned' }) {
                         )}
                       </div>
                       {a.projectTitle && <div style={{ fontSize: 11, color: C.cyan, marginTop: 2 }}>Project: {a.projectTitle}</div>}
+                      {(a.clientName || a.clientCompany) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          <Building size={11} style={{ color: C.muted }} />
+                          <span style={{ fontSize: 11, color: C.subtle, fontWeight: 700 }}>
+                            {a.clientName || 'Client'}{a.clientCompany ? ` — ${a.clientCompany}` : ''}
+                          </span>
+                          {a.serviceType && <span style={{ fontSize: 10, color: C.muted }}>· {a.serviceType}</span>}
+                        </div>
+                      )}
                       {a.description && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{a.description}</div>}
                       <div style={{ display: 'flex', gap: 14, marginTop: 7, flexWrap: 'wrap', fontSize: 10.5, color: C.muted }}>
                         <span>Priority: <strong style={{ color: prioColor(a.priority) }}>{a.priority || '—'}</strong></span>
@@ -154,10 +180,15 @@ export default function MyWork({ variant = 'assigned' }) {
                       <ERPProgress value={a.progress || 0} color={(a.progress || 0) >= 100 ? C.green : C.blue} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: (a.progress || 0) >= 100 ? C.green : C.cyan }}>{a.progress || 0}%</span>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {a.status === 'Assigned' && (
+                            <ERPBtn size="sm" variant="primary" disabled={busy} onClick={() => acceptWork(a)}>
+                              <CheckCircle2 size={11} /> Accept Work
+                            </ERPBtn>
+                          )}
+                          {a.status === 'Accepted' && (
                             <ERPBtn size="sm" variant="success" disabled={busy} onClick={() => startWork(a)}>
-                              <Play size={11} /> Start
+                              <Play size={11} /> Start Work
                             </ERPBtn>
                           )}
                           {a.status !== 'Assigned' && (

@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { getStaffByIds } from '../config/staff';
 import SEO from '../components/SEO';
 import { company } from '../config/company';
-import { toMillis } from '../erp/formatWhen';
+import { toMillis, formatWhen } from '../erp/formatWhen';
 import { toInt, formatLKR } from '../erp/money';
 import { getConversationId, sendChatMessage, markConversationAsRead } from '../erp/messagingUtils';
 import {
@@ -185,6 +185,77 @@ const REQ_SERVICES = ['ERP & POS System','Custom Software Development','Portfoli
 const REQ_TIMELINES = ['Less than 1 month','1–2 months','2–3 months','3–6 months','6+ months','Flexible'];
 const REQ_BUDGETS   = ['Below LKR 25,000','LKR 25,000–50,000','LKR 50,000–100,000','LKR 100,000–250,000','LKR 250,000+','Let\'s discuss'];
 
+// ─── Assigned team ────────────────────────────────────────────────
+// Read live from 'workAssignments' (clientId is embedded by the admin
+// when the work is assigned), so the client always sees who is doing
+// their work, what stage that person is at, and the deadline.
+const DEV_WORKS = [
+  { id:'dw1', projectId:'dp1', projectTitle:'Corporate Website Redesign', title:'Home page & navigation build',
+    staffName:'Ashan Perera', staffRole:'Full Stack Developer', staffEmail:'ashan@smartpvtltd.com',
+    status:'In Progress', progress:60, deadline:'2026-10-18' },
+  { id:'dw2', projectId:'dp1', projectTitle:'Corporate Website Redesign', title:'UI/UX design screens',
+    staffName:'Nimal Fernando', staffRole:'UI/UX Designer', staffEmail:'nimal@smartpvtltd.com',
+    status:'Accepted', progress:20, deadline:'2026-10-22' },
+  { id:'dw3', projectId:'dp3', projectTitle:'Accounting & Tax Automation', title:'Ledger configuration & handover',
+    staffName:'Kavitha Rajah', staffRole:'Accounting & Tax Consultant', staffEmail:'kavitha@smartpvtltd.com',
+    status:'Completed', progress:100, deadline:'2026-09-28' },
+];
+
+const TEAM_TONE = {
+  'Assigned':    { c:'#A5B4FC', bg:'rgba(99,102,241,0.16)'  },
+  'Accepted':    { c:'#38BDF8', bg:'rgba(56,189,248,0.16)'  },
+  'In Progress': { c:'#34D399', bg:'rgba(16,185,129,0.16)'  },
+  'On Hold':     { c:'#FBBF24', bg:'rgba(245,158,11,0.16)'  },
+  'Completed':   { c:'#94A3B8', bg:'rgba(148,163,184,0.14)' },
+};
+const fmtDue = (d) => {
+  if (!d) return '';
+  const ms = Date.parse(String(d).slice(0, 10));
+  return Number.isNaN(ms) ? '' : new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+function AssignedTeam({ works, heading = "Who's working on this" }) {
+  if (!works || works.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{heading}</div>
+      {works.map(w => {
+        const tone = TEAM_TONE[w.status] || TEAM_TONE['Assigned'];
+        const pct = Math.max(0, Math.min(100, Number(w.progress) || 0));
+        const due = fmtDue(w.deadline);
+        return (
+          <div key={w.id} style={{ padding: '11px 13px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 900, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)' }}>
+                {String(w.staffName || '?').trim().charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#F1F5F9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.staffName || 'Team member'}</div>
+                <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 1 }}>
+                  {w.staffRole || 'SMART team'}{due ? ` · due ${due}` : ''}
+                </div>
+                {(w.staffEmail || w.staffPhone) && (
+                  <div style={{ fontSize: 10, color: '#818CF8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {w.staffEmail}{w.staffEmail && w.staffPhone ? ' · ' : ''}{w.staffPhone}
+                  </div>
+                )}
+              </div>
+              <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, color: tone.c, background: tone.bg }}>{w.status || 'Assigned'}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
+              <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, transition: 'width 0.5s', background: pct >= 100 ? 'linear-gradient(90deg,#10B981,#34D399)' : 'linear-gradient(90deg,#4F46E5,#38BDF8)' }} />
+              </div>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: pct >= 100 ? '#34D399' : '#A5B4FC' }}>{pct}%</span>
+            </div>
+            {w.title && <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 7 }}>{w.title}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────
 export default function ClientDashboardPage() {
   const navigate  = useNavigate();
@@ -225,6 +296,17 @@ export default function ClientDashboardPage() {
   const [formAnswers,setFormAnswers] = useState({});
   const [formSubmitting,setFormSubmitting] = useState(false);
   const [formError,setFormError]     = useState('');
+
+  // Advance payment: company bank details + receipt proofs uploaded by client
+  const [bankDetails,setBankDetails] = useState(null);
+  const [proofs,setProofs]           = useState([]);
+  const [proofModal,setProofModal]   = useState(null);   // quotation being uploaded to
+  const [proofForm,setProofForm]     = useState({amount:'',note:'',file:null});
+  const [proofBusy,setProofBusy]     = useState(false);
+  const [proofError,setProofError]   = useState('');
+
+  // Assigned team — 'workAssignments' scoped to this client
+  const [myWorks,setMyWorks]         = useState([]);
 
   const client = clientProfile && {projects:[],invoices:[],tickets:[],...clientProfile};
   const uid    = currentUser?.uid;
@@ -287,6 +369,42 @@ export default function ClientDashboardPage() {
     });
     return ()=>{un1&&un1();un2&&un2();};
   },[uid,isDevSession]);
+
+  // Company bank details (settings/bankDetails) + my receipt proofs
+  useEffect(()=>{
+    if(!uid) return;
+    if(!isFirebaseConfigured||isDevSession){
+      setBankDetails({bankName:'Bank of Ceylon',accountName:'SMART [PVT] LTD',accountNumber:'1234567890',branch:'Colombo Main Branch',swiftCode:'BCEYLYLX',instructions:'(Demo) Transfer the advance to the account above, then upload a photo of the payment receipt.'});
+      setProofs([]);return;
+    }
+    const un1=onSnapshot(doc(db,'settings','bankDetails'),snap=>{
+      setBankDetails(snap.exists()?snap.data():null);
+    },err=>console.error('Bank details listener error',err));
+    const un2=onSnapshot(query(collection(db,'paymentProofs'),where('clientId','==',uid)),snap=>{
+      setProofs(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt)));
+    },err=>console.error('Client payment proofs listener error',err));
+    return ()=>{un1&&un1();un2&&un2();};
+  },[uid,isDevSession]);
+
+  // Assigned team: who the admin put on each of my projects, live.
+  useEffect(()=>{
+    if(!uid) return;
+    if(!isFirebaseConfigured||isDevSession){setMyWorks(DEV_WORKS);return;}
+    const un=onSnapshot(query(collection(db,'workAssignments'),where('clientId','==',uid)),snap=>{
+      setMyWorks(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt)));
+    },err=>console.error('Team assignments listener error',err));
+    return ()=>{un&&un();};
+  },[uid,isDevSession]);
+
+  // Works attached to a project (matched by id, else by project title).
+  const worksFor=(proj)=>{
+    if(!proj) return [];
+    const direct=myWorks.filter(w=>w.projectId && w.projectId===proj.id);
+    if(direct.length) return direct;
+    const t=String(proj.title||'').trim().toLowerCase();
+    if(!t) return [];
+    return myWorks.filter(w=>!w.projectId && String(w.projectTitle||'').trim().toLowerCase()===t);
+  };
 
   useEffect(()=>{msgEndRef.current?.scrollIntoView({behavior:'smooth'});},[messages]);
 
@@ -383,6 +501,53 @@ export default function ClientDashboardPage() {
       await updateDoc(doc(db,'quotations',q.id),{status:'Accepted',acceptedAt:serverTimestamp(),updatedAt:serverTimestamp()});
       if(q.projectId){await updateDoc(doc(db,'projects',q.projectId),{status:'quotation_accepted',updatedAt:serverTimestamp()});}
     }catch(e){console.error(e);}
+  };
+
+  // Advance payment receipt upload → paymentProofs (+ Storage photo)
+  const openProofModal=(q)=>{
+    setProofModal(q);
+    setProofForm({amount:q?.advanceAmount?String(toInt(q.advanceAmount)):'',note:'',file:null});
+    setProofError('');
+  };
+  const handleUploadProof=async()=>{
+    if(!proofModal) return;
+    setProofError('');
+    const amt=toInt(proofForm.amount);
+    if(!proofForm.file){setProofError('Please attach the payment receipt photo.');return;}
+    if(!amt||amt<=0){setProofError('Please enter the amount you paid.');return;}
+    setProofBusy(true);
+    try{
+      let fileUrl='';
+      const safeName=proofForm.file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      if(!isFirebaseConfigured||isDevSession){
+        fileUrl=URL.createObjectURL(proofForm.file);
+      }else{
+        const storage=getStorage();
+        const r=sRef(storage,`payment-proofs/${uid}/${proofModal.id}/${Date.now()}_${safeName}`);
+        await uploadBytes(r,proofForm.file);
+        fileUrl=await getDownloadURL(r);
+      }
+      const docData={
+        quotationId:proofModal.id,
+        quotationNo:proofModal.quotationNo||'',
+        clientId:uid,
+        clientName:client?.name||'',
+        amount:amt,
+        note:(proofForm.note||'').trim(),
+        fileName:proofForm.file.name,
+        fileUrl,
+        status:'New',
+        createdAt:serverTimestamp(),
+      };
+      if(!isFirebaseConfigured||isDevSession){
+        setProofs(p=>[{id:`proof-dev-${Date.now()}`,...docData,createdAt:null},...p]);
+      }else{
+        await addDoc(collection(db,'paymentProofs'),docData);
+      }
+      setProofModal(null);setProofForm({amount:'',note:'',file:null});
+    }catch(e){
+      setProofError(e.message||'Upload failed. Please try again.');
+    }finally{setProofBusy(false);}
   };
   // NOTE: called as renderFormField(fld) — NOT used as a JSX element — to avoid remount focus loss
   const renderFormField=(fld)=>{
@@ -805,6 +970,8 @@ export default function ClientDashboardPage() {
             </div>
             {active.map(proj=>{
               const staff=getStaffByIds(proj.assignedStaff||[]);
+              const wks=worksFor(proj);
+              const lead=wks.find(w=>['In Progress','Accepted','On Hold'].includes(w.status))||wks[0];
               const done=(proj.milestones||[]).filter(m=>m.done).length;
               const tot=(proj.milestones||[]).length;
               return(
@@ -832,7 +999,26 @@ export default function ClientDashboardPage() {
                       }}/>
                     </div>
                   </div>
-                  {staff.length>0&&(
+                  {wks.length>0&&(
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <div style={{display:'flex'}}>
+                        {wks.slice(0,4).map((w,i)=>(
+                          <div key={w.id} title={`${w.staffName||''} — ${w.status||''}`} style={{
+                            width:24,height:24,borderRadius:'50%',
+                            background:`linear-gradient(135deg,${['#4F46E5','#7C3AED','#EC4899','#F59E0B'][i%4]},${['#7C3AED','#A78BFA','#F9A8D4','#FCD34D'][i%4]})`,
+                            border:'2px solid #1E293B',marginLeft:i>0?-6:0,
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            color:'#fff',fontSize:10,fontWeight:900,flexShrink:0,
+                          }}>{String(w.staffName||'?').trim().charAt(0).toUpperCase()}</div>
+                        ))}
+                      </div>
+                      <span style={{fontSize:12,color:'#94A3B8'}}>
+                        {wks.map(w=>String(w.staffName||'').split(' ')[0]).filter(Boolean).join(' & ')}
+                        {lead?` · ${lead.status==='In Progress'?'working now':lead.status.toLowerCase()}`:''}
+                      </span>
+                    </div>
+                  )}
+                  {staff.length>0&&wks.length===0&&(
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <div style={{display:'flex'}}>
                         {staff.map((s,i)=>(
@@ -1041,7 +1227,9 @@ export default function ClientDashboardPage() {
                     </div>
                   )}
 
-                  {staff.length>0&&(
+                  <AssignedTeam works={worksFor(proj)}/>
+
+                  {staff.length>0 && worksFor(proj).length===0 &&(
                     <div>
                       <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.8px',color:'#94A3B8',marginBottom:8}}>Assigned Team</div>
                       <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
@@ -1178,9 +1366,11 @@ export default function ClientDashboardPage() {
                   </div>
                 )}
 
+                <AssignedTeam works={worksFor(proj)} heading="Your project team" />
+
                 {/* Team and Actions */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:14,borderTop:'1px solid rgba(255,255,255,0.07)',flexWrap:'wrap',gap:10}}>
-                  {staff.length > 0 ? (
+                  {staff.length > 0 && worksFor(proj).length === 0 ? (
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:12,color:'#94A3B8'}}>Assigned Team:</span>
                       <div style={{display:'flex',gap:6}}>
@@ -1218,7 +1408,7 @@ export default function ClientDashboardPage() {
         {quotes.length===0&&projQuoted.length===0&&<div style={{...cardSt,padding:'48px 24px',textAlign:'center'}}><Receipt size={36} style={{color:'#CBD5E1',margin:'0 auto 12px'}}/><div style={{fontSize:14,color:'#94A3B8'}}>No quotations yet.</div></div>}
 
         {/* Live ERP quotations */}
-        {quotes.map(q=>(
+        {quotes.map(q=>{const qProofs=proofs.filter(p=>p.quotationId===q.id);return (
           <div key={q.id} style={cardSt}>
             <div style={{padding:'16px 20px',borderBottom:'1px solid rgba(255,255,255,0.08)',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
               <div>
@@ -1259,6 +1449,22 @@ export default function ClientDashboardPage() {
               {q.paymentTerms&&<div style={{fontSize:12,color:'#94A3B8',background:'rgba(255,255,255,0.05)',padding:'10px 14px',borderRadius:12,lineHeight:1.6}}>📋 {q.paymentTerms}</div>}
               {q.notes&&<div style={{fontSize:12,color:'#94A3B8',background:'rgba(255,255,255,0.05)',padding:'10px 14px',borderRadius:12,lineHeight:1.6}}>📋 {q.notes}</div>}
               {q.validUntil&&<div style={{fontSize:12,color:'#94A3B8',display:'flex',alignItems:'center',gap:4}}><Clock size={11}/> Valid until {q.validUntil}</div>}
+
+              {/* Bank details — visible as soon as the quotation reaches the client */}
+              {['Sent','Accepted'].includes(q.status)&&bankDetails&&(
+                <div style={{padding:'14px 16px',borderRadius:14,background:'rgba(0,102,255,0.07)',border:'1px solid rgba(0,102,255,0.22)'}}>
+                  <div style={{fontSize:11,fontWeight:800,textTransform:'uppercase',letterSpacing:'0.8px',color:'#93C5FD',marginBottom:8}}>🏦 Bank Details — Advance Payment</div>
+                  <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'5px 16px',fontSize:12.5}}>
+                    <span style={{color:'#94A3B8'}}>Bank</span><span style={{fontWeight:700,color:'#F1F5F9'}}>{bankDetails.bankName||'—'}</span>
+                    <span style={{color:'#94A3B8'}}>Account Name</span><span style={{fontWeight:700,color:'#F1F5F9'}}>{bankDetails.accountName||'—'}</span>
+                    <span style={{color:'#94A3B8'}}>Account No.</span><span style={{fontWeight:700,color:'#F1F5F9',fontFamily:'monospace'}}>{bankDetails.accountNumber||'—'}</span>
+                    {bankDetails.branch&&<><span style={{color:'#94A3B8'}}>Branch</span><span style={{fontWeight:700,color:'#F1F5F9'}}>{bankDetails.branch}</span></>}
+                    {bankDetails.swiftCode&&<><span style={{color:'#94A3B8'}}>SWIFT</span><span style={{fontWeight:700,color:'#F1F5F9',fontFamily:'monospace'}}>{bankDetails.swiftCode}</span></>}
+                  </div>
+                  {bankDetails.instructions&&<div style={{fontSize:11.5,color:'#94A3B8',marginTop:8,lineHeight:1.6,whiteSpace:'pre-line'}}>{bankDetails.instructions}</div>}
+                </div>
+              )}
+
               {q.status==='Sent'&&(
                 <button onClick={()=>handleAcceptLiveQuote(q)} style={{
                   width:'100%',padding:'13px',borderRadius:14,border:'none',cursor:'pointer',
@@ -1272,22 +1478,43 @@ export default function ClientDashboardPage() {
                 </button>
               )}
               {q.status==='Accepted'&&(
-                q.projectId?(
-                  <button onClick={()=>advancePaid(q.projectId)} style={{
-                    width:'100%',padding:'13px',borderRadius:14,border:'none',cursor:'pointer',
-                    fontSize:14,fontWeight:800,color:'#fff',
-                    background:'linear-gradient(135deg,#4F46E5,#7C3AED)',
-                    boxShadow:'0 4px 16px rgba(79,70,229,0.3)',transition:'all 0.2s',
-                  }}
-                    onMouseEnter={e=>e.currentTarget.style.transform='scale(1.01)'}
-                    onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
-                    💳 Confirm Advance Payment
-                  </button>
-                ):(
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px',borderRadius:14,background:'rgba(59,130,246,0.08)',border:'1px solid rgba(59,130,246,0.2)',fontSize:14,fontWeight:700,color:'#1D4ED8'}}>
-                    <CheckCircle2 size={16}/> Quotation Accepted — admin will confirm your advance payment
-                  </div>
-                )
+                <>
+                  {qProofs.map(p=>(
+                    <div key={p.id} style={{
+                      padding:'12px 14px',borderRadius:14,
+                      background:p.status==='Verified'?'rgba(16,185,129,0.08)':p.status==='Rejected'?'rgba(239,68,68,0.08)':'rgba(245,158,11,0.08)',
+                      border:`1px solid ${p.status==='Verified'?'rgba(16,185,129,0.25)':p.status==='Rejected'?'rgba(239,68,68,0.25)':'rgba(245,158,11,0.25)'}`,
+                    }}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                        <div style={{fontSize:13,fontWeight:800,color:'#F1F5F9'}}>
+                          📸 {formatLKR(toInt(p.amount))}
+                          {p.status==='Verified'&&<span style={{fontSize:11,fontWeight:700,color:'#059669'}}> — Verified ✓</span>}
+                          {p.status==='Rejected'&&<span style={{fontSize:11,fontWeight:700,color:'#EF4444'}}> — Rejected</span>}
+                          {p.status==='New'&&<span style={{fontSize:11,fontWeight:700,color:'#D97706'}}> — Awaiting verification</span>}
+                        </div>
+                        <a href={p.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:700,color:'#818CF8',display:'flex',alignItems:'center',gap:4,textDecoration:'none'}}><ExternalLink size={11}/> View</a>
+                      </div>
+                      {p.note&&<div style={{fontSize:11.5,color:'#94A3B8',marginTop:4}}>{p.note}</div>}
+                      {p.reviewNote&&p.status==='Rejected'&&<div style={{fontSize:11.5,color:'#EF4444',marginTop:4}}>Admin note: {p.reviewNote}</div>}
+                    </div>
+                  ))}
+                  {qProofs.length===0||qProofs.every(p=>p.status==='Rejected')?(
+                    <button onClick={()=>openProofModal(q)} style={{
+                      width:'100%',padding:'13px',borderRadius:14,border:'none',cursor:'pointer',
+                      fontSize:14,fontWeight:800,color:'#fff',
+                      background:'linear-gradient(135deg,#4F46E5,#7C3AED)',
+                      boxShadow:'0 4px 16px rgba(79,70,229,0.3)',transition:'all 0.2s',
+                    }}
+                      onMouseEnter={e=>e.currentTarget.style.transform='scale(1.01)'}
+                      onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+                      📸 Upload Advance Payment Receipt
+                    </button>
+                  ):(
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px',borderRadius:14,background:'rgba(59,130,246,0.08)',border:'1px solid rgba(59,130,246,0.2)',fontSize:13,fontWeight:700,color:'#1D4ED8'}}>
+                      <CheckCircle2 size={16}/> {qProofs.some(p=>p.status==='Verified')?'Receipt verified — admin will start your work':'Receipt submitted — our team is verifying it'}
+                    </div>
+                  )}
+                </>
               )}
               {['Advance Paid','In Progress'].includes(q.status)&&(
                 <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px',borderRadius:14,background:'rgba(16,185,129,0.08)',border:'1px solid rgba(16,185,129,0.2)',fontSize:14,fontWeight:700,color:'#059669'}}>
@@ -1301,7 +1528,7 @@ export default function ClientDashboardPage() {
               )}
             </div>
           </div>
-        ))}
+        );})}
 
         {/* Legacy fallback — projects with embedded quotation */}
         {projQuoted.map(proj=>(
@@ -1375,6 +1602,38 @@ export default function ClientDashboardPage() {
             )}
           </div>
         ))}
+
+        {/* Advance payment receipt upload modal */}
+        {proofModal&&(
+          <div onClick={()=>{if(!proofBusy)setProofModal(null);}} style={{position:'fixed',inset:0,background:'rgba(2,6,23,0.72)',backdropFilter:'blur(4px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+            <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:440,background:'#0B1836',border:'1px solid rgba(255,255,255,0.12)',borderRadius:20,padding:'22px',boxShadow:'0 24px 60px rgba(0,0,0,0.5)'}}>
+              <div style={{fontSize:16,fontWeight:900,color:'#F1F5F9',marginBottom:4}}>Upload Advance Payment Receipt</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>
+                {proofModal.quotationNo||'Quotation'} · Advance due: {formatLKR(toInt(proofModal.advanceAmount))}
+              </div>
+              <label style={{display:'block',fontSize:12,fontWeight:700,color:'#CBD5E1',marginBottom:6}}>Amount Paid (LKR) *</label>
+              <input type="number" min="1" value={proofForm.amount} onChange={e=>setProofForm(p=>({...p,amount:e.target.value}))}
+                placeholder={String(toInt(proofModal.advanceAmount)||'')}
+                style={{width:'100%',boxSizing:'border-box',padding:'11px 14px',borderRadius:12,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.14)',color:'#F1F5F9',fontSize:13,outline:'none',marginBottom:12}}/>
+              <label style={{display:'block',fontSize:12,fontWeight:700,color:'#CBD5E1',marginBottom:6}}>Reference / Note</label>
+              <input type="text" value={proofForm.note} onChange={e=>setProofForm(p=>({...p,note:e.target.value}))}
+                placeholder="e.g. bank reference no, transfer date"
+                style={{width:'100%',boxSizing:'border-box',padding:'11px 14px',borderRadius:12,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.14)',color:'#F1F5F9',fontSize:13,outline:'none',marginBottom:12}}/>
+              <label style={{display:'block',fontSize:12,fontWeight:700,color:'#CBD5E1',marginBottom:6}}>Receipt Photo *</label>
+              <input type="file" accept="image/*" onChange={e=>setProofForm(p=>({...p,file:e.target.files[0]||null}))}
+                style={{width:'100%',fontSize:12,color:'#94A3B8',marginBottom:8}}/>
+              {proofForm.file&&<div style={{fontSize:11.5,color:'#059669',marginBottom:8}}>📎 {proofForm.file.name}</div>}
+              {proofError&&<div style={{padding:'10px 12px',borderRadius:10,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#EF4444',fontSize:12,marginBottom:10,display:'flex',gap:8,alignItems:'flex-start'}}><AlertCircle size={14} style={{flexShrink:0,marginTop:1}}/> {proofError}</div>}
+              <div style={{display:'flex',gap:10,marginTop:6}}>
+                <button onClick={()=>setProofModal(null)} disabled={proofBusy} style={{flex:1,padding:'12px',borderRadius:12,border:'1px solid rgba(255,255,255,0.16)',background:'transparent',cursor:'pointer',fontSize:13,fontWeight:700,color:'#94A3B8'}}>Cancel</button>
+                <button onClick={handleUploadProof} disabled={proofBusy} style={{flex:1.4,padding:'12px',borderRadius:12,border:'none',cursor:proofBusy?'wait':'pointer',fontSize:13,fontWeight:800,color:'#fff',background:'linear-gradient(135deg,#4F46E5,#7C3AED)',opacity:proofBusy?0.7:1}}>
+                  {proofBusy?'Uploading…':'📤 Send Receipt to Admin'}
+                </button>
+              </div>
+              <div style={{fontSize:11,color:'#64748B',marginTop:12,lineHeight:1.5}}>Admin verifies your receipt, then your project moves to <strong style={{color:'#94A3B8'}}>Advance Paid</strong> and work begins with an assigned staff.</div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2025,7 +2284,7 @@ export default function ClientDashboardPage() {
                   <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
                     <div>
                       <div style={{fontSize:15,fontWeight:800,color:'#F1F5F9'}}>{activeForm.formType||'Requirement Form'}</div>
-                      <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Sent {activeForm.sentAt||'—'} · {activeForm.isCustom?'Custom form':'Standard checklist'}</div>
+                      <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Sent {formatWhen(activeForm.sentAt)||'—'} · {activeForm.isCustom?'Custom form':'Standard checklist'}</div>
                     </div>
                     <Chip status={activeForm.status}/>
                   </div>
@@ -2050,7 +2309,7 @@ export default function ClientDashboardPage() {
                       <div style={{minWidth:0}}>
                         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><Chip status={f.status}/></div>
                         <div style={{fontSize:14,fontWeight:800,color:'#F1F5F9',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{f.formType||'Requirement Form'}</div>
-                        <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Sent {f.sentAt||'—'}{f.filledAt?` · Filled ${f.filledAt}`:''}</div>
+                        <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>Sent {formatWhen(f.sentAt)||'—'}{f.filledAt?` · Filled ${formatWhen(f.filledAt)}`:''}</div>
                       </div>
                       {f.status==='sent'?(
                         <button onClick={()=>{setActiveForm(f);setFormAnswers(f.answers||{});setFormError('');}} style={{

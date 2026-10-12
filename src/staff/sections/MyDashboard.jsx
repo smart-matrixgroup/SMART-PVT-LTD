@@ -161,7 +161,9 @@ export default function MyDashboard({ onNavigate = () => {} }) {
                 }}>
                   <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{a.title}</div>
-                    <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>{a.projectTitle || '—'}</div>
+                    <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>
+                      {a.clientName ? `${a.clientName}${a.clientCompany ? ` — ${a.clientCompany}` : ''}` : (a.projectTitle || '—')}
+                    </div>
                   </div>
                   <span style={{
                     fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999,

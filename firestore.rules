@@ -169,10 +169,14 @@ service cloud.firestore {
     // Work assignments. Staff read their own (authUid field) and may ONLY
     // move them along the lifecycle: status, progress, timestamps. They
     // can never reassign themselves to another project/staff or change
-    // deadlines/priority.
+    // deadlines/priority. The client is given read access to assignments
+    // carrying their own clientId (embedded by the admin when the work is
+    // assigned) so "who is working on my project, and how far" is visible
+    // in the client portal — never writable by anyone outside admin.
     match /workAssignments/{assignmentId} {
       allow read: if isAdmin() ||
-        (request.auth != null && resource.data.authUid == request.auth.uid);
+        (request.auth != null && resource.data.authUid == request.auth.uid) ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
       allow create, delete: if isAdmin();
       allow update: if isAdmin() ||
         (request.auth != null &&
@@ -216,6 +220,18 @@ service cloud.firestore {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.authUid == request.auth.uid);
       allow write: if isAdmin();
+    }
+
+    // Advance-payment receipt proofs. The client uploads a payment
+    // screenshot/slip photo against their own quotation; only admins may
+    // verify/reject (update) or delete. A client can never forge another
+    // client's proof — clientId must equal their own uid.
+    match /paymentProofs/{proofId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow create: if request.auth != null &&
+        request.resource.data.clientId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     // System Settings & Access Control Rules

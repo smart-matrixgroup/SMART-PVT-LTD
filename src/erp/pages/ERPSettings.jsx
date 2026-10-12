@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ERPPanel, ERPPanelHeader, ERPBtn, ERPInput, ERPTextarea, C } from '../components/ERPui';
-import { Save, Shield, Bell, Building, User, Lock, ShieldCheck } from 'lucide-react';
+import { Save, Shield, Bell, Building, User, Lock, ShieldCheck, Landmark } from 'lucide-react';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../../config/firebase';
 import { company } from '../../config/company';
 import ERPAccessRules from './ERPAccessRules';
 
@@ -8,9 +10,14 @@ const SECTIONS = [
   {id:'company',  label:'Company Info',     icon:<Building size={14}/> },
   {id:'admin',    label:'Admin Profile',    icon:<User size={14}/>     },
   {id:'security', label:'Security',         icon:<Lock size={14}/>     },
+  {id:'bank',     label:'Bank Details',     icon:<Landmark size={14}/> },
   {id:'rules',    label:'Access Rules',     icon:<ShieldCheck size={14}/> },
   {id:'notify',   label:'Notifications',    icon:<Bell size={14}/>     },
 ];
+
+const EMPTY_BANK = {
+  bankName:'', accountName:'', accountNumber:'', branch:'', swiftCode:'', instructions:'',
+};
 
 export default function ERPSettings() {
   const [section, setSection] = useState('company');
@@ -34,6 +41,43 @@ export default function ERPSettings() {
     newLeads:true,quotationAccepted:true,advancePaid:true,
     projectUpdates:true,messages:true,staffSalary:false,
   });
+
+  // ── Bank details (persisted to Firestore settings/bankDetails) ──
+  const [bankForm,   setBankForm]   = useState(EMPTY_BANK);
+  const [bankLoaded, setBankLoaded] = useState(false);
+  const [bankSaved,  setBankSaved]  = useState(false);
+  const [bankError,  setBankError]  = useState('');
+  const [bankBusy,   setBankBusy]   = useState(false);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    getDoc(doc(db,'settings','bankDetails'))
+      .then(snap=>{
+        if (snap.exists()) setBankForm(p=>({...p,...snap.data()}));
+        setBankLoaded(true);
+      })
+      .catch(()=>setBankLoaded(true));
+  }, []);
+
+  const handleSaveBank = async () => {
+    setBankError('');
+    if (!bankForm.bankName.trim() || !bankForm.accountNumber.trim()) {
+      setBankError('Bank Name and Account Number are required.');
+      return;
+    }
+    setBankBusy(true);
+    try {
+      await setDoc(doc(db,'settings','bankDetails'), {
+        ...bankForm, updatedAt: serverTimestamp(),
+      }, { merge:true });
+      setBankSaved(true);
+      setTimeout(()=>setBankSaved(false),2500);
+    } catch(e) {
+      setBankError(e.message || 'Could not save bank details.');
+    } finally {
+      setBankBusy(false);
+    }
+  };
 
   const handleSave = () => {
     setSaved(true);
@@ -150,6 +194,52 @@ export default function ERPSettings() {
         {/* ── Access Rules & Restrictions ── */}
         {section==='rules' && (
           <ERPAccessRules />
+        )}
+
+        {/* ── Bank Details ── */}
+        {section==='bank' && (
+          <ERPPanel>
+            <ERPPanelHeader title="Company Bank Details" icon="🏦"/>
+            <div style={{padding:20,display:'flex',flexDirection:'column',gap:14}}>
+              <div style={{padding:'12px 16px',borderRadius:10,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`,fontSize:11,color:C.subtle,lineHeight:1.6}}>
+                🏦 These details appear on the client portal next to every quotation with an advance payment.
+                Clients transfer the advance, upload the receipt photo, and you verify it in ERP → Quotations before starting work.
+              </div>
+
+              {!isFirebaseConfigured && (
+                <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(240,90,103,0.1)',border:'1px solid rgba(240,90,103,0.3)',fontSize:11,color:'#F05A67',fontWeight:600}}>
+                  ⚠ Firebase is not configured — bank details can only be saved in the live app.
+                </div>
+              )}
+              {isFirebaseConfigured && !bankLoaded && (
+                <div style={{fontSize:11,color:C.muted}}>Loading saved bank details…</div>
+              )}
+              {bankSaved && (
+                <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(24,199,122,0.1)',border:'1px solid rgba(24,199,122,0.3)',fontSize:12,color:C.green,fontWeight:600}}>
+                  ✅ Bank details saved — clients will see them immediately on their quotations.
+                </div>
+              )}
+              {bankError && (
+                <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(240,90,103,0.1)',border:'1px solid rgba(240,90,103,0.3)',fontSize:12,color:'#F05A67',fontWeight:600}}>
+                  {bankError}
+                </div>
+              )}
+
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <ERPInput label="Bank Name *" value={bankForm.bankName} onChange={e=>setBankForm(p=>({...p,bankName:e.target.value}))} placeholder="Bank of Ceylon" />
+                <ERPInput label="Account Name *" value={bankForm.accountName} onChange={e=>setBankForm(p=>({...p,accountName:e.target.value}))} placeholder="SMART [PVT] LTD" />
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                <ERPInput label="Account Number *" value={bankForm.accountNumber} onChange={e=>setBankForm(p=>({...p,accountNumber:e.target.value}))} placeholder="1234567890" />
+                <ERPInput label="Branch" value={bankForm.branch} onChange={e=>setBankForm(p=>({...p,branch:e.target.value}))} placeholder="Colombo Main Branch" />
+              </div>
+              <ERPInput label="SWIFT / BIC Code (optional)" value={bankForm.swiftCode} onChange={e=>setBankForm(p=>({...p,swiftCode:e.target.value}))} placeholder="BCEYLYLX" />
+              <ERPTextarea label="Payment Instructions (shown to clients)" value={bankForm.instructions} rows={3} onChange={e=>setBankForm(p=>({...p,instructions:e.target.value}))} placeholder={'Transfer the advance to the account above.\nUse your project name as the payment reference.\nUpload a photo of the receipt/screenshot below.'} />
+              <ERPBtn variant="primary" onClick={handleSaveBank} style={{alignSelf:'flex-end',gap:6,opacity:bankBusy?0.6:1}}>
+                <Save size={13}/> {bankBusy?'Saving…':'Save Bank Details'}
+              </ERPBtn>
+            </div>
+          </ERPPanel>
         )}
 
         {/* ── Notifications ── */}

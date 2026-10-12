@@ -28,7 +28,7 @@ export default function Footer({ onOpenQuote }) {
     try {
       // Dynamic import: the footer renders on every page, so the Firestore
       // SDK is only pulled in when someone actually subscribes.
-      const [{ collection, addDoc, serverTimestamp }, { db, isFirebaseConfigured }] = await Promise.all([
+      const [{ collection, doc, setDoc, serverTimestamp }, { db, isFirebaseConfigured }] = await Promise.all([
         import('firebase/firestore'),
         import('../config/firebase'),
       ]);
@@ -36,9 +36,10 @@ export default function Footer({ onOpenQuote }) {
         setSubError('Our newsletter service is temporarily unavailable. Please try again later.');
         return;
       }
-      await addDoc(collection(db, 'leads'), {
+      const generatedId = `WEB-${Date.now().toString(36).toUpperCase()}`;
+      await setDoc(doc(db, 'leads', generatedId), {
         type:      'website_form',
-        leadId:    `WEB-${Date.now().toString(36).toUpperCase()}`,
+        leadId:    generatedId,
         status:    'New',
         createdAt: serverTimestamp(),
         name:      emailTrimmed.split('@')[0], // real subscriber, derived from their own email

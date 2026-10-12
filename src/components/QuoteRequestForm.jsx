@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { services } from '../config/services';
 import { company } from '../config/company';
@@ -86,7 +86,7 @@ export default function QuoteRequestForm({ source = 'Quote Request', initialServ
     setLoading(true);
     const generatedId = `WEB-${Date.now().toString(36).toUpperCase()}`;
     try {
-      await addDoc(collection(db, 'leads'), {
+      await setDoc(doc(db, 'leads', generatedId), {
         // Identification / workflow
         type:      'website_form',
         leadId:    generatedId,
@@ -240,24 +240,33 @@ export default function QuoteRequestForm({ source = 'Quote Request', initialServ
         </div>
       )}
 
-      {/* Submit */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed shadow-glow-sm transition-all flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <>
-            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-            </svg>
-            Submitting...
-          </>
-        ) : (
-          <><Send className="w-4 h-4" /> Send My Request <ArrowRight className="w-3.5 h-3.5" /></>
-        )}
-      </button>
+      {/* Submit + Clear */}
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed shadow-glow-sm transition-all flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <>
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              Submitting...
+            </>
+          ) : (
+            <><Send className="w-4 h-4" /> Send My Request <ArrowRight className="w-3.5 h-3.5" /></>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setForm(EMPTY_FORM); setError(''); }}
+          className="px-5 py-3 rounded-xl text-xs font-semibold text-[#29405E] dark:text-text-light bg-[#F0F6FF] dark:bg-navy-800 hover:bg-[#E0EEFF] dark:hover:bg-navy-700 border border-[#C8D8EE] dark:border-surface-border transition-colors"
+        >
+          Clear
+        </button>
+      </div>
 
       <p className="text-center text-[11px] text-[#5B6E88] dark:text-text-muted">
         By submitting, you agree to be contacted by our team regarding your request.

@@ -60,6 +60,22 @@ service firebase.storage {
         (request.auth.uid == authUid || isAdmin());
     }
 
+    // Advance-payment receipt photos uploaded by clients, organised as
+    // payment-proofs/{clientUid}/{quotationId}/{fileName} so the folder
+    // name enforces ownership (same pattern as requirement-files).
+    // Images only — these are payment screenshot/slip photos.
+    match /payment-proofs/{authUid}/{quotationId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      allow create: if request.auth != null &&
+        request.auth.uid == authUid &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+
+      allow delete: if isAdmin();
+    }
+
     // No other match block → every other path is denied by default.
   }
 }

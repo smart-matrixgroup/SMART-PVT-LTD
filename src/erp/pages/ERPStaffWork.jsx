@@ -1,8 +1,11 @@
 // ─────────────────────────────────────────────────────────────────
 //  Phase 3 C — Work assignments (admin side).
-//  Lead → Project/Work → assign to staff. Staff see these in their
-//  portal and can only move status/progress — those updates flow back
-//  here live through onSnapshot.
+//  Lead → Client → Project/Work → assign to one or more staff whose
+//  profile fits that service. Each assignment embeds a snapshot of the
+//  client and the staff member, so:
+//    · the staff portal shows whose client/project they are working on
+//    · the client portal shows their team and live progress
+//  Staff move status/progress only — that flows back here via onSnapshot.
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
@@ -12,20 +15,39 @@ import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect,
   ERPEmpty, ERPAvatar, ERPProgress, C,
 } from '../components/ERPui';
-import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey } from '../../staff/staffUtils';
+import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey, splitStaffByFit } from '../../staff/staffUtils';
 import { fmtDate } from '../money';
-import { Plus, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertTriangle, Search, Users } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 const EMPTY_FORM = {
+  clientId: '', clientName: '', clientCompany: '', serviceType: '',
   projectId: '', projectTitle: '', title: '', description: '',
   staffId: '', startDate: todayKey(), deadline: '', priority: 'Medium', status: 'Assigned', progress: 0,
 };
 
+const DEV_CLIENTS = [
+  { id: 'C001', name: 'John Perera', company: 'Perera Holdings' },
+  { id: 'C002', name: 'Sarah Fernando', company: 'Mehala Restaurant' },
+  { id: 'C004', name: 'Priya Nair', company: 'PN Accounting' },
+];
+
+const DEV_PROJECTS = [
+  { id: 'P001', clientId: 'C001', title: 'Corporate Website Redesign', serviceType: 'Corporate Business Website' },
+  { id: 'P003', clientId: 'C002', title: 'Restaurant POS System',      serviceType: 'ERP & POS System' },
+  { id: 'P004', clientId: 'C004', title: 'Annual Tax Filing 2024',     serviceType: 'Accounting & Tax Services' },
+];
+
 const DEV_ASSIGNMENTS = [
-  { id: 'wa1', projectId: 'P001', projectTitle: 'Corporate Website Redesign', title: 'Home page component build', staffId: 'dev-staff-001', staffName: 'Ashan Perera', startDate: '2026-10-01', deadline: '2026-10-10', priority: 'High', status: 'In Progress', progress: 60 },
-  { id: 'wa2', projectId: 'P003', projectTitle: 'Restaurant POS System', title: 'Order screen UI', staffId: 'dev-staff-002', staffName: 'Nimali Silva', startDate: '2026-09-28', deadline: '2026-10-04', priority: 'Critical', status: 'Assigned', progress: 0 },
-  { id: 'wa3', projectId: '', projectTitle: '', title: 'September bookkeeping close', staffId: 'dev-staff-003', staffName: 'Ruwan Jayasuriya', startDate: '2026-10-01', deadline: '2026-10-07', priority: 'Medium', status: 'Completed', progress: 100 },
+  { id: 'wa1', clientId:'C001', clientName:'John Perera', clientCompany:'Perera Holdings', serviceType:'Corporate Business Website',
+    projectId: 'P001', projectTitle: 'Corporate Website Redesign', title: 'Home page component build', staffId: 'dev-staff-001', staffName: 'Ashan Perera', staffRole:'Full Stack Developer',
+    startDate: '2026-10-01', deadline: '2026-10-10', priority: 'High', status: 'In Progress', progress: 60 },
+  { id: 'wa2', clientId:'C002', clientName:'Sarah Fernando', clientCompany:'Mehala Restaurant', serviceType:'ERP & POS System',
+    projectId: 'P003', projectTitle: 'Restaurant POS System', title: 'Order screen UI', staffId: 'dev-staff-002', staffName: 'Nimali Silva', staffRole:'UI/UX Designer',
+    startDate: '2026-09-28', deadline: '2026-10-04', priority: 'Critical', status: 'Assigned', progress: 0 },
+  { id: 'wa3', clientId:'C004', clientName:'Priya Nair', clientCompany:'PN Accounting', serviceType:'Accounting & Tax Services',
+    projectId: '', projectTitle: '', title: 'September bookkeeping close', staffId: 'dev-staff-003', staffName: 'Ruwan Jayasuriya', staffRole:'Accountant',
+    startDate: '2026-10-01', deadline: '2026-10-07', priority: 'Medium', status: 'Completed', progress: 100 },
 ];
 
 export default function ERPStaffWork() {
@@ -35,13 +57,18 @@ export default function ERPStaffWork() {
   const [assignments, setAssignments] = useState([]);
   const [staff,       setStaff]       = useState([]);
   const [projects,    setProjects]    = useState([]);
+  const [clients,     setClients]     = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [loadError,   setLoadError]   = useState(null);
   const [fStaff,      setFStaff]      = useState('All');
   const [fStatus,     setFStatus]     = useState('All');
+  const [fClient,     setFClient]     = useState('All');
   const [showForm,    setShowForm]    = useState(false);
   const [editId,      setEditId]      = useState(null);
   const [form,        setForm]        = useState(EMPTY_FORM);
+  const [clientQ,     setClientQ]     = useState('');    // client search text
+  const [selStaff,    setSelStaff]    = useState([]);    // staff ids picked
+  const [showAllStaff, setShowAllStaff] = useState(false);
   const [delTarget,   setDelTarget]   = useState(null);
   const [busy,        setBusy]        = useState(false);
   const [formError,   setFormError]   = useState(null);
@@ -50,10 +77,12 @@ export default function ERPStaffWork() {
     if (!live) {
       setAssignments(DEV_ASSIGNMENTS);
       setStaff([
-        { id: 'dev-staff-001', name: 'Ashan Perera', role: 'Full Stack Developer', status: 'active' },
-        { id: 'dev-staff-002', name: 'Nimali Silva', role: 'UI/UX Designer', status: 'busy' },
-        { id: 'dev-staff-003', name: 'Ruwan Jayasuriya', role: 'Accountant', status: 'on-leave' },
+        { id: 'dev-staff-001', name: 'Ashan Perera', role: 'Full Stack Developer', department: 'Engineering', status: 'active' },
+        { id: 'dev-staff-002', name: 'Nimali Silva', role: 'UI/UX Designer', department: 'Design', status: 'busy' },
+        { id: 'dev-staff-003', name: 'Ruwan Jayasuriya', role: 'Accountant', department: 'Finance', status: 'on-leave' },
       ]);
+      setClients(DEV_CLIENTS);
+      setProjects(DEV_PROJECTS);
       setLoading(false);
       return;
     }
@@ -67,6 +96,9 @@ export default function ERPStaffWork() {
       onSnapshot(collection(db, 'projects'),
         snap => setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
         err => console.error(err)),
+      onSnapshot(collection(db, 'clients'),
+        snap => setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.status !== 'deleted')),
+        err => console.error(err)),
     ];
     return () => unsubs.forEach(u => u());
   }, [live]);
@@ -76,20 +108,48 @@ export default function ERPStaffWork() {
   const filtered = assignments
     .filter(a => (fStaff === 'All' ? true : a.staffId === fStaff))
     .filter(a => (fStatus === 'All' ? true : a.status === fStatus))
+    .filter(a => (fClient === 'All' ? true : a.clientId === fClient))
     .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt) || String(a.deadline).localeCompare(String(b.deadline)));
 
   const today = todayKey();
   const stats = {
-    assigned: assignments.filter(a => a.status === 'Assigned').length,
-    progress: assignments.filter(a => a.status === 'In Progress').length,
-    done:     assignments.filter(a => a.status === 'Completed').length,
-    overdue:  assignments.filter(a => a.status !== 'Completed' && a.deadline && a.deadline < today).length,
+    assigned:  assignments.filter(a => a.status === 'Assigned').length,
+    accepted:  assignments.filter(a => a.status === 'Accepted').length,
+    progress:  assignments.filter(a => a.status === 'In Progress').length,
+    done:      assignments.filter(a => a.status === 'Completed').length,
+    overdue:   assignments.filter(a => a.status !== 'Completed' && a.deadline && a.deadline < today).length,
   };
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY_FORM); setFormError(null); setShowForm(true); };
+  // ── Picker data for the modal ────────────────────────────────────
+  const clientOptions = clients
+    .filter(c => {
+      const q = clientQ.trim().toLowerCase();
+      return !q || `${c.name || ''} ${c.company || ''}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+  // Projects belonging to the client picked above (falls back to the
+  // current form's project so editing an old row never empties the list).
+  const clientProjects = projects.filter(p =>
+    !form.clientId || p.clientId === form.clientId || p.id === form.projectId);
+
+  const { suited, others } = splitStaffByFit(
+    staff,
+    form.serviceType || projects.find(p => p.id === form.projectId)?.serviceType || ''
+  );
+  const staffPool = showAllStaff ? [...suited, ...others] : suited;
+  const unavailable = s => s.status === 'on-leave' || s.status === 'inactive';
+
+  const openCreate = () => {
+    setEditId(null); setForm(EMPTY_FORM); setSelStaff([]); setClientQ(''); setShowAllStaff(false);
+    setFormError(null); setShowForm(true);
+  };
   const openEdit = (a) => {
-    setEditId(a.id); setFormError(null);
+    setEditId(a.id); setFormError(null); setShowAllStaff(true); setClientQ('');
+    setSelStaff(a.staffId ? [a.staffId] : []);
     setForm({
+      clientId: a.clientId || '', clientName: a.clientName || '', clientCompany: a.clientCompany || '',
+      serviceType: a.serviceType || '',
       projectId: a.projectId || '', projectTitle: a.projectTitle || '', title: a.title || '',
       description: a.description || '', staffId: a.staffId || '',
       startDate: a.startDate || todayKey(), deadline: a.deadline || '',
@@ -98,28 +158,59 @@ export default function ERPStaffWork() {
     setShowForm(true);
   };
 
+  // Create mode → assign the same work to several staff at once (one
+  // assignment doc each). Edit mode → single staff, replaces the row's own.
+  const toggleStaff = (id) => {
+    if (editId) { setSelStaff([id]); return; }
+    setSelStaff(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  };
+
   const handleSave = async () => {
-    if (!form.title.trim() || !form.staffId) return;
-    const member = staff.find(s => s.id === form.staffId);
+    if (!form.title.trim())          { setFormError('Enter a work title.'); return; }
+    if (!selStaff.length)            { setFormError('Pick at least one staff member.'); return; }
     const proj = projects.find(p => p.id === form.projectId);
-    const payload = {
-      projectId: proj?.id || '', projectTitle: proj?.title || '',
+    const client = clients.find(c => c.id === form.clientId);
+    const picks = selStaff.map(id => staff.find(s => s.id === id)).filter(Boolean);
+    const shared = {
+      clientId:     client?.id || form.clientId || '',
+      clientName:   client?.name || form.clientName || '',
+      clientCompany:client?.company || form.clientCompany || '',
+      serviceType:  proj?.serviceType || form.serviceType || '',
+      projectId:    proj?.id || '', projectTitle: proj?.title || '',
       title: form.title.trim(), description: form.description.trim(),
-      staffId: form.staffId, staffName: member?.name || '—',
-      authUid: member?.authUid || member?.id || '',
       startDate: form.startDate, deadline: form.deadline,
-      priority: form.priority, status: form.status, progress: Number(form.progress) || 0,
+      priority: form.priority, progress: Number(form.progress) || 0,
       updatedAt: serverTimestamp(),
     };
     setBusy(true); setFormError(null);
     try {
-      if (!live) {
-        if (editId) setAssignments(p => p.map(a => a.id === editId ? { ...a, ...payload, updatedAt: Date.now() } : a));
-        else setAssignments(p => [{ id: `dev-${Date.now()}`, ...payload, createdAt: Date.now() }, ...p]);
-      } else if (editId) {
-        await updateDoc(doc(db, 'workAssignments', editId), payload);
+      if (editId) {
+        const m = picks[0];
+        const payload = {
+          ...shared, status: form.status || 'Assigned',
+          staffId: m.id, staffName: m.name || '—', staffRole: m.role || '',
+          staffEmail: m.loginEmail || m.email || '', staffPhone: m.phone || '',
+          authUid: m.authUid || m.id || '',
+        };
+        if (!live) setAssignments(p => p.map(a => a.id === editId ? { ...a, ...payload, updatedAt: Date.now() } : a));
+        else await updateDoc(doc(db, 'workAssignments', editId), payload);
       } else {
-        await addDoc(collection(db, 'workAssignments'), { ...payload, createdAt: serverTimestamp() });
+        for (const m of picks) {
+          const payload = {
+            ...shared, status: 'Assigned',
+            staffId: m.id, staffName: m.name || '—', staffRole: m.role || '',
+            staffEmail: m.loginEmail || m.email || '', staffPhone: m.phone || '',
+            authUid: m.authUid || m.id || '',
+          };
+          if (!live) setAssignments(p => [{ id: `dev-${Date.now()}-${m.id}`, ...payload, createdAt: Date.now() }, ...p]);
+          else await addDoc(collection(db, 'workAssignments'), { ...payload, createdAt: serverTimestamp() });
+        }
+        // The team being assigned IS the work starting — move the client's
+        // project out of the pre-work state so their dashboard shows it live.
+        if (live && proj && !['In Progress', 'Completed', 'archived'].includes(proj.status)) {
+          try { await updateDoc(doc(db, 'projects', proj.id), { status: 'In Progress', updatedAt: serverTimestamp() }); }
+          catch (e) { console.error('project status sync skipped', e); }
+        }
       }
       setShowForm(false);
     } catch (e) { console.error(e); setFormError(e.message || 'Save failed.'); }
@@ -150,8 +241,9 @@ export default function ERPStaffWork() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
         {[
-          { label: 'Assigned', val: stats.assigned, color: C.blue, icon: '📥' },
-          { label: 'In Progress', val: stats.progress, color: C.cyan, icon: '⚙️' },
+          { label: 'Assigned', val: stats.assigned, color: C.violet, icon: '📥' },
+          { label: 'Accepted', val: stats.accepted, color: C.cyan, icon: '🤝' },
+          { label: 'In Progress', val: stats.progress, color: C.blue, icon: '⚙️' },
           { label: 'Completed', val: stats.done, color: C.green, icon: '✅' },
           { label: 'Overdue', val: stats.overdue, color: C.red, icon: '🔥' },
         ].map(s => (
@@ -168,6 +260,11 @@ export default function ERPStaffWork() {
         <div style={{ minWidth: 170 }}>
           <ERPSelect value={fStaff} onChange={e => setFStaff(e.target.value)}
             options={[{ value: 'All', label: 'All staff' }, ...staff.map(s => ({ value: s.id, label: s.name }))]} />
+        </div>
+        <div style={{ minWidth: 180 }}>
+          <ERPSelect value={fClient} onChange={e => setFClient(e.target.value)}
+            options={[{ value: 'All', label: 'All clients' },
+              ...clients.map(c => ({ value: c.id, label: c.name || c.company || c.id }))]} />
         </div>
         {['All', ...ASSIGNMENT_STATUSES].map(f => (
           <button key={f} onClick={() => setFStatus(f)} style={{
@@ -191,7 +288,7 @@ export default function ERPStaffWork() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Work / Project', 'Assigned To', 'Priority', 'Start', 'Deadline', 'Progress', 'Status', ''].map(h => (
+                  {['Work / Project', 'Client', 'Assigned To', 'Priority', 'Start', 'Deadline', 'Progress', 'Status', ''].map(h => (
                     <th key={h} style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
                       letterSpacing: '0.8px', color: C.muted, textAlign: 'left', background: 'rgba(10,24,56,0.5)',
                       borderBottom: `1px solid ${C.border}` }}>{h}</th>
@@ -211,10 +308,21 @@ export default function ERPStaffWork() {
                           {a.projectTitle || 'General work'}
                         </div>
                       </td>
+                      <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20`, maxWidth: 170 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {a.clientName || '—'}
+                        </div>
+                        <div style={{ fontSize: 10, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {a.clientCompany || a.serviceType || ''}
+                        </div>
+                      </td>
                       <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <ERPAvatar name={a.staffName} color={AVATAR_COLORS[(a.staffName || '?').length % AVATAR_COLORS.length]} size={24} />
-                          <span style={{ fontSize: 11, color: C.subtle, fontWeight: 600 }}>{a.staffName}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, color: C.subtle, fontWeight: 600 }}>{a.staffName}</div>
+                            {a.staffRole && <div style={{ fontSize: 9.5, color: C.muted }}>{a.staffRole}</div>}
+                          </div>
                         </div>
                       </td>
                       <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
@@ -255,31 +363,128 @@ export default function ERPStaffWork() {
 
       {/* Create / edit modal */}
       <ERPModal isOpen={showForm} onClose={() => setShowForm(false)}
-        title={editId ? 'Edit Assignment' : 'New Work Assignment'} width={520}>
+        title={editId ? 'Edit Assignment' : 'New Work Assignment'} width={620}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+
+          {/* 1 · Which client's work is this? */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 6 }}>Client</div>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <Search size={13} style={{ position: 'absolute', left: 11, top: 10, color: C.muted }} />
+              <input value={clientQ} onChange={e => setClientQ(e.target.value)}
+                placeholder="Search client by name or company…"
+                style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(10,24,56,0.8)',
+                  border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 12px 8px 32px',
+                  color: C.text, fontSize: 12, outline: 'none' }} />
+            </div>
+            <ERPSelect value={form.clientId} placeholder="Select client..."
+              onChange={e => {
+                const c = clients.find(x => x.id === e.target.value);
+                setForm(p => ({ ...p, clientId: e.target.value, clientName: c?.name || '',
+                  clientCompany: c?.company || '', projectId: '', projectTitle: '',
+                  serviceType: c ? p.serviceType : '' }));
+              }}
+              options={clientOptions.map(c => ({ value: c.id, label: `${c.name || c.id}${c.company ? ` — ${c.company}` : ''}` }))} />
+            {clientOptions.length === 0 && clients.length > 0 && (
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 5 }}>No client matches “{clientQ}”.</div>
+            )}
+          </div>
+
           <ERPSelect label="Project (optional — leave empty for general work)"
             value={form.projectId}
             onChange={e => {
               const p = projects.find(x => x.id === e.target.value);
-              setForm(prev => ({ ...prev, projectId: e.target.value, projectTitle: p?.title || '' }));
+              setForm(prev => ({ ...prev, projectId: e.target.value, projectTitle: p?.title || '',
+                serviceType: p?.serviceType || '',
+                clientName: prev.clientName || p?.clientName || '',
+                clientCompany: prev.clientCompany || p?.clientCompany || '',
+                clientId: prev.clientId || p?.clientId || '' }));
             }}
             placeholder="Select project..."
-            options={projects.map(p => ({ value: p.id, label: p.title || p.id }))} />
+            options={clientProjects.map(p => ({
+              value: p.id,
+              label: `${p.title || p.id}${p.status ? ` · ${p.status}` : ''}`,
+            }))} />
+          {form.clientId && clientProjects.length === 0 && (
+            <div style={{ fontSize: 10.5, color: C.amber }}>
+              This client has no project record yet — you can still assign the work as general work.
+            </div>
+          )}
+
           <ERPInput label="Work Title" value={form.title} required
             onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
             placeholder="e.g. Build POS order screen components" />
           <ERPInput label="Description (optional)" value={form.description}
             onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
             placeholder="Short brief for the staff member" />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <ERPSelect label="Assign To" value={form.staffId} required
-              onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
-              placeholder="Select staff..."
-              options={staff.map(s => ({ value: s.id, label: `${s.name}${s.role ? ` — ${s.role}` : ''}` }))} />
+
+          {/* 2 · Who fits this work? */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.subtle }}>
+                Assign To {form.serviceType && (
+                  <span style={{ color: C.muted, fontWeight: 400 }}>
+                    — staff suited to “{form.serviceType}”
+                  </span>
+                )}
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: C.muted, cursor: 'pointer' }}>
+                <input type="checkbox" checked={showAllStaff} onChange={e => setShowAllStaff(e.target.checked)}
+                  style={{ accentColor: '#0066FF' }} />
+                Show all staff
+              </label>
+            </div>
+
+            {staffPool.length === 0 ? (
+              <div style={{ fontSize: 11.5, color: C.muted, padding: '12px 14px', borderRadius: 10,
+                background: 'rgba(10,24,56,0.6)', border: `1px solid ${C.border}` }}>
+                No staff profile matches this service{!showAllStaff ? ' — tick “Show all staff” to see the rest.' : ' yet. Add staff from ERP → Staff → Add Staff.'}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {staffPool.map(s => {
+                  const on = selStaff.includes(s.id);
+                  const blocked = unavailable(s) && !showAllStaff;
+                  return (
+                    <button key={s.id} onClick={() => !blocked && toggleStaff(s.id)}
+                      disabled={blocked}
+                      title={blocked ? `${s.name} is ${s.status}` : ''}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 22,
+                        cursor: blocked ? 'not-allowed' : 'pointer', fontSize: 11.5, fontWeight: 700,
+                        opacity: blocked ? 0.45 : 1,
+                        background: on ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'rgba(10,24,56,0.8)',
+                        color: on ? '#fff' : C.subtle,
+                        border: `1px solid ${on ? 'transparent' : C.border}`,
+                      }}>
+                      <ERPAvatar name={s.name} size={20}
+                        color={AVATAR_COLORS[(s.name || '?').length % AVATAR_COLORS.length]} />
+                      {s.name}
+                      {s.role && <span style={{ fontWeight: 400, opacity: 0.75, fontSize: 10 }}>· {s.role}</span>}
+                      {s.status && s.status !== 'active' && (
+                        <ERPBadge status={s.status} label={s.status} />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {!editId && selStaff.length > 0 && (
+              <div style={{ fontSize: 10.5, color: C.cyan, marginTop: 7 }}>
+                {selStaff.length} staff member{selStaff.length > 1 ? 's' : ''} will get this work in their portal.
+              </div>
+            )}
+            {!editId && suited.length === 0 && others.length > 0 && !showAllStaff && (
+              <div style={{ fontSize: 10.5, color: C.muted, marginTop: 7 }}>
+                Nobody's role matches this service — tick “Show all staff” to pick manually.
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <ERPSelect label="Priority" value={form.priority}
               onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} options={PRIORITIES} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <ERPInput label="Start Date" value={form.startDate} type="date"
               onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} />
             <ERPInput label="Deadline" value={form.deadline} type="date"
@@ -300,9 +505,9 @@ export default function ERPStaffWork() {
           )}
           <div style={{ display: 'flex', gap: 10 }}>
             <ERPBtn variant="secondary" onClick={() => setShowForm(false)} style={{ flex: 1, justifyContent: 'center' }}>Cancel</ERPBtn>
-            <ERPBtn variant="primary" disabled={busy || !form.title.trim() || !form.staffId}
+            <ERPBtn variant="primary" disabled={busy || !form.title.trim() || selStaff.length === 0}
               onClick={handleSave} style={{ flex: 1, justifyContent: 'center' }}>
-              {editId ? 'Save Changes' : 'Assign Work'}
+              <Users size={13} /> {editId ? 'Save Changes' : `Assign Work${selStaff.length > 1 ? ` (${selStaff.length})` : ''}`}
             </ERPBtn>
           </div>
         </div>

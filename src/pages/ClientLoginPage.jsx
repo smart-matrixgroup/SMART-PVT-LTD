@@ -4,7 +4,7 @@ import SEO from '../components/SEO';
 import { useAuth } from '../context/AuthContext';
 import {
   ShieldCheck, Lock, Mail, ArrowRight,
-  Sparkles, Eye, EyeOff, User, AlertCircle
+  Sparkles, Eye, EyeOff, User, AlertCircle, ArrowLeft, Eraser
 } from 'lucide-react';
 
 export default function ClientLoginPage({ onOpenQuote }) {
@@ -163,6 +163,24 @@ export default function ClientLoginPage({ onOpenQuote }) {
                 <>Sign In <ArrowRight className="w-3.5 h-3.5" /></>
               )}
             </button>
+
+            {/* Clear + Back to Website */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setIdentifier(''); setPassword(''); setError(''); }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold text-[#29405E] dark:text-text-light bg-[#F0F6FF] dark:bg-navy-800 hover:bg-[#E0EEFF] dark:hover:bg-navy-700 border border-[#C8D8EE] dark:border-surface-border transition-colors"
+              >
+                <Eraser className="w-3.5 h-3.5" /> Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold text-[#29405E] dark:text-text-light bg-[#F0F6FF] dark:bg-navy-800 hover:bg-[#E0EEFF] dark:hover:bg-navy-700 border border-[#C8D8EE] dark:border-surface-border transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> Back to Website
+              </button>
+            </div>
 
           </form>
 

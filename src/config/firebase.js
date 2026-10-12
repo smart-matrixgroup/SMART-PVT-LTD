@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -32,7 +32,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// ── Staff account provisioning ─────────────────────────────────────
+// ── Staff / Client account provisioning ─────────────────────────────
 // createUserWithEmailAndPassword signs the NEW user into the CURRENT
 // auth instance, which would kick the admin out of their session.
 // The standard workaround is a secondary Firebase app instance: create
@@ -45,6 +45,18 @@ export async function createStaffAuthAccount(email, password) {
   try {
     const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     return cred.user.uid;
+  } catch (err) {
+    // If the account was already created during a previous step with this password,
+    // recover the uid by signing in instead of hard failing.
+    if (err.code === 'auth/email-already-in-use') {
+      try {
+        const signCred = await signInWithEmailAndPassword(secondaryAuth, email, password);
+        return signCred.user.uid;
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
   } finally {
     await signOut(secondaryAuth).catch(() => {});
   }

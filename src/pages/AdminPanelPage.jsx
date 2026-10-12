@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { toMillis } from '../erp/formatWhen';
@@ -36,7 +36,7 @@ function RequestDetailPanel({ selected, copied, onCopy, onUpdateStatus, buildWha
     <div className="rounded-2xl border border-[#DCE6F2] dark:border-surface-border bg-white dark:bg-navy-800 p-5 space-y-4 sticky top-24">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[11px] font-mono text-[#5B6E88] dark:text-text-muted">{selected.leadId}</p>
+          <p className="text-[11px] font-mono text-[#5B6E88] dark:text-text-muted">{selected.leadRef || selected.leadId}</p>
           <h3 className="text-sm font-bold text-[#0A1E3F] dark:text-white mt-0.5">{selected.name}</h3>
         </div>
         <Badge status={selected.status || 'New'} />
@@ -160,7 +160,16 @@ export default function AdminPanelPage() {
   useEffect(() => {
     if (isDevSession || !isFirebaseConfigured) { setAllLeads([]); return; }
     const unsubscribe = onSnapshot(collection(db, 'leads'), (snap) => {
-      const rows = snap.docs.map(d => ({ leadId: d.id, ...d.data() }));
+      const rows = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          ...data,
+          id: d.id,
+          docId: d.id,
+          leadRef: data.leadId || d.id,
+          leadId: d.id,
+        };
+      });
       rows.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
       setAllLeads(rows);
       setLeadsError('');
@@ -234,8 +243,16 @@ export default function AdminPanelPage() {
   // Update request status in Firestore
   const updateStatus = async (leadId, status) => {
     try {
-      await updateDoc(doc(db, 'leads', leadId), { status });
-      if (selected?.leadId === leadId) setSelected({ ...selected, status });
+      let targetDocId = leadId;
+      if (typeof leadId === 'string' && leadId.startsWith('WEB-')) {
+        try {
+          const q = query(collection(db, 'leads'), where('leadId', '==', leadId));
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) targetDocId = qSnap.docs[0].id;
+        } catch {}
+      }
+      await setDoc(doc(db, 'leads', targetDocId), { status }, { merge: true });
+      if (selected?.leadId === leadId || selected?.id === leadId) setSelected({ ...selected, status });
     } catch (err) {
       console.error('Failed to update lead status', err);
     }
