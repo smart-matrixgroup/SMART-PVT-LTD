@@ -207,3 +207,86 @@
 .dark .public-page .bg-navy-800, .dark .public-page .bg-navy-800\/80 { background-color: #0A1838; }
 .dark .public-page .glass-card { background: rgba(14, 33, 75, .75); border-color: #20345D; }
 .dark .public-page input, .dark .public-page textarea, .dark .public-page select { background: #0A1838 !important; border-color: #20345D !important; color: #fff !important; }
+
+/* ============================================================
+   ERP ADMIN + STAFF PORTAL — hover / 3D motion polish
+   Visual-only classes used by the shared components (ERPui,
+   sidebars). No behavior or layout changes.
+   ============================================================ */
+
+/* Panels: subtle 3D tilt + glow lift on hover */
+.erp-panel {
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.28s ease, border-color 0.28s ease;
+}
+.erp-panel:hover {
+  transform: perspective(1100px) translateY(-3px) rotateX(1.4deg);
+  border-color: rgba(0, 102, 255, 0.4) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 102, 255, 0.15),
+              0 0 30px rgba(0, 102, 255, 0.08);
+}
+
+/* Buttons: glow lift on hover, press-down on click */
+.erp-btn { transition: all 0.15s ease; }
+.erp-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); }
+.erp-btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); }
+
+/* Table rows: neon edge highlight follows the cursor row */
+.erp-table-row { transition: box-shadow 0.15s ease; }
+.erp-table-row:hover {
+  box-shadow: inset 3px 0 0 #0066FF, inset -3px 0 0 rgba(0, 217, 255, 0.4);
+}
+
+/* Inputs / selects / textareas: focus glow ring */
+.erp-field:focus {
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.18), 0 0 18px rgba(0, 102, 255, 0.12);
+}
+
+/* Admin sidebar nav items */
+.erp-nav-item { transition: all 0.18s ease; }
+.erp-nav-item:hover {
+  transform: translateX(3px);
+  box-shadow: inset 2px 0 0 rgba(0, 217, 255, 0.6);
+}
+
+/* Staff portal sidebar nav items */
+.sp-nav { transition: all 0.15s ease; }
+.sp-nav:hover {
+  transform: translateX(3px);
+  background: rgba(0, 102, 255, 0.12) !important;
+  box-shadow: inset 2px 0 0 rgba(0, 217, 255, 0.6);
+  color: #fff !important;
+}
+
+/* Generic clickable card: lift + soft rim glow */
+.erp-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.erp-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 102, 255, 0.35) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 102, 255, 0.15);
+}
+
+/* Staff portal sign-out: turns red on hover/press */
+.sp-logout { transition: all 0.18s ease; }
+.sp-logout:hover {
+  background: rgba(240, 90, 103, 0.16) !important;
+  border-color: rgba(240, 90, 103, 0.55) !important;
+  color: #F05A67 !important;
+  box-shadow: 0 0 16px rgba(240, 90, 103, 0.25);
+  transform: translateY(-1px);
+}
+.sp-logout:active {
+  background: rgba(240, 90, 103, 0.32) !important;
+  color: #fff !important;
+  transform: translateY(1px) scale(0.97);
+}
+
+/* Modals: pop-in motion */
+@keyframes erpPop {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.erp-modal-card { animation: erpPop 0.22s cubic-bezier(0.4, 0, 0.2, 1); }

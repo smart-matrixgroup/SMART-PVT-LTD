@@ -60,6 +60,7 @@ const DEV_REPORTS = [
       { no: 4, start: '16:00', end: '17:30', hours: '1.5 hrs', description: 'Bug fixing for client requirement forms validation', status: 'In Progress' },
     ],
     remarks: 'Code deployed to staging branch. Ready for QA test.',
+    planTomorrow: 'Complete POS payment gateway tests, then start API documentation revamp.',
     submittedAt: new Date().setHours(17, 30, 0, 0),
     authUid: 'dev-staff-001',
   }
@@ -96,6 +97,7 @@ export default function DailyUpdate() {
   ]);
 
   const [remarks, setRemarks] = useState('');
+  const [planTomorrow, setPlanTomorrow] = useState('');
   const [busy, setBusy] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -184,6 +186,7 @@ export default function DailyUpdate() {
       { no: 2, start: '11:00', end: '13:00', hours: '2.0 hrs', description: '', status: 'Completed' },
     ]);
     setRemarks('');
+    setPlanTomorrow('');
     setErrorMsg(null);
   };
 
@@ -200,6 +203,7 @@ export default function DailyUpdate() {
     setDeparture(r.departure || '17:30');
     setTasks(r.tasks && r.tasks.length > 0 ? r.tasks : [INITIAL_TASK_ROW]);
     setRemarks(r.remarks || r.notes || '');
+    setPlanTomorrow(r.planTomorrow || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -231,6 +235,7 @@ export default function DailyUpdate() {
         totalWorkHours,
         tasks: cleanTasks,
         remarks: remarks.trim(),
+        planTomorrow: planTomorrow.trim(),
         // Backwards compatibility fields for ERP dashboard
         staffId: uid,
         staffName: name.trim(),
@@ -287,7 +292,7 @@ export default function DailyUpdate() {
     const rep = r || {
       name, position, location, date, day: dayName, workMode,
       arrival, lunchStart, lunchEnd, lunchDuration, departure, totalWorkHours,
-      tasks: tasks.filter(t => t.description.trim().length > 0), remarks
+      tasks: tasks.filter(t => t.description.trim().length > 0), remarks, planTomorrow
     };
 
     const win = window.open('', '_blank');
@@ -385,6 +390,7 @@ export default function DailyUpdate() {
             <div class="remarks-box">
               <strong>REMARKS:</strong> ${rep.remarks || 'None'}
             </div>
+            ${rep.planTomorrow ? `<div class="remarks-box" style="background:#F3EEFF;border-top:1px solid #DDD0FA;"><strong>PLAN FOR TOMORROW:</strong> ${rep.planTomorrow}</div>` : ''}
           </div>
           <script>
             window.onload = function() { window.print(); };
@@ -776,21 +782,40 @@ export default function DailyUpdate() {
           </div>
 
           {/* ── Remarks Section ── */}
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6 }}>
-              REMARKS / BLOCKERS / NOTES :
-            </label>
-            <textarea
-              rows={2}
-              value={remarks}
-              onChange={e => setRemarks(e.target.value)}
-              placeholder="Enter any blockers, pending items, or notes for your lead..."
-              style={{
-                width: '100%', boxSizing: 'border-box', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
-                borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 12, outline: 'none',
-                fontFamily: 'inherit', resize: 'vertical'
-              }}
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 6 }}>
+                REMARKS / BLOCKERS / NOTES :
+              </label>
+              <textarea
+                rows={3}
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+                placeholder="Enter any blockers, pending items, or notes for your lead..."
+                style={{
+                  width: '100%', boxSizing: 'border-box', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+                  borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 12, outline: 'none',
+                  fontFamily: 'inherit', resize: 'vertical'
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.violet, marginBottom: 6 }}>
+                PLAN FOR TOMORROW :
+              </label>
+              <textarea
+                rows={3}
+                value={planTomorrow}
+                onChange={e => setPlanTomorrow(e.target.value)}
+                placeholder="What work do you plan to do tomorrow? (one line per task)"
+                style={{
+                  width: '100%', boxSizing: 'border-box', background: 'rgba(10,24,56,0.8)',
+                  border: '1px solid rgba(139,92,246,0.35)',
+                  borderRadius: 10, padding: '10px 12px', color: C.text, fontSize: 12, outline: 'none',
+                  fontFamily: 'inherit', resize: 'vertical'
+                }}
+              />
+            </div>
           </div>
 
           {/* Feedback messages */}
@@ -962,6 +987,15 @@ export default function DailyUpdate() {
                       background: 'rgba(245,185,66,0.06)', border: '1px solid rgba(245,185,66,0.15)'
                     }}>
                       Remarks: {r.remarks}
+                    </div>
+                  )}
+
+                  {r.planTomorrow && (
+                    <div style={{
+                      fontSize: 11, color: C.violet, padding: '5px 10px', borderRadius: 6,
+                      background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.2)'
+                    }}>
+                      Plan for tomorrow: {r.planTomorrow}
                     </div>
                   )}
                 </div>

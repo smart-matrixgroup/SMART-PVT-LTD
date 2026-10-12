@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -24,10 +24,10 @@ const PAGE_META = {
 
 // Dev mock notifications
 const DEV_NOTIFICATIONS = [
-  { icon: '🔔', text: 'New client request from Rahul M. — ERP System', time: '2 min ago', read: false },
-  { icon: '✅', text: 'John P. accepted quotation #QT-024', time: '18 min ago', read: false },
-  { icon: '💰', text: 'Advance payment confirmed — Sarah F.', time: '1 hr ago', read: true },
-  { icon: '📝', text: 'Requirement form filled by Kumar A.', time: '2 hr ago', read: true },
+  { icon: '🔔', text: 'New client request from Rahul M. — ERP System', time: '2 min ago', read: false, link: '/erp/leads' },
+  { icon: '✅', text: 'John P. accepted quotation #QT-024', time: '18 min ago', read: false, link: '/erp/quotations' },
+  { icon: '💰', text: 'Advance payment confirmed — Sarah F.', time: '1 hr ago', read: true, link: '/erp/invoices' },
+  { icon: '📝', text: 'Requirement form filled by Kumar A.', time: '2 hr ago', read: true, link: '/erp/requirements' },
 ];
 
 // "2 min ago" style stamp for live lead notifications
@@ -43,6 +43,7 @@ const relTime = (ts) => {
 
 export default function ERPLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isDevSession } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
@@ -93,6 +94,7 @@ export default function ERPLayout() {
           icon: viaQR ? '📱' : '🌐',
           text: `New request: ${L.name || 'Guest'} — ${L.service || 'Service'}${L.company ? ` (${L.company})` : ''} · ${L.phone || L.email || ''}${viaQR ? ' · via QR scan' : ''}`,
           time: relTime(L.createdAt),
+          link: '/erp/leads',
         };
       });
       setLiveNotifs(items);
@@ -108,6 +110,12 @@ export default function ERPLayout() {
     ? liveNotifs.map(n => ({ ...n, read: readIds.includes(n.id) }))
     : DEV_NOTIFICATIONS;
   const markAllNotifsRead = () => setReadIds(liveNotifs.map(n => n.id));
+
+  // Bell click → mark that one read + jump to the page it points to
+  const openNotif = (n) => {
+    if (n?.id) setReadIds(prev => (prev.includes(n.id) ? prev : [...prev, n.id]));
+    if (n?.link) navigate(n.link);
+  };
 
   const toggleSidebar = () => {
     if (isMobile) setMobileOpen(o => !o);
@@ -182,6 +190,7 @@ export default function ERPLayout() {
           sidebarCollapsed={isMobile ? !mobileOpen : collapsed}
           notifications={bellNotifications}
           onMarkAllRead={markAllNotifsRead}
+          onNotifClick={openNotif}
         />
 
         {/* Page content */}

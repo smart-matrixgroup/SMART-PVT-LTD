@@ -18,7 +18,7 @@ import {
 import {
   AlertTriangle, ClipboardList, Clock, Coffee, Check, Hourglass,
   Pencil, Trash2, Calendar, User, Search, Filter, RefreshCw, Printer,
-  FileText, Building, Plus, X
+  FileText, Building, Plus, X, Download
 } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
@@ -49,6 +49,7 @@ const DEV_UPDATES = [
       { no: 4, start: '16:00', end: '17:30', hours: '1.5 hrs', description: 'Bug fixing for client requirement forms validation', status: 'In Progress' },
     ],
     remarks: 'Code deployed to staging branch. Ready for QA test.',
+    planTomorrow: 'Complete POS payment gateway tests, then start API documentation revamp.',
     submittedAt: new Date().setHours(17, 30, 0, 0),
     authUid: 'dev-staff-001',
   }
@@ -83,6 +84,7 @@ export default function ERPStaffUpdates() {
     departure: '17:30',
     tasks: [],
     remarks: '',
+    planTomorrow: '',
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError,  setEditError]  = useState('');
@@ -137,6 +139,7 @@ export default function ERPStaffUpdates() {
         { no: 1, start: '09:00', end: '11:00', hours: '2.0 hrs', description: log.workDescription || '', status: log.status || 'Completed' }
       ],
       remarks: log.remarks || log.notes || '',
+      planTomorrow: log.planTomorrow || '',
     });
     setEditError('');
   };
@@ -206,6 +209,7 @@ export default function ERPStaffUpdates() {
         totalWorkHours,
         tasks: cleanTasks,
         remarks: editForm.remarks.trim(),
+        planTomorrow: (editForm.planTomorrow || '').trim(),
         workDescription: cleanTasks.map(t => `${t.start}-${t.end}: ${t.description}`).join(' | '),
         items: cleanTasks.map(t => t.description),
         status: cleanTasks.every(t => t.status === 'Completed') ? 'Completed' : 'Pending',
@@ -339,6 +343,7 @@ export default function ERPStaffUpdates() {
             <div class="remarks-box">
               <strong>REMARKS:</strong> ${u.remarks || u.notes || 'None'}
             </div>
+            ${u.planTomorrow ? `<div class="remarks-box" style="background:#F3EEFF;border-top:1px solid #DDD0FA;"><strong>PLAN FOR TOMORROW:</strong> ${u.planTomorrow}</div>` : ''}
           </div>
           <script>
             window.onload = function() { window.print(); };
@@ -369,6 +374,36 @@ export default function ERPStaffUpdates() {
   const todayCount = updates.filter(u => u.date === todayKey()).length;
   const completedCount = updates.filter(u => (u.status || 'Completed') === 'Completed').length;
   const pendingCount = updates.filter(u => u.status === 'Pending').length;
+
+  // ── Excel (CSV) export — columns match the STAFF PERFORMANCE REPORT sheet ──
+  const exportExcel = () => {
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const headers = ['NAME', 'POSITION', 'DATE', 'DAY', 'LOCATION', 'WORK MODE',
+      'ARRIVAL', 'LUNCH START', 'LUNCH END', 'LUNCH DURATION', 'DEPARTURE',
+      'TOTAL WORK HRS', 'WORK / DESCRIPTION', 'REMARKS', 'PLAN FOR TOMORROW'];
+    const rows = filtered.map(u => {
+      const tasks = u.tasks || (u.items ? u.items.map((it, i) => ({ no: i + 1, description: it, status: u.status || 'Completed' })) : []);
+      const workDesc = tasks.map(t =>
+        `${t.start || ''}${t.end ? `-${t.end}` : ''}: ${t.description}` +
+        (t.status && t.status !== 'Completed' ? ` [${t.status}]` : '')
+      ).join(' | ');
+      return [
+        u.name || u.staffName || '', u.position || '', u.date || '', u.day || getDayName(u.date),
+        u.location || '', u.workMode || '', u.arrival || u.startTime || '',
+        u.lunchStart || '', u.lunchEnd || '', u.lunchDuration || '',
+        u.departure || u.endTime || '', u.totalWorkHours || '',
+        workDesc, u.remarks || u.notes || '', u.planTomorrow || '',
+      ].map(esc).join(',');
+    });
+    // BOM so Excel opens Tamil/unicode text correctly
+    const csv = '\uFEFF' + headers.map(esc).join(',') + '\r\n' + rows.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `STAFF-PERFORMANCE-REPORT-${todayKey()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   if (loading) {
     return <div style={{ padding: 60, textAlign: 'center', color: C.muted, fontSize: 13 }}>Loading staff daily reports…</div>;
@@ -492,6 +527,20 @@ export default function ERPStaffUpdates() {
             Reset Filters
           </button>
         )}
+
+        <button
+          onClick={exportExcel}
+          disabled={filtered.length === 0}
+          title="Download filtered reports as an Excel-openable sheet"
+          style={{
+            padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+            background: filtered.length === 0 ? 'rgba(10,24,56,0.4)' : 'rgba(24,199,122,0.12)',
+            color: C.green, border: '1px solid rgba(24,199,122,0.35)',
+            display: 'flex', alignItems: 'center', gap: 6, opacity: filtered.length === 0 ? 0.5 : 1,
+          }}
+        >
+          <Download size={12} /> Export Excel ({filtered.length})
+        </button>
       </div>
 
       {/* Main List Panel */}
@@ -665,6 +714,16 @@ export default function ERPStaffUpdates() {
                       <strong>Remarks:</strong> {u.remarks || u.notes}
                     </div>
                   )}
+
+                  {/* Plan for Tomorrow */}
+                  {u.planTomorrow && (
+                    <div style={{
+                      fontSize: 11, color: C.violet, padding: '6px 12px', borderRadius: 6,
+                      background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.25)'
+                    }}>
+                      <strong>Plan for Tomorrow:</strong> {u.planTomorrow}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -675,9 +734,10 @@ export default function ERPStaffUpdates() {
       {/* ── Admin Edit Modal ────────────────────────────────────── */}
       {editingLog && (
         <ERPModal
+          isOpen
           title={`Edit Work Report — ${editForm.name}`}
           onClose={() => setEditingLog(null)}
-          maxWidth={750}
+          width={750}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {editError && (
@@ -832,14 +892,25 @@ export default function ERPStaffUpdates() {
               </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 4 }}>Remarks / Notes</label>
-              <textarea
-                rows={2}
-                value={editForm.remarks}
-                onChange={e => setEditForm(p => ({ ...p, remarks: e.target.value }))}
-                style={{ width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px', color: C.text, fontSize: 12, resize: 'vertical' }}
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 4 }}>Remarks / Notes</label>
+                <textarea
+                  rows={2}
+                  value={editForm.remarks}
+                  onChange={e => setEditForm(p => ({ ...p, remarks: e.target.value }))}
+                  style={{ width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px', color: C.text, fontSize: 12, resize: 'vertical' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.violet, marginBottom: 4 }}>Plan for Tomorrow</label>
+                <textarea
+                  rows={2}
+                  value={editForm.planTomorrow}
+                  onChange={e => setEditForm(p => ({ ...p, planTomorrow: e.target.value }))}
+                  style={{ width: '100%', background: 'rgba(10,24,56,0.8)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: 8, padding: '8px', color: C.text, fontSize: 12, resize: 'vertical' }}
+                />
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>

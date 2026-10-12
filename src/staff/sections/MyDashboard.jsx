@@ -42,7 +42,7 @@ const TONES = {
 function Stat({ icon: Icon, label, value, tone = 'blue' }) {
   const t = TONES[tone] || TONES.blue;
   return (
-    <div style={{
+    <div className="erp-hover" style={{
       flex: '1 1 160px', display: 'flex', gap: 12, alignItems: 'center',
       padding: '14px 16px', borderRadius: 14, background: C.surface, border: `1px solid ${C.border}`,
     }}>

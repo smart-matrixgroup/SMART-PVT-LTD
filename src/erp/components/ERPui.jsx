@@ -71,7 +71,7 @@ export function ERPBadge({ status, label, size = 'sm' }) {
 // ── Panel ──────────────────────────────────────────────────────────
 export function ERPPanel({ children, style = {}, className = '' }) {
   return (
-    <div className={className} style={{
+    <div className={`erp-panel ${className}`} style={{
       background: C.surface,
       border: `1px solid ${C.border}`,
       borderRadius: 16,
@@ -215,6 +215,7 @@ export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', di
   };
   return (
     <button
+      className="erp-btn"
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={() => setHovered(true)}
@@ -241,6 +242,7 @@ export function ERPInput({ label, value, onChange, placeholder, type='text', req
         {label}{required && <span style={{ color:C.red, marginLeft:3 }}>*</span>}
       </label>}
       <input
+        className="erp-field"
         type={type} value={value} onChange={onChange} placeholder={placeholder}
         required={required}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -265,6 +267,7 @@ export function ERPTextarea({ label, value, onChange, placeholder, rows=3, requi
         {label}{required && <span style={{ color:C.red, marginLeft:3 }}>*</span>}
       </label>}
       <textarea
+        className="erp-field"
         value={value} onChange={onChange} placeholder={placeholder}
         rows={rows} required={required}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -289,6 +292,7 @@ export function ERPSelect({ label, value, onChange, options=[], placeholder, req
         {label}{required && <span style={{ color:C.red, marginLeft:3 }}>*</span>}
       </label>}
       <select
+        className="erp-field"
         value={value} onChange={onChange} required={required}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={{
@@ -344,6 +348,7 @@ export function ERPTable({ headers=[], rows=[], onRowClick }) {
       <tbody>
         {rows.map((row, i) => (
           <tr key={i}
+            className="erp-table-row"
             onClick={() => onRowClick && onRowClick(row)}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
@@ -389,7 +394,7 @@ export function ERPModal({ isOpen, onClose, title, children, width=520 }) {
       background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)',
       display:'flex', alignItems:'center', justifyContent:'center', padding:16,
     }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{
+      <div className="erp-modal-card" style={{
         width:'100%', maxWidth:width, maxHeight:'90vh',
         background:'rgba(6,17,43,0.98)',
         border:'1px solid rgba(32,52,93,0.6)',

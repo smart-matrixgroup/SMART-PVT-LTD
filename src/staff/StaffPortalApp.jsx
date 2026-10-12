@@ -264,6 +264,7 @@ export default function StaffPortalApp() {
                 return (
                   <button
                     key={item.id}
+                    className="sp-nav"
                     onClick={() => setPage(item.id)}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: 10,
@@ -325,6 +326,7 @@ export default function StaffPortalApp() {
           </div>
 
           <button
+            className="sp-logout"
             onClick={handleLogout}
             title="Sign out"
             style={{

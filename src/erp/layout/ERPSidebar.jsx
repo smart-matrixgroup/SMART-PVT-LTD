@@ -211,10 +211,8 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
               </div>
               <div style={{ fontSize: 9, color: '#00D9FF', fontWeight: 600 }}>Super Admin</div>
             </div>
-            <button onClick={handleLogout} title="Sign out"
-              style={{ color: '#F05A67', background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6 }}
-              onMouseEnter={e => e.currentTarget.style.background='rgba(240,90,103,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background='none'}>
+            <button onClick={handleLogout} title="Sign out" className="sp-logout"
+              style={{ color: '#F05A67', background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6 }}>
               <LogOut size={14} />
             </button>
           </>

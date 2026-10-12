@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, Search, Menu, X, ChevronRight } from 'lucide-react';
 
-export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], onMarkAllRead, actions }) {
+export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], onMarkAllRead, onNotifClick, actions }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const [search, setSearch] = useState('');
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -106,13 +106,13 @@ export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCol
                   No notifications
                 </div>
               ) : notifications.map((n, i) => (
-                <div key={i} style={{
+                <div key={i} onClick={() => { setShowNotifs(false); onNotifClick && onNotifClick(n); }} style={{
                   padding: '10px 16px', borderTop: i > 0 ? '1px solid rgba(32,52,93,0.3)' : 'none',
                   background: n.read ? 'transparent' : 'rgba(0,102,255,0.05)',
-                  cursor: 'pointer',
+                  cursor: 'pointer', transition: 'all 0.15s ease',
                 }}
-                  onMouseEnter={e => e.currentTarget.style.background='rgba(0,102,255,0.08)'}
-                  onMouseLeave={e => e.currentTarget.style.background=n.read?'transparent':'rgba(0,102,255,0.05)'}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(0,102,255,0.12)'; e.currentTarget.style.boxShadow='inset 3px 0 0 rgba(0,102,255,0.7)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background=n.read?'transparent':'rgba(0,102,255,0.05)'; e.currentTarget.style.boxShadow='none'; }}
                 >
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                     <span style={{ fontSize: 14 }}>{n.icon || '🔔'}</span>

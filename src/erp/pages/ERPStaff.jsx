@@ -17,7 +17,7 @@ import { db, storage, auth, createStaffAuthAccount, isFirebaseConfigured } from 
 import { useAuth } from '../../context/AuthContext';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect,
-  ERPEmpty, ERPAvatar, C,
+  ERPEmpty, ERPAvatar, ERPStatCard, C,
 } from '../components/ERPui';
 import {
   nextNumber, DOC_CATEGORIES, STAFF_STATUSES, computeNet,
@@ -298,19 +298,11 @@ function StaffTab() {
       )}
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160,1fr))', gap: 12 }}>
-        {[
-          { label: 'Total Staff', val: stats.total, color: C.cyan, icon: '👥' },
-          { label: 'Active', val: stats.active, color: C.green, icon: '✅' },
-          { label: 'Busy / On Leave', val: stats.away, color: C.amber, icon: '🌤️' },
-          { label: 'Inactive', val: stats.inactive, color: C.muted, icon: '🚫' },
-        ].map(s => (
-          <div key={s.label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 18px' }}>
-            <div style={{ fontSize: 18, marginBottom: 4 }}>{s.icon}</div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: s.color }}>{s.val}</div>
-            <div style={{ fontSize: 11, color: C.muted }}>{s.label}</div>
-          </div>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+        <ERPStatCard icon="👥" value={stats.total}  label="Total Staff"     color="#00D9FF" />
+        <ERPStatCard icon="✅" value={stats.active} label="Active"         color="#18C77A" />
+        <ERPStatCard icon="🌤️" value={stats.away}   label="Busy / On Leave" color="#F5B942" />
+        <ERPStatCard icon="🚫" value={stats.inactive} label="Inactive"     color="#8B93A7" />
       </div>
 
       {/* Staff table */}
