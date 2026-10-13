@@ -64,12 +64,14 @@ export async function sendChatMessage({
     updatedAt: serverTimestamp(),
   };
 
-  if (senderRole === 'admin') {
-    convUpdate.unreadForParticipant = increment(1);
-    convUpdate.unreadForAdmin = 0;
-  } else {
+  // Unread badge follows the RECEIVER of the message: admin threads use
+  // unreadForAdmin, client/staff participant threads use unreadForParticipant.
+  if (receiverRole === 'admin') {
     convUpdate.unreadForAdmin = increment(1);
     convUpdate.unreadForParticipant = 0;
+  } else {
+    convUpdate.unreadForParticipant = increment(1);
+    convUpdate.unreadForAdmin = 0;
   }
 
   await setDoc(convRef, convUpdate, { merge: true });

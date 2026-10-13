@@ -69,16 +69,31 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // Phase 4: Real Messaging System (Admin <-> Staff and Admin <-> Client)
+    // Phase 4: Real Messaging System (Admin <-> Staff and Admin <-> Client).
+    // Client threads additionally allow the staff assigned to that client
+    // (conversations/<id>.assignedStaffUids, written by admins when work is
+    // assigned) to read the thread and post messages to the client.
     match /conversations/{convId} {
-      allow read: if isAdmin() || (request.auth != null && resource.data.participantUid == request.auth.uid);
+      allow read: if isAdmin() || (request.auth != null && (
+        resource.data.participantUid == request.auth.uid ||
+        ('assignedStaffUids' in resource.data && request.auth.uid in resource.data.assignedStaffUids)));
       allow create: if isAdmin() || (request.auth != null && request.resource.data.participantUid == request.auth.uid);
-      allow update: if isAdmin() || (request.auth != null && resource.data.participantUid == request.auth.uid);
+      allow update: if isAdmin() || (request.auth != null && (
+        resource.data.participantUid == request.auth.uid ||
+        ('assignedStaffUids' in resource.data && request.auth.uid in resource.data.assignedStaffUids)));
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isAdmin() || (request.auth != null && (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid));
-        allow create: if isAdmin() || (request.auth != null && request.resource.data.senderId == request.auth.uid && request.resource.data.receiverRole == 'admin');
+        allow read: if isAdmin() || (request.auth != null && (
+          resource.data.receiverId == request.auth.uid ||
+          resource.data.senderId == request.auth.uid ||
+          ('assignedStaffUids' in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data
+           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.assignedStaffUids)));
+        allow create: if isAdmin() || (request.auth != null &&
+          request.resource.data.senderId == request.auth.uid && (
+          request.resource.data.receiverRole == 'admin' ||
+          ('assignedStaffUids' in get(/databases/$(database)/documents/conversations/$(conversationId)).data
+           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.assignedStaffUids)));
         allow update: if isAdmin() || (request.auth != null && resource.data.receiverId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']));
         allow delete: if isAdmin();
       }

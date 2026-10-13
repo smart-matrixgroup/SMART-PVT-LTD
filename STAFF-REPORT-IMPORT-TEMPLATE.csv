@@ -1,0 +1,2 @@
+NAME,POSITION,DATE,DAY,LOCATION,WORK MODE,ARRIVAL,LUNCH START,LUNCH END,LUNCH DURATION,DEPARTURE,TOTAL WORK HRS,WORK / DESCRIPTION,REMARKS,PLAN FOR TOMORROW
+"EXAMPLE — Ashan Perera","Software Associate - II","2026-10-06","Monday","SMART Trincomalee","On-Site / Office","08:30","13:00","14:00","1.0 hrs","17:30","8.0 hrs","08:30-11:00: POS order screen development [Completed] | 11:00-13:00: Quotation PDF export fixing [In Progress]","Deployed to staging","QA testing tomorrow"

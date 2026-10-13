@@ -8,16 +8,17 @@
 //  Staff move status/progress only — that flows back here via onSnapshot.
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect,
   ERPEmpty, ERPAvatar, ERPProgress, C,
 } from '../components/ERPui';
+import { getConversationId } from '../messagingUtils';
 import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey, splitStaffByFit } from '../../staff/staffUtils';
 import { fmtDate } from '../money';
-import { Plus, Pencil, Trash2, AlertTriangle, Search, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, AlertTriangle, Search, Users, MessageSquare } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 const EMPTY_FORM = {
@@ -58,6 +59,8 @@ export default function ERPStaffWork() {
   const [staff,       setStaff]       = useState([]);
   const [projects,    setProjects]    = useState([]);
   const [clients,     setClients]     = useState([]);
+  const [syncBusy,    setSyncBusy]    = useState(false);
+  const [syncedAt,    setSyncedAt]    = useState(0);
   const [loading,     setLoading]     = useState(true);
   const [loadError,   setLoadError]   = useState(null);
   const [fStaff,      setFStaff]      = useState('All');
@@ -165,6 +168,28 @@ export default function ERPStaffWork() {
     setSelStaff(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   };
 
+  // Grant assigned staff chat access on the client's conversation doc.
+  // Firestore rules let an assigned staff member read/post in
+  // conversations/admin_client_{clientId} only via assignedStaffUids.
+  const syncChatAccess = async (list) => {
+    const byClient = {};
+    list.forEach(a => {
+      if (a.clientId && a.authUid) {
+        (byClient[a.clientId] = byClient[a.clientId] || { uids: new Set(), name: a.clientName || a.clientCompany || 'Client' })
+          .uids.add(a.authUid);
+      }
+    });
+    for (const [clientId, info] of Object.entries(byClient)) {
+      const convId = getConversationId('client', clientId);
+      await setDoc(doc(db, 'conversations', convId), {
+        id: convId, type: 'client',
+        participantUid: clientId, participantName: info.name, participantRole: 'client',
+        assignedStaffUids: arrayUnion(...info.uids),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    }
+  };
+
   const handleSave = async () => {
     if (!form.title.trim())          { setFormError('Enter a work title.'); return; }
     if (!selStaff.length)            { setFormError('Pick at least one staff member.'); return; }
@@ -211,6 +236,16 @@ export default function ERPStaffWork() {
           try { await updateDoc(doc(db, 'projects', proj.id), { status: 'In Progress', updatedAt: serverTimestamp() }); }
           catch (e) { console.error('project status sync skipped', e); }
         }
+      }
+      // Give the assigned staff chat access to that client's thread.
+      if (live && shared.clientId) {
+        try {
+          await syncChatAccess(picks.map(m => ({
+            clientId: shared.clientId,
+            clientName: shared.clientName || shared.clientCompany || 'Client',
+            authUid: m.authUid || m.id || '',
+          })));
+        } catch (e) { console.error('Chat access sync skipped:', e); }
       }
       setShowForm(false);
     } catch (e) { console.error(e); setFormError(e.message || 'Save failed.'); }
@@ -279,7 +314,17 @@ export default function ERPStaffWork() {
       </div>
 
       <ERPPanel>
-        <ERPPanelHeader title="Work Assignments" icon="📋" />
+        <ERPPanelHeader title="Work Assignments" icon="📋"
+          action={live ? (
+            <ERPBtn size="sm" variant="ghost" onClick={async () => {
+              setSyncBusy(true);
+              try { await syncChatAccess(assignments); setSyncedAt(Date.now()); }
+              catch (e) { console.error(e); }
+              finally { setSyncBusy(false); }
+            }}>
+              <MessageSquare size={12} /> {syncBusy ? 'Syncing…' : syncedAt ? '✓ Chat Access Synced' : 'Sync Chat Access'}
+            </ERPBtn>
+          ) : null} />
         {filtered.length === 0 ? (
           <ERPEmpty icon="📋" title="No assignments" sub="Assign project work to staff — they will see it in their portal immediately."
             action={<ERPBtn variant="primary" onClick={openCreate}><Plus size={12} /> New Assignment</ERPBtn>} />
