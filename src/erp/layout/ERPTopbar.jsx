@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { Bell, Search, Menu, X, ChevronRight } from 'lucide-react';
+import { DEFAULT_ACCENT } from '../config/moduleAccents';
 
-export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], onMarkAllRead, onNotifClick, actions }) {
+const hexA = (hex, a) => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
+export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCollapsed, notifications = [], onMarkAllRead, onNotifClick, actions, accent = DEFAULT_ACCENT }) {
   const [showNotifs, setShowNotifs] = useState(false);
   const [search, setSearch] = useState('');
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -30,7 +37,12 @@ export default function ERPTopbar({ title, subtitle, onToggleSidebar, sidebarCol
       {/* Page title */}
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 11, color: '#91A0BC', marginTop: 1 }}>{subtitle}</div>}
+        <div className="sp-grad-move" style={{
+          height: 3, width: 70, borderRadius: 3, marginTop: 4,
+          background: `linear-gradient(90deg, ${accent.from}, ${accent.to}, #8B5CF6, ${accent.from})`,
+          boxShadow: `0 0 12px ${hexA(accent.to, 0.7)}`
+        }} />
+        {subtitle && <div style={{ fontSize: 11, color: '#91A0BC', marginTop: 5 }}>{subtitle}</div>}
       </div>
 
       {/* Search */}

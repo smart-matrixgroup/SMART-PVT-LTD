@@ -8,7 +8,7 @@
 //  staff doc id == Firebase Auth uid). Respects Admin Access Rules
 //  configured in ERP → Access Rules (/erp/access-rules).
 // ─────────────────────────────────────────────────────────────────
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
@@ -26,10 +26,11 @@ import MyProfile, { MyDocuments } from './sections/MyProfile';
 import MySalary     from './sections/MySalary';
 import StaffMessages from './sections/StaffMessages';
 import StaffClientProjects from './sections/StaffClientProjects';
+import WorkSheets   from './sections/WorkSheets';
 import {
   LayoutDashboard, Briefcase, ClipboardList, Activity, Timer,
   CalendarCheck, User, IdCard, Award, Wallet, Receipt, MessageSquare,
-  LogOut, Menu, FolderKanban, Lock, ShieldAlert
+  LogOut, Menu, FolderKanban, Lock, ShieldAlert, FileText
 } from 'lucide-react';
 
 const MENU = [
@@ -39,6 +40,7 @@ const MENU = [
   { group: 'Work', items: [
     { id: 'work',         label: 'Assigned Work',        icon: Briefcase, ruleKey: 'allowStaffWork' },
     { id: 'daily',        label: 'Daily Work Update',    icon: ClipboardList, ruleKey: 'allowStaffDailyLog' },
+    { id: 'sheets',       label: 'Work Sheets',          icon: FileText, ruleKey: 'allowStaffWork' },
     { id: 'progress',     label: 'Work Progress',        icon: Activity, ruleKey: 'allowStaffWork' },
     { id: 'client_projects', label: 'Client Projects',   icon: FolderKanban, ruleKey: 'allowStaffClientProjects' },
   ]},
@@ -112,6 +114,7 @@ function Section({ page, onNavigate, isAllowed }) {
     case 'work':            return <MyWork variant="assigned" />;
     case 'progress':        return <MyWork variant="progress" />;
     case 'daily':           return <DailyUpdate />;
+    case 'sheets':          return <WorkSheets />;
     case 'client_projects': return <StaffClientProjects isRestricted={false} />;
     case 'checkout':        return <MyAttendance variant="checkout" />;
     case 'attendance':      return <MyAttendance variant="attendance" />;
@@ -164,6 +167,30 @@ export default function StaffPortalApp() {
     await logout();
     navigate('/staff-login');
   };
+
+  // Global button/clickable ripple for every staff module (page-scoped to
+  // the portal content — no shared ERPui component is modified).
+  const contentRef = useRef(null);
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+    const onDown = (e) => {
+      const btn = e.target.closest('button, .erp-btn, .erp-hover');
+      if (!btn || btn.disabled) return;
+      const rect = btn.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const ink = document.createElement('span');
+      ink.className = 'sp-ripple-ink';
+      ink.style.width = ink.style.height = `${size}px`;
+      ink.style.left = `${e.clientX - rect.left - size / 2}px`;
+      ink.style.top  = `${e.clientY - rect.top  - size / 2}px`;
+      btn.classList.add('sp-ripple');
+      btn.appendChild(ink);
+      setTimeout(() => { ink.remove(); btn.classList.remove('sp-ripple'); }, 600);
+    };
+    root.addEventListener('pointerdown', onDown);
+    return () => root.removeEventListener('pointerdown', onDown);
+  }, [page]);
 
   if (loading) {
     return (
@@ -228,13 +255,20 @@ export default function StaffPortalApp() {
         className={`sp-sidebar ${navOpen ? 'sp-open' : ''}`}
         style={{
           position: 'fixed', top: 0, left: 0, bottom: 0, width: 230, zIndex: 40,
-          background: '#071230', borderRight: '1px solid rgba(255,255,255,0.08)',
+          background: 'linear-gradient(180deg,#0a1a3e 0%, #081531 45%, #060f26 100%)',
+          borderRight: '1px solid rgba(255,255,255,0.08)',
           display: 'flex', flexDirection: 'column', overflowY: 'auto',
         }}
       >
+        {/* top colour glow for depth */}
+        <span style={{
+          position: 'absolute', top: -50, left: -40, width: 200, height: 200, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(0,150,255,0.22), transparent 70%)',
+          filter: 'blur(18px)', pointerEvents: 'none',
+        }} />
         <div style={{
           height: 62, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
-          padding: '0 16px', borderBottom: '1px solid rgba(255,255,255,0.08)',
+          padding: '0 16px', position: 'relative',
         }}>
           <img
             src={company.logos.darkMode || company.logos.lightMode}
@@ -246,13 +280,15 @@ export default function StaffPortalApp() {
             Staff Portal
           </div>
         </div>
+        {/* gradient divider under the brand */}
+        <div style={{ height: 1, flexShrink: 0, background: 'linear-gradient(90deg, transparent, rgba(0,217,255,0.55), rgba(139,92,246,0.45), transparent)' }} />
 
         <nav style={{ flex: 1, padding: '12px 10px 20px' }}>
           {MENU.map(group => (
             <div key={group.group} style={{ marginBottom: 14 }}>
               <div style={{
                 fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.32)', padding: '0 10px 6px',
+                color: 'rgba(120,200,255,0.55)', padding: '0 10px 6px',
               }}>
                 {group.group}
               </div>
@@ -267,16 +303,23 @@ export default function StaffPortalApp() {
                     className="sp-nav"
                     onClick={() => setPage(item.id)}
                     style={{
+                      position: 'relative',
                       width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                       padding: '9px 12px', marginBottom: 2, borderRadius: 10, border: 'none',
                       cursor: 'pointer', textAlign: 'left',
-                      background: active ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'transparent',
+                      background: active ? 'linear-gradient(135deg,#0066FF,#8B5CF6)' : 'transparent',
                       color: active ? '#fff' : allowed ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)',
                       fontSize: 12.5, fontWeight: active ? 800 : 600,
-                      boxShadow: active ? '0 4px 14px rgba(0,102,255,0.35)' : 'none',
+                      boxShadow: active ? '0 6px 18px rgba(60,80,220,0.45)' : 'none',
                       transition: 'all 0.15s'
                     }}
                   >
+                    {active && (
+                      <span style={{
+                        position: 'absolute', left: 0, top: 6, bottom: 6, width: 3, borderRadius: 3,
+                        background: '#fff', opacity: 0.9,
+                      }} />
+                    )}
                     <Icon size={15} style={{ flexShrink: 0 }} />
                     <span style={{ flex: 1 }}>{item.label}</span>
                     {!allowed && (
@@ -340,7 +383,9 @@ export default function StaffPortalApp() {
         </header>
 
         <main style={{ padding: '20px 24px 60px', maxWidth: 1200, margin: '0 auto' }}>
-          <Section page={page} onNavigate={setPage} isAllowed={isCurrentPageAllowed} />
+          <div ref={contentRef} key={page} className="sp-rise">
+            <Section page={page} onNavigate={setPage} isAllowed={isCurrentPageAllowed} />
+          </div>
         </main>
       </div>
 

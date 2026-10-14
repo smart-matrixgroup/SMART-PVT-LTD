@@ -9,7 +9,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, doc, query, where, limit, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { ERPPanel, ERPPanelHeader, ERPBtn, ERPEmpty, C } from '../../erp/components/ERPui';
+import { ERPPanel, ERPPanelHeader, ERPBtn, C } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import {
   todayKey, thisMonthKey, fmtTime, fmtHours, minutesBetween,
   attendanceStatus, AUTOCLOSE_TIME,
@@ -260,7 +261,7 @@ export default function MyAttendance({ variant = 'attendance' }) {
         <ERPPanelHeader title={`My Attendance — ${monthF}`} icon="📅"
           action={<span style={{ fontSize: 10, color: C.muted }}>Total {fmtHours(monthMinutes)}</span>} />
         {monthRecords.length === 0 ? (
-          <ERPEmpty icon="📅" title="No attendance this month yet"
+          <StaffEmpty icon="📅" from="#18C77A" to="#00D9FF" title="No attendance this month yet"
             sub="Your check-ins will be listed here." />
         ) : (
           <>

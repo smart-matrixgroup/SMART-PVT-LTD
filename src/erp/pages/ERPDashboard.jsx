@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { toMillis, formatWhen } from '../formatWhen';
+import NotificationAlert from '../../components/NotificationAlert';
 import {
   ERPStatCard, ERPPanel, ERPPanelHeader, ERPBadge,
   ERPBtn, ERPProgress, ERPAvatar, C
@@ -81,6 +82,7 @@ export default function ERPDashboard() {
   const [staff,       setStaff]       = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [activity,    setActivity]    = useState([]);
+  const [returnedSheets, setReturnedSheets] = useState(0);
   const [loadError,   setLoadError]   = useState('');
 
   // Load live data from Firestore (admin-only reads; rules enforce this)
@@ -122,6 +124,12 @@ export default function ERPDashboard() {
     unsubs.push(onSnapshot(collection(db,'workAssignments'), s => {
       setAssignments(map(s));
     }, onError));
+    // Work sheets staff have sent back and that still await review.
+    unsubs.push(onSnapshot(
+      query(collection(db, 'reportRequests'), where('status', '==', 'Returned')),
+      s => setReturnedSheets(s.size),
+      () => {} // non-fatal: ignore if not permitted
+    ));
 
     return () => unsubs.forEach(u => u());
   }, [live]);
@@ -141,6 +149,20 @@ export default function ERPDashboard() {
     .slice(0, 5);
   const newLeads = leads.filter(l => l.status === 'New' || !l.status).slice(0, 5);
   const visibleStaff = staff.slice(0, 5);
+
+  // Login / dashboard notifications for the admin.
+  const adminAlerts = [
+    stats.leads > 0 && {
+      id: 'leads', icon: '🔔', accent: '#F5B942', count: stats.leads,
+      title: 'New leads to review', body: 'Customer requests waiting in Leads',
+      actionLabel: 'Open Leads', onAction: () => navigate('/erp/leads'),
+    },
+    returnedSheets > 0 && {
+      id: 'sheets', icon: '📄', accent: '#00D9FF', count: returnedSheets,
+      title: 'Work sheets returned by staff', body: 'Ready to download or import',
+      actionLabel: 'Review', onAction: () => navigate('/erp/staff?tab=updates'),
+    },
+  ].filter(Boolean);
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -175,6 +197,13 @@ export default function ERPDashboard() {
           </ERPBtn>
         </div>
       </div>
+
+      {/* ── Login notifications ── */}
+      <NotificationAlert
+        heading="Welcome back — here's what's new"
+        sub="Tap a card to jump straight to it."
+        items={adminAlerts}
+      />
 
       {/* Load error banner */}
       {loadError && (

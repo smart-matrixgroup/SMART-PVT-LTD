@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { company } from '../config/company';
-import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle, LogIn, ArrowLeft, Eraser } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle, ArrowLeft, Eraser } from 'lucide-react';
 
 export default function StaffLoginPage() {
   const navigate = useNavigate();
@@ -157,15 +157,6 @@ export default function StaffLoginPage() {
         </form>
 
         {/* Dev hint (only when Firebase env is not configured) */}
-        {!isFirebaseConfigured && (
-          <div style={{
-            marginTop: 16, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center',
-            fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
-          }}>
-            <LogIn size={11} /> Dev mode: staff@smart.com / staff123
-          </div>
-        )}
-
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', textAlign: 'center', fontSize: 10.5, color: 'rgba(255,255,255,0.35)' }}>
           Forgot your password? Your administrator can send a reset email from Staff Management.
         </div>

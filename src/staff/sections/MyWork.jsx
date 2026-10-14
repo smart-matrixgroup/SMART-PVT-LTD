@@ -12,7 +12,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPSelect, ERPEmpty, ERPProgress, C } from '../../erp/components/ERPui';
+import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPSelect, ERPProgress, C } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import { ASSIGNMENT_STATUSES, toMs, todayKey } from '../staffUtils';
 import { Play, Pencil, AlertTriangle, Clock, CheckCircle2, Building } from 'lucide-react';
 
@@ -137,7 +138,7 @@ export default function MyWork({ variant = 'assigned' }) {
           icon={variant === 'progress' ? '📈' : '📋'}
           action={<span style={{ fontSize: 10, color: C.muted }}>{sorted.length} task{sorted.length === 1 ? '' : 's'}</span>} />
         {sorted.length === 0 ? (
-          <ERPEmpty icon="📋" title="Nothing assigned yet"
+          <StaffEmpty icon="📋" from="#0066FF" to="#00D9FF" title="Nothing assigned yet"
             sub="When your team lead assigns work it appears here immediately." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>

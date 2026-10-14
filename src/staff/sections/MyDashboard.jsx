@@ -9,8 +9,10 @@ import { collection, onSnapshot, query, where, limit } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPEmpty, ERPProgress,
+  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPProgress,
 } from '../../erp/components/ERPui';
+import NotificationAlert from '../../components/NotificationAlert';
+import StaffEmpty from '../components/StaffEmpty';
 import {
   toMs, todayKey, fmtTime, fmtHours, minutesBetween,
 } from '../staffUtils';
@@ -39,16 +41,26 @@ const TONES = {
   red:  { bg: 'rgba(240,90,103,0.12)', fg: '#F05A67' },
 };
 
-function Stat({ icon: Icon, label, value, tone = 'blue' }) {
+function Stat({ icon: Icon, label, value, tone = 'blue', riseDelay = 0 }) {
   const t = TONES[tone] || TONES.blue;
   return (
-    <div className="erp-hover" style={{
+    <div className="erp-hover sp-rise" style={{
+      position: 'relative', overflow: 'hidden',
       flex: '1 1 160px', display: 'flex', gap: 12, alignItems: 'center',
-      padding: '14px 16px', borderRadius: 14, background: C.surface, border: `1px solid ${C.border}`,
+      padding: '14px 16px', borderRadius: 14,
+      background: `linear-gradient(135deg, ${t.bg}, ${C.surface} 62%)`,
+      border: `1px solid ${C.border}`,
+      animationDelay: `${riseDelay}s`,
     }}>
+      {/* colourful moving accent along the top edge */}
+      <span className="sp-sheen" style={{
+        position: 'absolute', top: 0, left: 0, width: 70, height: 2,
+        background: `linear-gradient(90deg, transparent, ${t.fg}, transparent)`,
+      }} />
       <div style={{
         width: 38, height: 38, borderRadius: 11, flexShrink: 0,
         background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: `1px solid ${t.fg}44`, boxShadow: `0 4px 12px -4px ${t.fg}`,
       }}>
         <Icon size={17} color={t.fg} />
       </div>
@@ -69,6 +81,7 @@ export default function MyDashboard({ onNavigate = () => {} }) {
   const [assignments, setAssignments] = useState([]);
   const [todayRec, setTodayRec]       = useState(null);
   const [updates, setUpdates]         = useState([]);
+  const [pendingSheets, setPendingSheets] = useState(0);
   const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
@@ -76,6 +89,7 @@ export default function MyDashboard({ onNavigate = () => {} }) {
       setAssignments(DEV_ASSIGNMENTS);
       setUpdates(DEV_UPDATES);
       setTodayRec(null);
+      setPendingSheets(0);
       setLoading(false);
       return;
     }
@@ -94,7 +108,12 @@ export default function MyDashboard({ onNavigate = () => {} }) {
       s => { setUpdates(s.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); },
       () => setLoading(false),
     );
-    return () => { un1(); un2(); un3(); };
+    const un4 = onSnapshot(
+      query(collection(db, 'reportRequests'), where('staffUid', '==', uid), where('status', '==', 'Requested')),
+      s => setPendingSheets(s.size),
+      () => {}, // non-fatal: alerts just won't show
+    );
+    return () => { un1(); un2(); un3(); un4(); };
   }, [live, uid]);
 
   if (loading) {
@@ -114,37 +133,78 @@ export default function MyDashboard({ onNavigate = () => {} }) {
 
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const greetEmoji = h < 12 ? '🌅' : h < 17 ? '☀️' : '🌙';
   const firstName = (staffProfile?.name || '').split(' ')[0] || 'there';
+
+  const staffAlerts = [
+    pendingSheets > 0 && {
+      id: 'sheets', icon: '📄', accent: '#00D9FF', count: pendingSheets,
+      title: 'Work sheet waiting for you',
+      body: 'Download, fill and send it back to admin',
+      actionLabel: 'Open sheets', onAction: () => onNavigate('sheets'),
+    },
+    !todayRec && {
+      id: 'attend', icon: '🕒', accent: '#18C77A', pulse: true,
+      title: "You're not checked in yet",
+      body: 'Log your attendance to start the day',
+      actionLabel: 'Check in now', onAction: () => onNavigate('checkout'),
+    },
+    overdue.length > 0 && {
+      id: 'overdue', icon: '⚠️', accent: '#F05A67', count: overdue.length,
+      title: 'Overdue tasks',
+      body: 'Past deadline — update the progress',
+      actionLabel: 'View work', onAction: () => onNavigate('work'),
+    },
+  ].filter(Boolean);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* Greeting banner */}
       <div style={{
-        padding: '18px 20px', borderRadius: 16,
-        background: 'linear-gradient(135deg, rgba(0,102,255,0.18), rgba(0,217,255,0.06))',
-        border: '1px solid rgba(0,102,255,0.25)',
+        position: 'relative', overflow: 'hidden',
+        padding: '18px 20px', borderRadius: 18,
+        background: 'linear-gradient(120deg, rgba(0,102,255,0.32), rgba(139,92,246,0.22) 55%, rgba(0,217,255,0.14))',
+        border: '1px solid rgba(0,217,255,0.3)',
+        boxShadow: '0 14px 40px -18px rgba(0,120,255,0.6)',
       }}>
-        <div style={{ fontSize: 17, fontWeight: 900, color: '#fff' }}>{greet}, {firstName}</div>
-        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>
-          Here's your work at a glance for {fmtDate(today)}.
+        <span style={{ position: 'absolute', right: -30, top: -40, width: 160, height: 160, borderRadius: '50%', background: 'rgba(0,217,255,0.18)', filter: 'blur(46px)' }} />
+        <span style={{ position: 'absolute', left: -20, bottom: -50, width: 150, height: 150, borderRadius: '50%', background: 'rgba(139,92,246,0.18)', filter: 'blur(46px)' }} />
+        <span className="sp-sheen" style={{ position: 'absolute', top: 0, bottom: 0, width: 90, left: '-40%', background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent)' }} />
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="sp-float" style={{
+            flexShrink: 0, width: 52, height: 52, borderRadius: 16, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', fontSize: 26,
+            background: 'linear-gradient(135deg,#0066FF,#8B5CF6)',
+            boxShadow: '0 8px 22px -6px rgba(80,80,255,0.7), inset 0 1px 0 rgba(255,255,255,0.4)',
+          }}>{greetEmoji}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>{greet}, {firstName} 👋</div>
+            <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.72)', marginTop: 3 }}>
+              Here's your work at a glance for {fmtDate(today)}.
+            </div>
+          </div>
         </div>
+      </div>
+
+      <div className="sp-rise" style={{ animationDelay: '0.05s' }}>
+        <NotificationAlert heading="Needs your attention" sub="Tap a card to jump straight to it." items={staffAlerts} />
       </div>
 
       {/* Stat cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <Stat icon={Briefcase}     label="Open assignments"   value={open.length} tone="blue" />
-        <Stat icon={Play}          label="In progress"        value={inProg} tone="green" />
-        <Stat icon={AlertTriangle} label="Overdue"            value={overdue.length} tone={overdue.length ? 'red' : 'blue'} />
-        <Stat icon={CalendarDays}  label="Due within 7 days"  value={dueSoon.length} tone={dueSoon.length ? 'amber' : 'blue'} />
+        <Stat icon={Briefcase}     label="Open assignments"   value={open.length} tone="blue"   riseDelay={0.12} />
+        <Stat icon={Play}          label="In progress"        value={inProg} tone="green"       riseDelay={0.18} />
+        <Stat icon={AlertTriangle} label="Overdue"            value={overdue.length} tone={overdue.length ? 'red' : 'blue'} riseDelay={0.24} />
+        <Stat icon={CalendarDays}  label="Due within 7 days"  value={dueSoon.length} tone={dueSoon.length ? 'amber' : 'blue'} riseDelay={0.30} />
       </div>
 
       {/* Upcoming deadlines */}
-      <ERPPanel>
+      <ERPPanel className="sp-rise" style={{ animationDelay: '0.36s' }}>
         <ERPPanelHeader title="Upcoming deadlines" icon={AlertTriangle} />
         {upcoming.length === 0 ? (
-          <ERPEmpty
-            icon={CheckCircle2}
+          <StaffEmpty
+            icon={CheckCircle2} from="#00D9FF" to="#8B5CF6"
             title="No open work"
             sub="Nothing assigned right now — new assignments appear here automatically."
           />
@@ -186,7 +246,7 @@ export default function MyDashboard({ onNavigate = () => {} }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 16 }}>
 
         {/* Today's attendance */}
-        <ERPPanel>
+        <ERPPanel className="sp-rise" style={{ animationDelay: '0.44s' }}>
           <ERPPanelHeader title="Today's attendance" icon={Clock} />
           {todayRec ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -214,8 +274,8 @@ export default function MyDashboard({ onNavigate = () => {} }) {
               </ERPBtn>
             </div>
           ) : (
-            <ERPEmpty
-              icon={Clock}
+            <StaffEmpty
+              icon={Clock} from="#18C77A" to="#00D9FF"
               title="Not checked in today"
               sub="Check in from the portal to record your attendance."
               action={
@@ -228,7 +288,7 @@ export default function MyDashboard({ onNavigate = () => {} }) {
         </ERPPanel>
 
         {/* Latest daily update */}
-        <ERPPanel>
+        <ERPPanel className="sp-rise" style={{ animationDelay: '0.52s' }}>
           <ERPPanelHeader title="Latest daily update" icon={ClipboardList} />
           {lastUpdate ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -250,8 +310,8 @@ export default function MyDashboard({ onNavigate = () => {} }) {
               </ERPBtn>
             </div>
           ) : (
-            <ERPEmpty
-              icon={ClipboardList}
+            <StaffEmpty
+              icon={ClipboardList} from="#0066FF" to="#8B5CF6"
               title="No updates yet"
               sub="Submit your first daily work update."
               action={

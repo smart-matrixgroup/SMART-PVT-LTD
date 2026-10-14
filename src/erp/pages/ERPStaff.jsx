@@ -32,6 +32,16 @@ import ERPStaffSalary      from './ERPStaffSalary';
 const DEPARTMENTS = ['Engineering', 'Design', 'Finance', 'Operations', 'Management', 'IT Intern'];
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
+// Status → accent colour, used for the coloured left bar + hover glow on each
+// staff row (gives the list a more colourful, slightly 3D feel).
+const STATUS_ACCENT = {
+  active:    '#18C77A',
+  busy:      '#F5B942',
+  'on-leave':'#8B5CF6',
+  inactive:  '#8B93A7',
+};
+const accentFor = (status) => STATUS_ACCENT[status] || '#00D9FF';
+
 const EMPTY_FORM = {
   name: '', role: '', department: '', email: '', password: '',
   phone: '', address: '', joinedDate: todayISO(), education: '',
@@ -319,21 +329,35 @@ function StaffTab() {
               <thead>
                 <tr>
                   {['Staff', 'Role / Dept', 'Contact', 'Joined', 'Docs', 'Net Salary', 'Status', ''].map(h => (
-                    <th key={h} style={{ padding: '10px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '0.8px', color: C.muted, textAlign: 'left', background: 'rgba(10,24,56,0.5)',
-                      borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                    <th key={h} style={{ padding: '11px 14px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+                      letterSpacing: '0.8px', color: '#BFE9FF', textAlign: 'left',
+                      background: 'linear-gradient(135deg, rgba(0,102,255,0.28), rgba(139,92,246,0.22))',
+                      borderBottom: '1px solid rgba(0,217,255,0.35)',
+                      boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.06)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((s, i) => (
-                  <tr key={s.id} style={{ cursor: 'pointer' }}
+                  <tr key={s.id} style={{ cursor: 'pointer', transition: 'transform .12s ease, box-shadow .12s ease, background .12s ease',
+                    borderLeft: `4px solid ${accentFor(s.status)}` }}
                     onClick={() => { setDetailId(s.id); setDocCat('kyc'); }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,102,255,0.04)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    onMouseEnter={e => {
+                      const a = accentFor(s.status);
+                      e.currentTarget.style.background = `linear-gradient(90deg, ${a}22, ${a}0d 40%, transparent)`;
+                      e.currentTarget.style.boxShadow = `0 6px 18px -8px ${a}88, inset 4px 0 0 ${a}`;
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <ERPAvatar name={s.name} color={AVATAR_COLORS[i % AVATAR_COLORS.length]} size={30} />
+                        <div style={{ borderRadius: '50%', boxShadow: `0 0 0 2px ${accentFor(s.status)}55, 0 3px 8px -2px ${accentFor(s.status)}aa`, padding: 1 }}>
+                          <ERPAvatar name={s.name} color={AVATAR_COLORS[i % AVATAR_COLORS.length]} size={30} />
+                        </div>
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{s.name}</div>
                           <div style={{ fontSize: 10, color: C.cyan, fontFamily: 'monospace' }}>{s.staffId || '—'}</div>

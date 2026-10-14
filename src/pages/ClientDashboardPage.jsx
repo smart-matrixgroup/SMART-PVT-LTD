@@ -13,6 +13,7 @@ import { company } from '../config/company';
 import { toMillis, formatWhen } from '../erp/formatWhen';
 import { toInt, formatLKR } from '../erp/money';
 import { getConversationId, sendChatMessage, markConversationAsRead } from '../erp/messagingUtils';
+import NotificationAlert from '../components/NotificationAlert';
 import {
   LayoutDashboard, FolderKanban, FileText, HeadphonesIcon,
   LogOut, MessageSquare, Sparkles, ChevronRight,
@@ -788,6 +789,23 @@ export default function ClientDashboardPage() {
     const completed=projects.filter(p=>p.status==='Completed');
     const quoted=projects.filter(p=>p.status==='quotation_sent');
     const reqPending=projects.filter(p=>p.status==='requirements_pending');
+    const clientAlerts=[
+      quoteSentCount>0 && {
+        id:'quote', icon:'💰', accent:'#8B5CF6', count:quoteSentCount,
+        title:'New quotation ready', body:'Review it and confirm to move ahead',
+        actionLabel:'View quotations', onAction:()=>setTab('quotation'),
+      },
+      formsPending>0 && {
+        id:'forms', icon:'📝', accent:'#00D9FF', count:formsPending,
+        title:'A form needs your answers', body:'Fill it so the team can start',
+        actionLabel:'Open forms', onAction:()=>setTab('forms'),
+      },
+      unreadMsgCount>0 && {
+        id:'msg', icon:'💬', accent:'#18C77A', count:unreadMsgCount,
+        title:'New messages', body:'Your team replied — don’t miss it',
+        actionLabel:'Open messages', onAction:()=>setTab('messages'),
+      },
+    ].filter(Boolean);
     return(
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
@@ -825,6 +843,8 @@ export default function ClientDashboardPage() {
             ))}
           </div>
         </div>
+
+        <NotificationAlert heading="Here's what's new" sub="Tap a card to jump straight to it." items={clientAlerts} />
 
         {/* 6-Card Summary Grid (Projects, Quotations, Total Quoted, Paid, Balance Due, Messages) */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))',gap:12}}>

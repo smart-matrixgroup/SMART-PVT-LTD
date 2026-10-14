@@ -372,11 +372,27 @@ export function ERPTable({ headers=[], rows=[], onRowClick }) {
 }
 
 // ── Empty state ────────────────────────────────────────────────────
-export function ERPEmpty({ icon='📭', title, sub, action }) {
+export function ERPEmpty({ icon='📭', title, sub, action, from='#0066FF', to='#00D9FF' }) {
   return (
     <div style={{ padding:'48px 24px', textAlign:'center' }}>
-      <div style={{ fontSize:36, marginBottom:12, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {renderERPIcon(icon, 36, C.muted)}
+      <div style={{ position:'relative', width:96, height:96, margin:'0 auto 16px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {/* soft glow blob */}
+        <div style={{
+          position:'absolute', inset:0, borderRadius:'50%',
+          background:`radial-gradient(circle, ${to}55, transparent 70%)`, filter:'blur(18px)', opacity:0.55,
+        }} />
+        {/* pulsing rings */}
+        <span className="sp-ring" style={{ position:'absolute', width:70, height:70, borderRadius:'50%', border:`1.5px solid ${to}66` }} />
+        <span className="sp-ring" style={{ position:'absolute', width:70, height:70, borderRadius:'50%', border:`1.5px solid ${from}55`, animationDelay:'1.3s' }} />
+        {/* floating gradient disc */}
+        <div className="sp-float" style={{
+          position:'relative', width:64, height:64, borderRadius:'50%',
+          background:`linear-gradient(135deg, ${from}, ${to})`,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          boxShadow:`0 10px 26px -6px ${to}aa`,
+        }}>
+          {renderERPIcon(icon, 30, '#fff')}
+        </div>
       </div>
       <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:6 }}>{title}</div>
       {sub && <div style={{ fontSize:12, color:C.muted, maxWidth:280, margin:'0 auto' }}>{sub}</div>}

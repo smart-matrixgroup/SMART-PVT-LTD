@@ -33,21 +33,6 @@ const DEV_ACCOUNTS = [
     role:     'admin',
     profile:  null,
   },
-  {
-    email:    'staff@smart.com',
-    password: 'staff123',
-    role:     'staff',
-    profile:  {
-      id:       'dev-staff-001',
-      staffId:  'STF-2026-0001',
-      name:     'Ashan Perera',
-      role:     'Full Stack Developer',
-      department: 'Engineering',
-      email:    'staff@smart.com',
-      phone:    '+94 77 111 2233',
-      status:   'active',
-    },
-  },
 ];
 
 // ─────────────────────────────────────────────────────────────────

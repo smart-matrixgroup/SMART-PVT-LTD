@@ -14,8 +14,9 @@ import { ref as storageRef, uploadBytes, getBytes } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPInput, ERPEmpty,
+  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPInput,
 } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import { DOC_CATEGORIES } from '../staffUtils';
 import { fmtDate } from '../../erp/money';
 import {
@@ -55,8 +56,9 @@ export default function MyProfile() {
 
   if (!staffProfile) {
     return (
-      <ERPEmpty
+      <StaffEmpty
         icon={User}
+        from="#0066FF" to="#8B5CF6"
         title="Profile not found"
         sub="Your staff record could not be loaded. Please sign in again or contact your administrator."
       />
@@ -329,8 +331,9 @@ export function MyDocuments({ category, icon: HeaderIcon }) {
       )}
 
       {docs.length === 0 ? (
-        <ERPEmpty
+        <StaffEmpty
           icon={FileText}
+          from="#F5B942" to="#8B5CF6"
           title={`No ${meta.label.toLowerCase()} yet`}
           sub={live ? 'Use the Upload button to add your first file (image or PDF, max 10 MB).' : 'Your documents will appear here once uploaded.'}
         />

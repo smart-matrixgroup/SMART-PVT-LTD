@@ -8,6 +8,14 @@ import {
   MessageCircle, BarChart3, Trophy, Settings,
   LogOut, ChevronRight, Briefcase, FileStack, QrCode, ShieldCheck
 } from 'lucide-react';
+import { MODULE_ACCENTS, DEFAULT_ACCENT } from '../config/moduleAccents';
+
+// hex (#00D9FF) -> rgba string with alpha, for soft glows
+const hexA = (hex, a) => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
 
 const NAV = [
   {
@@ -131,6 +139,7 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
             )}
             {items.map(({ path, label, icon: Icon, exact, badge }) => {
               const count = badge ? (badges[badge] || 0) : 0;
+              const accent = MODULE_ACCENTS[path] || DEFAULT_ACCENT;
               return (
                 <NavLink
                   key={path}
@@ -150,10 +159,10 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
                     marginBottom: 1,
                     position: 'relative',
                     background: isActive
-                      ? 'linear-gradient(135deg, rgba(0,102,255,0.25), rgba(0,217,255,0.08))'
+                      ? `linear-gradient(135deg, ${hexA(accent.from, 0.3)}, ${hexA(accent.to, 0.1)})`
                       : 'transparent',
-                    border: isActive ? '1px solid rgba(0,102,255,0.3)' : '1px solid transparent',
-                    boxShadow: isActive ? '0 2px 10px rgba(0,102,255,0.15)' : 'none',
+                    border: isActive ? `1px solid ${hexA(accent.from, 0.35)}` : '1px solid transparent',
+                    boxShadow: isActive ? `0 2px 14px ${hexA(accent.from, 0.22)}` : 'none',
                     transition: 'all 0.15s',
                   })}
                   className="erp-nav-item"
@@ -164,15 +173,16 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
                         <div style={{
                           position: 'absolute', left: 0, top: '20%', bottom: '20%',
                           width: 3,
-                          background: 'linear-gradient(180deg, #0066FF, #00D9FF)',
-                          borderRadius: '0 2px 2px 0'
+                          background: `linear-gradient(180deg, ${accent.from}, ${accent.to})`,
+                          borderRadius: '0 2px 2px 0',
+                          boxShadow: `0 0 8px ${hexA(accent.to, 0.7)}`
                         }} />
                       )}
-                      <Icon size={15} style={{ flexShrink: 0, color: isActive ? '#00D9FF' : '#91A0BC' }} />
+                      <Icon size={15} style={{ flexShrink: 0, color: isActive ? accent.to : '#91A0BC' }} />
                       {!collapsed && <span style={{ flex: 1 }}>{label}</span>}
                       {!collapsed && count > 0 && (
                         <span style={{
-                          background: 'linear-gradient(135deg, #0066FF, #00D9FF)',
+                          background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
                           color: '#fff', fontSize: 9, fontWeight: 800,
                           padding: '1px 6px', borderRadius: 20, minWidth: 18, textAlign: 'center'
                         }}>{count}</span>
@@ -181,7 +191,7 @@ export default function ERPSidebar({ badges = {}, collapsed, onToggle }) {
                         <span style={{
                           position: 'absolute', top: 4, right: 4,
                           width: 8, height: 8, borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #0066FF, #00D9FF)',
+                          background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
                         }} />
                       )}
                     </>

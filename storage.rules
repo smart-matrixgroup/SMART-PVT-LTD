@@ -4,11 +4,17 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // Same role model as firestore.rules — admins/{uid} doc existence,
-    // no custom claims.
+    // no custom claims. NOTE: the firestore.exists() cross-service lookup is
+    // NOT honoured on this project's Storage rules (verified 2026-10-14: an
+    // account with a real admins/{uid} doc still gets denied), so the email
+    // allow-list is the branch that actually grants admins access here.
+    // Keep the exists() check too (harmless, may work in future) and list
+    // every real admin email below.
     function isAdmin() {
       return request.auth != null &&
         (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
-         request.auth.token.email == 'admin@smart.com');
+         request.auth.token.email == 'admin@smart.com' ||
+         request.auth.token.email == 'admin@findmysmart.com');
     }
 
     // Staff HR / KYC / certificate documents, organised by the staff
@@ -72,6 +78,27 @@ service firebase.storage {
         request.auth.uid == authUid &&
         request.resource.size < 10 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
+
+      allow delete: if isAdmin();
+    }
+
+    // Filled "DAILY WORK LOG" sheets sent back by staff for a report
+    // request, organised as report-sheets/{staffUid}/{requestId}/{fileName}
+    // so the folder name enforces ownership (same pattern as
+    // requirement-files). The admin can read every returned sheet; the
+    // owning staff member can read/replace their own return. Only the staff
+    // member uploads (the admin never writes into a staff folder).
+    match /report-sheets/{authUid}/{requestId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      allow create, update: if request.auth != null &&
+        request.auth.uid == authUid &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+         request.resource.contentType.matches('application/vnd.ms-excel') ||
+         request.resource.contentType == 'text/csv' ||
+         request.resource.contentType == 'application/octet-stream');
 
       allow delete: if isAdmin();
     }

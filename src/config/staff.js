@@ -20,20 +20,6 @@
 
 export const staffList = [
   {
-    id:           'STAFF-001',
-    name:         'Ashan Perera',
-    role:         'Full Stack Developer',
-    department:   'Engineering',
-    skills:       ['React', 'Node.js', 'Firebase', 'PostgreSQL'],
-    email:        'ashan@smartpvtltd.com',
-    phone:        '+94 77 111 2233',
-    avatar:       'A',
-    avatarColor:  'bg-blue-500',
-    status:       'active',
-    joinedDate:   'January 2024',
-    firestoreUid: '',
-  },
-  {
     id:           'STAFF-002',
     name:         'Nimal Fernando',
     role:         'UI/UX Designer',

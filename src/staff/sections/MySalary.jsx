@@ -12,8 +12,9 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBtn, ERPModal, ERPEmpty,
+  C, ERPPanel, ERPPanelHeader, ERPBtn, ERPModal,
 } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import PayslipDoc from '../PayslipDoc';
 import { computeNet, monthLabel } from '../staffUtils';
 import { formatLKR, fmtDate } from '../../erp/money';
@@ -92,8 +93,9 @@ export default function MySalary({ variant = 'salary' }) {
 
   const PaymentsTable = () => (
     payments.length === 0 ? (
-      <ERPEmpty
+      <StaffEmpty
         icon={Receipt}
+        from="#18C77A" to="#0066FF"
         title="No payslips yet"
         sub="Payslips appear here after your administrator records a monthly salary payment."
       />

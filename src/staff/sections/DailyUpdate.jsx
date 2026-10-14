@@ -16,7 +16,8 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { ERPPanel, ERPPanelHeader, ERPBtn, ERPEmpty, C } from '../../erp/components/ERPui';
+import { ERPPanel, ERPPanelHeader, ERPBtn, C } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import {
   toMs, todayKey, calculateTaskDuration, calculateAttendanceHours, getDayName
 } from '../staffUtils';
@@ -38,33 +39,7 @@ const INITIAL_TASK_ROW = {
   status: 'Completed',
 };
 
-const DEV_REPORTS = [
-  {
-    id: 'rep-1',
-    date: todayKey(),
-    day: getDayName(todayKey()),
-    name: 'Ashan Perera',
-    position: 'Software Associate - II',
-    location: 'SMART Trincomalee',
-    workMode: 'On-Site / Office',
-    arrival: '08:30',
-    lunchStart: '13:00',
-    lunchEnd: '14:00',
-    lunchDuration: '1.0 hrs',
-    departure: '17:30',
-    totalWorkHours: '8.0 hrs',
-    tasks: [
-      { no: 1, start: '08:30', end: '11:00', hours: '2.5 hrs', description: 'POS order screen development & state synchronization', status: 'Completed' },
-      { no: 2, start: '11:00', end: '13:00', hours: '2.0 hrs', description: 'Fixing quotation PDF export alignment and barcode scaling', status: 'Completed' },
-      { no: 3, start: '14:00', end: '16:00', hours: '2.0 hrs', description: 'Internal team sprint planning & sprint backlog review', status: 'Completed' },
-      { no: 4, start: '16:00', end: '17:30', hours: '1.5 hrs', description: 'Bug fixing for client requirement forms validation', status: 'In Progress' },
-    ],
-    remarks: 'Code deployed to staging branch. Ready for QA test.',
-    planTomorrow: 'Complete POS payment gateway tests, then start API documentation revamp.',
-    submittedAt: new Date().setHours(17, 30, 0, 0),
-    authUid: 'dev-staff-001',
-  }
-];
+const DEV_REPORTS = [];
 
 export default function DailyUpdate() {
   const { staffProfile, isFirebaseConfigured, isDevSession } = useAuth();
@@ -876,8 +851,9 @@ export default function DailyUpdate() {
         />
 
         {history.length === 0 ? (
-          <ERPEmpty
+          <StaffEmpty
             icon="📝"
+            from="#8B5CF6" to="#0066FF"
             title="No work reports logged yet"
             sub="Fill and submit your daily work report using the sheet above."
           />

@@ -249,6 +249,22 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Report requests — the admin "sends" a pre-filled DAILY WORK LOG sheet
+    // to a staff member (one doc per staff + period). The staff member reads
+    // their own requests and may ONLY stamp the return: status + the
+    // returned-file metadata (never the period, range or staff identity).
+    // Admin creates/deletes and can also mark a return approved.
+    match /reportRequests/{requestId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.staffUid == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.staffUid == request.auth.uid &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['status', 'returnedPath', 'returnedName', 'returnedSize', 'returnedAt', 'updatedAt']));
+    }
+
     // System Settings & Access Control Rules
     match /settings/{settingId} {
       allow read: if request.auth != null;

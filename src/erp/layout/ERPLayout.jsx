@@ -5,6 +5,7 @@ import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import ERPSidebar from './ERPSidebar';
 import ERPTopbar from './ERPTopbar';
+import { accentForPath } from '../config/moduleAccents';
 
 // Page title map
 const PAGE_META = {
@@ -55,8 +56,58 @@ export default function ERPLayout() {
   const [liveNotifs, setLiveNotifs] = useState([]);
   const [readIds,    setReadIds]    = useState([]);
   const seededNotifs = useRef(false);
+  const contentRef   = useRef(null);
+  const tiltRef      = useRef(null);
 
   const meta = PAGE_META[location.pathname] || { title: 'ERP', subtitle: '' };
+  const currentAccent = accentForPath(location.pathname);
+
+  // Mouse-reactive 3D tilt of the page content (no glow — real motion feel).
+  useEffect(() => {
+    const el = tiltRef.current;
+    if (!el) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    const onMove = (e) => {
+      const rect = el.getBoundingClientRect();
+      const nx = (e.clientX - rect.left) / rect.width  - 0.5; // -0.5..0.5
+      const ny = (e.clientY - rect.top)  / rect.height - 0.5;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        el.style.transform = `perspective(1400px) rotateX(${(-ny * 1.6).toFixed(2)}deg) rotateY(${(nx * 1.6).toFixed(2)}deg)`;
+      });
+    };
+    const onLeave = () => { el.style.transform = 'perspective(1400px) rotateX(0deg) rotateY(0deg)'; };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerleave', onLeave);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerleave', onLeave);
+    };
+  }, [location.pathname]);
+
+  // Button ripple across every admin page (delegated from the content area).
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onDown = (e) => {
+      const btn = e.target.closest('button, .erp-btn, .erp-hover');
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const ink = document.createElement('span');
+      ink.className = 'sp-ripple-ink';
+      ink.style.width = ink.style.height = `${size}px`;
+      ink.style.left = `${e.clientX - rect.left - size / 2}px`;
+      ink.style.top  = `${e.clientY - rect.top  - size / 2}px`;
+      if (!/sp-ripple/.test(btn.className)) btn.classList.add('sp-ripple');
+      btn.appendChild(ink);
+      setTimeout(() => ink.remove(), 600);
+    };
+    el.addEventListener('pointerdown', onDown);
+    return () => el.removeEventListener('pointerdown', onDown);
+  }, [location.pathname]);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768);
@@ -186,6 +237,7 @@ export default function ERPLayout() {
         <ERPTopbar
           title={meta.title}
           subtitle={meta.subtitle}
+          accent={currentAccent}
           onToggleSidebar={toggleSidebar}
           sidebarCollapsed={isMobile ? !mobileOpen : collapsed}
           notifications={bellNotifications}
@@ -194,14 +246,25 @@ export default function ERPLayout() {
         />
 
         {/* Page content */}
-        <main style={{
+        <main ref={contentRef} style={{
           flex: 1,
           overflowY: 'auto',
           padding: 24,
           scrollbarWidth: 'thin',
           scrollbarColor: 'rgba(32,52,93,0.8) transparent',
         }}>
-          <Outlet />
+          <div key={location.pathname} className="sp-rise">
+            <div
+              ref={tiltRef}
+              style={{
+                transform: 'perspective(1400px)',
+                transition: 'transform 0.18s ease-out',
+                willChange: 'transform',
+              }}
+            >
+              <Outlet />
+            </div>
+          </div>
         </main>
       </div>
     </div>

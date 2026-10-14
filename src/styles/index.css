@@ -290,3 +290,62 @@
   to   { opacity: 1; transform: none; }
 }
 .erp-modal-card { animation: erpPop 0.22s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ============================================================
+   OPT-IN MOTION KIT — entrance + ripple (dark mode polish)
+   Purely ADDITIVE: these classes only animate elements that
+   explicitly use them, so no existing page is affected until a
+   page opts in. Pair .sp-rise with an inline animation-delay for
+   a staggered "cards rise in" entrance; .sp-ripple is toggled by
+   the page's pointer handler to give buttons a click ripple.
+   ============================================================ */
+
+/* Entrance: fade + slide-up. Elements start hidden and rise in. */
+@keyframes spFadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+.sp-rise {
+  opacity: 0;
+  animation: spFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Button click ripple — ink dot spawned by JS */
+.sp-ripple { position: relative; overflow: hidden; }
+.sp-ripple > .sp-ripple-ink {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: scale(0);
+  opacity: 0.55;
+  background: radial-gradient(circle, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.25) 60%, transparent 70%);
+  animation: spRippleInk 0.6s ease-out forwards;
+}
+@keyframes spRippleInk {
+  to { transform: scale(2.6); opacity: 0; }
+}
+
+/* Respect users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+  .sp-rise { animation: none; opacity: 1; }
+  .sp-ripple > .sp-ripple-ink { animation: none; }
+  .sp-float, .sp-ring, .sp-spin-slow, .sp-sheen { animation: none !important; }
+}
+
+/* Colourful empty-state + card accents (opt-in) */
+@keyframes spFloat     { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+@keyframes spRing      { 0%   { transform: scale(.85); opacity: .65; } 70% { transform: scale(1.6); opacity: 0; } 100% { opacity: 0; } }
+@keyframes spSpinSlow  { to   { transform: rotate(360deg); } }
+@keyframes spSheen     { 0%   { transform: translateX(-130%); } 55%,100% { transform: translateX(240%); } }
+.sp-float     { animation: spFloat 3.2s ease-in-out infinite; }
+.sp-ring      { animation: spRing 2.6s ease-out infinite; }
+.sp-spin-slow { animation: spSpinSlow 14s linear infinite; }
+.sp-sheen     { animation: spSheen 4.5s ease-in-out infinite; }
+
+/* Animated colourful gradient bar (topbar underline / accent strips) */
+@keyframes spGradMove { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+.sp-grad-move { background-size: 200% 100%; animation: spGradMove 3.5s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-grad-move { animation: none; }
+}

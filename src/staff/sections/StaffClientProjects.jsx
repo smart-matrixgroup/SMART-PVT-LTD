@@ -12,7 +12,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { ERPPanel, ERPPanelHeader, ERPBadge, ERPEmpty, C } from '../../erp/components/ERPui';
+import { ERPPanel, ERPPanelHeader, ERPBadge, C } from '../../erp/components/ERPui';
+import StaffEmpty from '../components/StaffEmpty';
 import {
   FolderKanban, Lock, CheckCircle2, Search, Building, User,
   Calendar, Activity, Clock, ShieldAlert, AlertCircle
@@ -219,8 +220,9 @@ export default function StaffClientProjects({ isRestricted }) {
         />
 
         {filtered.length === 0 ? (
-          <ERPEmpty
+          <StaffEmpty
             icon="📂"
+            from="#8B5CF6" to="#00D9FF"
             title="No client projects found"
             sub={search ? 'No projects match your search.' : 'Client projects you are assigned to appear here.'}
           />
