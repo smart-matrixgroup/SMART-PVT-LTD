@@ -5,7 +5,7 @@ const MILESTONES = [
   {icon:'🏆',title:'500+ Happy Clients',desc:'Reached 500 satisfied clients across Sri Lanka.',done:true,val:500,target:500},
   {icon:'📁',title:'250 Projects Delivered',desc:'Successfully delivered 250+ software & accounting projects.',done:true,val:250,target:250},
   {icon:'⭐',title:'5 Years of Excellence',desc:'5+ years serving businesses with technology solutions.',done:true,val:5,target:5},
-  {icon:'🌍',title:'3 Branch Locations',desc:'Offices in Trincomalee, Colombo, and Kurunegala.',done:true,val:3,target:3},
+  {icon:'🌍',title:'2 Branch Locations',desc:'Offices in Trincomalee and Colombo.',done:true,val:2,target:2},
   {icon:'🚀',title:'1000 Clients Goal',desc:'Working towards 1000 active clients milestone.',done:false,val:500,target:1000},
   {icon:'💰',title:'LKR 10M Annual Revenue',desc:'Growing towards LKR 10 million annual revenue target.',done:false,val:4850000,target:10000000},
 ];

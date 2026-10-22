@@ -20,7 +20,7 @@ export const company = {
     { value: "Multi-Industry", label: "Client Base" },
     { value: "End-to-End", label: "Project Delivery" },
     { value: "Dedicated", label: "Ongoing Support" },
-    { value: "3", label: "Branch Locations" },
+    { value: "2", label: "Branch Locations" },
   ],
 
   trustMetrics: [
@@ -34,12 +34,16 @@ export const company = {
   // placeholders (see master plan section 21). Replace with SMART's actual
   // registered business details before launch.
   contact: {
-    phone: "+94 26 222 1234",
-    phoneDisplay: "+94 26 222 1234",
-    whatsapp: "+94770000000",
-    whatsappDisplay: "+94 77 000 0000",
-    email: "info@smartpvtltd.com",
-    address: "No. 123, Main Street, Trincomalee, Sri Lanka",
+    phone: "+94 26 222 27878",
+    phoneDisplay: "+94 26 222 27878",
+    whatsapp: "+94786786286",
+    whatsappDisplay: "+94 786 786 286",
+    email: "info@findmysmart.com",
+    address: "#135, 2nd Floor, Inner Harbour Rd, Orr's Hill, Trincomalee, 31000, LK",
+    mobile1: "+94 76 2100 778",
+    mobile1Display: "+94 76 2100 778",
+    mobile2: "+94 786 786 286",
+    mobile2Display: "+94 786 786 286",
     country: "Sri Lanka",
     currency: "LKR",
     businessHours: "Mon – Fri: 8:30 AM – 6:00 PM | Sat: 9:00 AM – 1:00 PM",

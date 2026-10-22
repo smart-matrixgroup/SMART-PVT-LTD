@@ -905,7 +905,8 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
             </div>
 
             {/* Center-Left 3 Cols: Interactive Map */}
-            <div className="lg:col-span-3 rounded-3xl overflow-hidden border border-[#E2EAF4] dark:border-surface-border shadow-md min-h-[340px] relative bg-slate-100">
+            <div className="lg:col-span-3 flex flex-col gap-3">
+              <div className="rounded-3xl overflow-hidden border border-[#E2EAF4] dark:border-surface-border shadow-md min-h-[340px] relative bg-slate-100">
               <iframe
                 title={`Map for ${activeBranch.name}`}
                 src={activeBranch.googleMapsEmbedUrl}
@@ -924,6 +925,64 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
                   className="p-1.5 rounded-lg bg-[#0066FF] text-white hover:bg-blue-600 transition-colors"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+              </div>
+
+              {/* Contact Numbers — below map */}
+              <div className="relative rounded-2xl overflow-hidden border border-[#0066FF]/30 dark:border-[#0066FF]/40 bg-gradient-to-br from-white to-[#F0F6FF] dark:from-navy-800 dark:to-navy-900 px-4 py-4 space-y-3 shadow-[0_0_18px_rgba(0,102,255,0.10)]">
+                {/* Animated glow pulse background */}
+                <span className="pointer-events-none absolute -top-6 -right-6 w-24 h-24 rounded-full bg-[#0066FF]/10 blur-2xl animate-pulse" />
+                <span className="pointer-events-none absolute -bottom-6 -left-6 w-20 h-20 rounded-full bg-emerald-400/10 blur-2xl animate-pulse" style={{ animationDelay: '1s' }} />
+
+                <p className="relative text-[11px] font-extrabold uppercase tracking-widest text-[#0066FF] flex items-center gap-2">
+                  <span className="inline-flex w-1.5 h-1.5 rounded-full bg-[#0066FF] animate-ping" />
+                  Contact Us
+                </p>
+
+                {/* Land Line */}
+                <a
+                  href="tel:+9426222278"
+                  className="relative flex items-center gap-3 group rounded-xl px-3 py-2 transition-all duration-200 hover:bg-[#0066FF]/8 dark:hover:bg-[#0066FF]/15 hover:shadow-[0_2px_12px_rgba(0,102,255,0.15)]"
+                >
+                  <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
+                    <span className="text-base">📞</span>
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Land Line</p>
+                    <p className="text-[13px] font-extrabold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] dark:group-hover:text-[#5BA4FF] transition-colors tracking-wide">+94 26 222 27878</p>
+                  </div>
+                  <span className="ml-auto text-[#0066FF]/0 group-hover:text-[#0066FF] transition-all duration-200 text-xs font-bold">Call →</span>
+                </a>
+
+                {/* Mobile 1 */}
+                <a
+                  href="tel:+94762100778"
+                  className="relative flex items-center gap-3 group rounded-xl px-3 py-2 transition-all duration-200 hover:bg-[#0066FF]/8 dark:hover:bg-[#0066FF]/15 hover:shadow-[0_2px_12px_rgba(0,102,255,0.15)]"
+                >
+                  <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#0066FF]/10 group-hover:bg-[#0066FF]/20 transition-colors">
+                    <span className="text-base">📱</span>
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Mobile</p>
+                    <p className="text-[13px] font-extrabold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] dark:group-hover:text-[#5BA4FF] transition-colors tracking-wide">+94 76 2100 778</p>
+                  </div>
+                  <span className="ml-auto text-[#0066FF]/0 group-hover:text-[#0066FF] transition-all duration-200 text-xs font-bold">Call →</span>
+                </a>
+
+                {/* Mobile 2 */}
+                <a
+                  href="tel:+94786786286"
+                  className="relative flex items-center gap-3 group rounded-xl px-3 py-2 transition-all duration-200 hover:bg-[#0066FF]/8 dark:hover:bg-[#0066FF]/15 hover:shadow-[0_2px_12px_rgba(0,102,255,0.15)]"
+                >
+                  <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[#0066FF]/10 group-hover:bg-[#0066FF]/20 transition-colors">
+                    <span className="text-base">📱</span>
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5B6E88] dark:text-text-muted">Mobile</p>
+                    <p className="text-[13px] font-extrabold text-[#0A1E3F] dark:text-white group-hover:text-[#0066FF] dark:group-hover:text-[#5BA4FF] transition-colors tracking-wide">+94 786 786 286</p>
+                  </div>
+                  <span className="ml-auto text-[#0066FF]/0 group-hover:text-[#0066FF] transition-all duration-200 text-xs font-bold">Call →</span>
                 </a>
               </div>
             </div>

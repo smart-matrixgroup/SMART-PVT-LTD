@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { branches } from '../config/branches';
-import { MapPin, Phone, Mail, Clock, ExternalLink } from 'lucide-react';
+import { company } from '../config/company';
+import { MapPin, Phone, Mail, Clock, ExternalLink, Smartphone } from 'lucide-react';
 
 export default function BranchMapSection() {
   const [selectedBranch, setSelectedBranch] = useState(branches[0]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Branch Cards Column */}
       <div className="lg:col-span-5 space-y-4">
         {branches.map((branch) => {
@@ -37,10 +38,12 @@ export default function BranchMapSection() {
                   <MapPin className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0 mt-0.5" />
                   <span>{branch.address}</span>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>{branch.phone}</span>
-                </div>
+                {branch.phone && (
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>{branch.phone}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2.5">
                   <Mail className="w-4 h-4 text-primary dark:text-primary-electric shrink-0" />
                   <span>{branch.email}</span>
@@ -55,33 +58,37 @@ export default function BranchMapSection() {
         })}
       </div>
 
-      {/* Google Maps Embed Column */}
-      <div className="lg:col-span-7 rounded-3xl overflow-hidden glass-card border border-surface-border min-h-[380px] relative shadow-2xl">
-        <iframe
-          title={`Google Map for ${selectedBranch.name}`}
-          src={selectedBranch.googleMapsEmbedUrl}
-          className="w-full h-full min-h-[380px] border-0 grayscale-[20%] contrast-[110%] rounded-3xl"
-          loading="lazy"
-          allowFullScreen
-          referrerPolicy="no-referrer-when-downgrade"
-        />
-        
-        {/* Overlay Badge */}
-        <div className="absolute bottom-4 left-4 right-4 sm:right-auto p-3 rounded-2xl border border-[#DCE6F2] dark:border-surface-border flex items-center justify-between gap-4 bg-white/90 dark:bg-navy-950/85 backdrop-blur-md">
-          <div className="text-xs">
-            <p className="font-bold text-[#0A1E3F] dark:text-white">{selectedBranch.name}</p>
-            <p className="text-[13px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
+      {/* Google Maps + Contact Us Column */}
+      <div className="lg:col-span-7 flex flex-col gap-4">
+
+        {/* Map */}
+        <div className="rounded-3xl overflow-hidden glass-card border border-surface-border min-h-[380px] relative shadow-2xl">
+          <iframe
+            title={`Google Map for ${selectedBranch.name}`}
+            src={selectedBranch.googleMapsEmbedUrl}
+            className="w-full h-full min-h-[380px] border-0 grayscale-[20%] contrast-[110%] rounded-3xl"
+            loading="lazy"
+            allowFullScreen
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+          {/* Overlay Badge */}
+          <div className="absolute bottom-4 left-4 right-4 sm:right-auto p-3 rounded-2xl border border-[#DCE6F2] dark:border-surface-border flex items-center justify-between gap-4 bg-white/90 dark:bg-navy-950/85 backdrop-blur-md">
+            <div className="text-xs">
+              <p className="font-bold text-[#0A1E3F] dark:text-white">{selectedBranch.name}</p>
+              <p className="text-[13px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
+            </div>
+            <a
+              href="https://maps.google.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-primary text-white hover:bg-primary-hover transition-colors"
+              aria-label="Open in Google Maps"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
           </div>
-          <a
-            href="https://maps.google.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2 rounded-xl bg-primary text-white hover:bg-primary-hover transition-colors"
-            aria-label="Open in Google Maps"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </a>
         </div>
+
       </div>
     </div>
   );

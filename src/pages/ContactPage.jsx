@@ -71,15 +71,29 @@ export default function ContactPage() {
                 <div className="flex items-start gap-3 text-xs">
                   <Phone className="w-4 h-4 text-primary dark:text-primary-cyan shrink-0 mt-0.5" />
                   <div>
-                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Direct Phone Line</span>
-                    <strong className="text-[#0A1E3F] dark:text-white text-sm">{company.contact.phoneDisplay}</strong>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Land Line</span>
+                    <a href="tel:+9426222278" className="font-bold text-[#0A1E3F] dark:text-white text-sm hover:text-primary transition-colors">+94 26 222 27878</a>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 text-xs">
+                  <Phone className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Mobile</span>
+                    <a href="tel:+94762100778" className="font-bold text-[#0A1E3F] dark:text-white text-sm hover:text-primary transition-colors">+94 76 2100 778</a>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 text-xs">
+                  <Phone className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Mobile</span>
+                    <a href="tel:+94786786286" className="font-bold text-[#0A1E3F] dark:text-white text-sm hover:text-primary transition-colors">+94 786 786 286</a>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 text-xs">
                   <Mail className="w-4 h-4 text-primary dark:text-primary-electric shrink-0 mt-0.5" />
                   <div>
                     <span className="text-[#5B6E88] dark:text-text-muted block text-[13px]">Official Email</span>
-                    <strong className="text-[#0A1E3F] dark:text-white text-sm">{company.contact.email}</strong>
+                    <a href="mailto:info@findmysmart.com" className="font-bold text-[#0A1E3F] dark:text-white text-sm hover:text-primary transition-colors">info@findmysmart.com</a>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 text-xs">
