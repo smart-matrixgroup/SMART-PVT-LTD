@@ -6,12 +6,12 @@
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  collection, query, orderBy, onSnapshot, doc, getDocs
+  collection, query, orderBy, onSnapshot, doc, getDocs, setDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPBadge, ERPBtn, ERPModal, C } from '../components/ERPui';
-import { sendChatMessage, markConversationAsRead, getConversationId } from '../messagingUtils';
+import { sendChatMessage, markConversationAsRead, getConversationId, syncChatAccessForAllClients } from '../messagingUtils';
 import { Send, MessageCircle, Search, Plus, User, Briefcase, Users, CheckCheck } from 'lucide-react';
 
 const DEV_CONVERSATIONS = [
@@ -82,6 +82,8 @@ export default function ERPMessages() {
   const [showNewModal,  setShowNewModal]  = useState(false);
   const [contactList,   setContactList]   = useState({ staff: [], clients: [] });
   const [loadingContacts, setLoadingContacts] = useState(false);
+  const [syncing,       setSyncing]       = useState(false);
+  const [syncResult,    setSyncResult]    = useState('');
 
   const msgEndRef = useRef(null);
 
@@ -175,7 +177,24 @@ export default function ERPMessages() {
     }
   };
 
-  const startConversationWith = (contact, type) => {
+  const handleSyncChatAccess = async () => {
+    if (!live || syncing) return;
+    setSyncing(true);
+    setSyncResult('');
+    try {
+      const count = await syncChatAccessForAllClients();
+      setSyncResult(`Synced ${count} client conversation${count !== 1 ? 's' : ''} — assigned staff can now message.`);
+      setTimeout(() => setSyncResult(''), 4000);
+    } catch (err) {
+      console.error('Sync failed:', err);
+      setSyncResult('Sync failed — check console for details.');
+      setTimeout(() => setSyncResult(''), 4000);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const startConversationWith = async (contact, type) => {
     const convId = getConversationId(type, contact.id);
     const existing = conversations.find(c => c.id === convId);
     if (existing) {
@@ -196,6 +215,29 @@ export default function ERPMessages() {
       };
       setConversations(p => [newConv, ...p]);
       setSelected(newConv);
+
+      // Persist the conversation to Firestore so it survives page refresh
+      // and staff can be assigned to it before any message is sent.
+      if (live) {
+        try {
+          await setDoc(doc(db, 'conversations', convId), {
+            id: convId,
+            type,
+            participantUid: contact.id,
+            participantName: newConv.participantName,
+            participantRole: type,
+            participantEmail: newConv.participantEmail,
+            lastMessage: 'Conversation started',
+            lastMessageAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastSenderRole: 'admin',
+            unreadForAdmin: 0,
+            unreadForParticipant: 0,
+          }, { merge: true });
+        } catch (err) {
+          console.error('Failed to create conversation:', err);
+        }
+      }
     }
     setShowNewModal(false);
   };
@@ -274,18 +316,44 @@ export default function ERPMessages() {
                 </span>
               )}
             </div>
-            <button
-              onClick={openNewChatModal}
-              title="Start New Conversation"
-              style={{
-                background: 'rgba(0,102,255,0.15)', border: '1px solid rgba(0,102,255,0.3)',
-                color: C.cyan, borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-              }}
-            >
-              <Plus size={13} /> New
-            </button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                onClick={handleSyncChatAccess}
+                disabled={syncing || !live}
+                title="Sync work assignments → give staff chat access to client threads"
+                style={{
+                  background: syncing ? 'rgba(24,199,122,0.25)' : 'rgba(24,199,122,0.15)',
+                  border: '1px solid rgba(24,199,122,0.3)',
+                  color: C.green, borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700,
+                  cursor: syncing || !live ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                  opacity: !live ? 0.4 : 1,
+                }}
+              >
+                <CheckCheck size={13} /> {syncing ? 'Syncing…' : 'Sync'}
+              </button>
+              <button
+                onClick={openNewChatModal}
+                title="Start New Conversation"
+                style={{
+                  background: 'rgba(0,102,255,0.15)', border: '1px solid rgba(0,102,255,0.3)',
+                  color: C.cyan, borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                <Plus size={13} /> New
+              </button>
+            </div>
           </div>
+          {syncResult && (
+            <div style={{
+              fontSize: 10.5, fontWeight: 600, color: syncResult.includes('failed') ? C.red : C.green,
+              background: syncResult.includes('failed') ? 'rgba(240,90,103,0.08)' : 'rgba(24,199,122,0.08)',
+              border: `1px solid ${syncResult.includes('failed') ? 'rgba(240,90,103,0.2)' : 'rgba(24,199,122,0.2)'}`,
+              borderRadius: 8, padding: '6px 10px', marginBottom: 10,
+            }}>
+              {syncResult}
+            </div>
+          )}
 
           {/* Type filters */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 10, background: 'rgba(4,13,31,0.5)', padding: 3, borderRadius: 8 }}>

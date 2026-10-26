@@ -12,16 +12,16 @@ import ErrorBoundary from './ErrorBoundary';
 // modal is wrapped in an ErrorBoundary so a form crash can never blank
 // the page again.
 
-export default function QuoteModal({ isOpen, onClose, initialService, source }) {
+export default function QuoteModal({ isOpen, onClose, initialService, source, title, eyebrow, subtitle }) {
   return (
     <ErrorBoundary variant="form">
       <RequestModal
         isOpen={isOpen}
         onClose={onClose}
         source={source || 'Quote Request'}
-        eyebrow="Get a Quote"
-        title="Request a Quote"
-        subtitle="Tell us what you need — our team replies within 2 business hours."
+        eyebrow={eyebrow || 'Get a Quote'}
+        title={title || 'Request a Quote'}
+        subtitle={subtitle || 'Tell us what you need — our team replies within 2 business hours.'}
         initialService={initialService}
       />
     </ErrorBoundary>

@@ -66,7 +66,7 @@ export default function ProjectsPage({ onOpenQuote }) {
             </p>
           </div>
           <button
-            onClick={() => onOpenQuote()}
+            onClick={() => onOpenQuote("", { title: "Start Your Project", eyebrow: "New Project", subtitle: "Ready to begin? Tell us about your project and we'll get you started.", source: "Project Inquiry" })}
             className="px-6 py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all shrink-0"
           >
             Start Your Project

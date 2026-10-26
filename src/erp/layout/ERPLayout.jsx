@@ -127,6 +127,23 @@ export default function ERPLayout() {
     return onSnapshot(q, snap => setLeadCount(snap.size));
   }, [isDevSession]);
 
+  // Live unread message count from Firestore conversations
+  useEffect(() => {
+    if (!isFirebaseConfigured || isDevSession) {
+      setMsgCount(2); // dev mock: 2 unread conversations
+      return;
+    }
+    const q = query(collection(db, 'conversations'));
+    return onSnapshot(q, (snap) => {
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if ((data.unreadForAdmin || 0) > 0) count++;
+      });
+      setMsgCount(count);
+    }, () => setMsgCount(0));
+  }, [isDevSession]);
+
   // ── Live admin notifications ─────────────────────────────────────
   // Every website request form submission (including QR-scan requests)
   // lands in `leads`. Mirror the newest ones into the topbar bell so the

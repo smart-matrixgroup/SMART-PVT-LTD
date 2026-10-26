@@ -252,6 +252,7 @@ export function MyDocuments({ category, icon: HeaderIcon }) {
         docs: arrayUnion({
           id: `${Date.now()}`, category, name: file.name,
           path: snap.ref.fullPath, size: file.size, uploadedAt: new Date().toISOString(),
+          status: 'Pending',
         }),
         updatedAt: serverTimestamp(),
       });
@@ -349,8 +350,16 @@ export function MyDocuments({ category, icon: HeaderIcon }) {
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {d.name}
                 </div>
-                <div style={{ fontSize: 10.5, color: C.muted }}>
-                  {fmtSize(d.size)} · uploaded {fmtWhen(d.uploadedAt)}
+                <div style={{ fontSize: 10.5, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>{fmtSize(d.size)} · uploaded {fmtWhen(d.uploadedAt)}</span>
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 800, padding: '1px 7px', borderRadius: 999,
+                    background: d.status === 'Verified' ? 'rgba(24,199,122,0.14)' : 'rgba(245,185,66,0.14)',
+                    color: d.status === 'Verified' ? C.green : C.amber,
+                    border: `1px solid ${d.status === 'Verified' ? 'rgba(24,199,122,0.4)' : 'rgba(245,185,66,0.4)'}`,
+                  }}>
+                    {d.status === 'Verified' ? '✓ Verified by admin' : 'Pending review'}
+                  </span>
                 </div>
               </div>
               <ERPBtn variant="ghost" disabled={busy} onClick={() => download(d)}>

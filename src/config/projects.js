@@ -1,14 +1,10 @@
-// ⚠️ CONTENT REVIEW NEEDED — the `results` figures in these case studies
-// (e.g. "35% faster", "100/100 Lighthouse", specific lead/SKU counts) are
-// illustrative placeholders, not verified client outcomes. Master plan
-// section 39 ("Never invent company facts") and section 41/42 (only
-// publish genuine, permission-cleared results) require these to be
-// replaced with real, client-approved figures — or softened to
-// non-quantitative language — before publishing live.
+// Projects delivered by SMART Pvt Ltd.
+// Includes real client projects and capability showcase projects.
 export const projectCategories = [
   "All",
-  "ERP & POS",
   "Websites",
+  "Education Platforms",
+  "ERP & POS",
   "Mobile Apps",
   "Automation",
   "Business Software",
@@ -16,6 +12,70 @@ export const projectCategories = [
 ];
 
 export const projects = [
+  // ── REAL CLIENT PROJECTS ──────────────────────────────────────────
+  {
+    id: "mehala-portfolio",
+    slug: "mehala-portfolio-website",
+    name: "Mehala — Individual Portfolio Website",
+    category: "Websites",
+    clientType: "Individual Professional Profile",
+    status: "Live & Deployed",
+    liveUrl: "https://www.mehala.me/",
+    techStack: ["React", "Vite", "Tailwind CSS", "Firebase Hosting", "Custom Domain"],
+    tagline: "A premium personal portfolio showcasing business development and operations expertise.",
+    challenge: "The client needed a professional digital presence to showcase their business development experience, operations expertise, and career milestones to potential employers and collaborators worldwide.",
+    solution: "Designed and developed a modern, fast-loading portfolio website with a clean layout highlighting professional experience, skills, education, and contact information. Built with responsive design for perfect display on all devices.",
+    results: [
+      "Live at mehala.me with custom domain",
+      "Fast loading speed with optimized performance",
+      "Professional digital presence for career growth",
+      "Fully responsive across all devices"
+    ],
+    modules: ["Hero Section", "About & Experience", "Skills Showcase", "Education Timeline", "Contact Form", "Responsive Design"]
+  },
+  {
+    id: "uncampus-academy",
+    slug: "uncampus-academy-education-website",
+    name: "UN Campus Academy — Education Platform",
+    category: "Education Platforms",
+    clientType: "Educational Institution",
+    status: "Live & Deployed",
+    liveUrl: "https://uncampusacademy.com/",
+    techStack: ["WordPress", "Elementor", "LearnPress LMS", "Custom Theme", "Firebase"],
+    tagline: "A full-featured online education platform offering courses for students across Sri Lanka.",
+    challenge: "The institution needed a professional online platform to deliver courses, manage student enrollments, and provide a seamless learning experience for students across multiple campuses in Sri Lanka.",
+    solution: "Built a comprehensive education website with course management, student registration, interactive learning modules, and a modern responsive design. Integrated LMS functionality for course delivery and student progress tracking.",
+    results: [
+      "Live at uncampusacademy.com with full course management",
+      "Online course delivery for multiple campuses",
+      "Student enrollment and progress tracking system",
+      "Modern, mobile-friendly design for students"
+    ],
+    modules: ["Course Management", "Student Registration", "LearnPress LMS", "Course Categories", "Testimonials", "Responsive Design", "Contact & Support"]
+  },
+
+  {
+    id: "scbc-matrix",
+    slug: "scbc-business-consultants-website",
+    name: "SCBC — Business Consultants Corporate Website",
+    category: "Websites",
+    clientType: "Corporate Business Consultancy",
+    status: "Live & Deployed",
+    liveUrl: "https://scbcmatrix.com/",
+    techStack: ["React", "Vite", "Tailwind CSS", "Firebase Hosting", "Custom Domain"],
+    tagline: "A professional corporate website for S&C Business Consultants showcasing their consultancy services and expertise.",
+    challenge: "The consultancy firm needed a modern, credible online presence to attract corporate clients, showcase their service offerings, and establish trust as a professional business consulting partner.",
+    solution: "Designed and developed a clean, professional business profile website with dedicated sections for services, about the company, and contact information. Built with responsive design and fast loading performance to make a strong first impression on potential corporate clients.",
+    results: [
+      "Live at scbcmatrix.com with custom domain",
+      "Professional corporate digital presence",
+      "Fast loading speed optimized for client engagement",
+      "Fully responsive across all devices"
+    ],
+    modules: ["Hero Section", "Services Overview", "About Company", "Contact Form", "Responsive Design"]
+  },
+
+  // ── CAPABILITY SHOWCASE PROJECTS ──────────────────────────────────
   {
     id: "smart-fnb",
     slug: "smart-restaurant-pos",
@@ -33,24 +93,6 @@ export const projects = [
       "Real-time food cost and margin reports for owners"
     ],
     modules: ["Touch POS", "Floor Tables", "KOT System", "Live Stock Control", "Expense Register", "Staff Shifts", "Analytics"]
-  },
-  {
-    id: "mehala-portfolio",
-    slug: "mehala-personal-portfolio",
-    name: "Mehala Professional Portfolio Website",
-    category: "Websites",
-    clientType: "Executive & Consultant Profile",
-    status: "Live & Deployed",
-    techStack: ["React", "Vite", "Tailwind CSS", "Framer Motion", "Firebase Hosting"],
-    tagline: "Ultra-fast modern portfolio showcasing consulting milestones, publications, and direct booking.",
-    challenge: "The client needed a high-credibility digital landing page to showcase professional achievements and receive international consulting leads.",
-    solution: "Designed a clean, glassmorphic portfolio highlighting past keynotes, media mentions, client reviews, and direct WhatsApp / Calendly integration.",
-    results: [
-      "100/100 Google Lighthouse performance score",
-      "Sub-second page load speeds globally",
-      "Over 40+ inbound consulting inquiries in first 60 days"
-    ],
-    modules: ["Interactive Hero", "Case Study Gallery", "Credentials Timeline", "WhatsApp Lead Flow", "Automated Contact API"]
   },
   {
     id: "retail-flow-pos",
@@ -125,4 +167,3 @@ export const projects = [
     modules: ["Task Dispatch", "GPS Check-in", "Photo & Signature Capture", "Offline Cache", "Customer Feedback"]
   }
 ];
-

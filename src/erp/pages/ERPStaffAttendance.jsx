@@ -14,7 +14,10 @@ import {
   todayKey, thisMonthKey, monthLabel,
 } from '../../staff/staffUtils';
 import { company } from '../../config/company';
-import { Pencil, AlertTriangle, Download, Printer } from 'lucide-react';
+import {
+  getStaffCheckInPublicUrl, generateStaffCheckInQRCodeDataUrl, downloadStaffCheckInQRPng,
+} from '../../utils/qrUtils';
+import { Pencil, AlertTriangle, Download, Printer, QrCode, ExternalLink, Copy } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
@@ -48,6 +51,18 @@ export default function ERPStaffAttendance() {
   const [editForm, setEditForm] = useState({ date: '', in: '', out: '' });
   const [preview,  setPreview]  = useState(null); // {title, rows}
   const [busy,     setBusy]     = useState(false);
+
+  // Office attendance QR — staff scan this at the office entrance.
+  const [checkInQr, setCheckInQr] = useState(null);
+  const checkInUrl = getStaffCheckInPublicUrl();
+
+  useEffect(() => {
+    let mounted = true;
+    generateStaffCheckInQRCodeDataUrl({ width: 640 }).then(dataUrl => {
+      if (mounted && dataUrl) setCheckInQr(dataUrl);
+    });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!live) {
@@ -128,6 +143,46 @@ export default function ERPStaffAttendance() {
     finally { setBusy(false); }
   };
 
+  const handlePrintCheckInQR = () => {
+    if (!checkInQr) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>SMART Pvt Ltd — Office Attendance QR</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; margin: 0; padding: 40px; color: #040D1F; }
+            .card { border: 2px solid #0066FF; border-radius: 22px; padding: 32px 30px; max-width: 420px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .logo { height: 44px; margin-bottom: 8px; }
+            .company { font-size: 16px; font-weight: 900; }
+            .title { font-size: 21px; font-weight: 800; color: #0066FF; margin: 10px 0 4px; }
+            .sub { font-size: 12px; color: #475569; margin-bottom: 14px; line-height: 1.5; }
+            .qr-img { width: 265px; height: 265px; margin: 0 auto; display: block; border-radius: 12px; }
+            .steps { font-size: 12px; font-weight: 700; margin-top: 14px; color: #040D1F; }
+            .steps span { color: #0066FF; }
+            .url { font-size: 10.5px; font-family: monospace; color: #64748B; margin-top: 12px; word-break: break-all; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <img src="/logos/SMART_LOGO_LM.png" class="logo" alt="SMART Pvt Ltd" onerror="this.style.display='none'" />
+            <div class="company">${company.fullName}</div>
+            <div class="title">Office Attendance</div>
+            <div class="sub">Scan with your phone, sign in with your staff email, and check in / check out.</div>
+            <img src="${checkInQr}" class="qr-img" alt="Attendance QR" />
+            <div class="steps">1. Scan &nbsp;•&nbsp; 2. Sign in &nbsp;•&nbsp; 3. Check In / Out</div>
+            <div class="url">${checkInUrl}</div>
+          </div>
+          <script>window.onload = function() { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: C.muted, fontSize: 13 }}>Loading attendance…</div>;
 
   return (
@@ -139,6 +194,61 @@ export default function ERPStaffAttendance() {
           <AlertTriangle size={14} /> {loadError}
         </div>
       )}
+
+      {/* Office attendance QR — print / put up at the office entrance */}
+      <ERPPanel>
+        <ERPPanelHeader title="Office Attendance QR" icon={<QrCode size={15} style={{ color: C.cyan }} />}
+          action={<span style={{
+            fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+            background: 'rgba(0,217,255,0.12)', color: C.cyan, border: '1px solid rgba(0,217,255,0.3)',
+          }}>Check-in only</span>} />
+        <div style={{ padding: '18px 20px', display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ background: '#FFFFFF', padding: 12, borderRadius: 14, boxShadow: '0 8px 26px rgba(0,102,255,0.22)', flexShrink: 0 }}>
+            {checkInQr ? (
+              <img src={checkInQr} alt="Office attendance QR" style={{ width: 132, height: 132, display: 'block', borderRadius: 6 }} />
+            ) : (
+              <div style={{ width: 132, height: 132, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: 10 }}>
+                Generating…
+              </div>
+            )}
+          </div>
+
+          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Staff scan → sign in → check in / out</div>
+            <div style={{ fontSize: 11.5, color: C.subtle, lineHeight: 1.65, marginTop: 4 }}>
+              Print this QR and keep it at the office entrance. Staff scan it with their phone, sign in with
+              their staff email and password, and only the check-in / check-out screen appears — no other portal pages.
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '7px 10px',
+              borderRadius: 8, background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+            }}>
+              <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: C.subtle, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {checkInUrl}
+              </span>
+              <button onClick={() => navigator.clipboard?.writeText(checkInUrl)} title="Copy link"
+                style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', display: 'flex', padding: 0 }}>
+                <Copy size={12} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <ERPBtn size="sm" variant="primary" disabled={!checkInQr} onClick={() => downloadStaffCheckInQRPng(checkInQr)}>
+                <Download size={12} /> Download PNG
+              </ERPBtn>
+              <ERPBtn size="sm" variant="secondary" disabled={!checkInQr} onClick={handlePrintCheckInQR}>
+                <Printer size={12} /> Print
+              </ERPBtn>
+              <a href={checkInUrl} target="_blank" rel="noopener noreferrer" style={{
+                padding: '6px 11px', borderRadius: 8, fontSize: 10.5, fontWeight: 700, textDecoration: 'none',
+                background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`, color: C.muted,
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <ExternalLink size={11} /> Open page
+              </a>
+            </div>
+          </div>
+        </div>
+      </ERPPanel>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>

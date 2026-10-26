@@ -23,7 +23,7 @@ import {
   nextNumber, DOC_CATEGORIES, STAFF_STATUSES, computeNet,
 } from '../../staff/staffUtils';
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
-import { Plus, Eye, Pencil, Trash2, KeyRound, Download, Upload, FileText, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Plus, Eye, Pencil, Trash2, KeyRound, Download, Upload, FileText, ShieldCheck, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import ERPStaffWork        from './ERPStaffWork';
 import ERPStaffAttendance  from './ERPStaffAttendance';
 import ERPStaffUpdates     from './ERPStaffUpdates';
@@ -251,6 +251,7 @@ function StaffTab() {
         docs: arrayUnion({
           id: `${Date.now()}`, category: docCat, name: file.name,
           path: snap.ref.fullPath, size: file.size, uploadedAt: new Date().toISOString(),
+          status: 'Pending',
         }),
       });
       setNotice({ kind: 'ok', msg: `${file.name} uploaded to ${DOC_CATEGORIES.find(c => c.id === docCat)?.label}.` });
@@ -275,6 +276,23 @@ function StaffTab() {
       await updateDoc(doc(db, 'staff', s.id), { docs: arrayRemove(entry) });
     } catch (e) { setNotice({ kind: 'error', msg: e.message }); }
     finally { setBusy(false); setConfirmState(null); }
+  };
+
+  // Admin review of a staff-uploaded KYC / certificate: mark it Verified.
+  // (The staff portal shows the same status live via AuthContext.)
+  const handleDocVerify = async (s, entry) => {
+    setBusy(true); setNotice(null);
+    try {
+      const docs = (s.docs || []).map(d =>
+        d.id === entry.id
+          ? { ...d, status: 'Verified', verifiedAt: new Date().toISOString() }
+          : d
+      );
+      await updateDoc(doc(db, 'staff', s.id), { docs, updatedAt: serverTimestamp() });
+      setNotice({ kind: 'ok', msg: `${entry.name} verified — the staff member can see it now.` });
+    } catch (e) {
+      setNotice({ kind: 'error', msg: e.message || 'Could not verify the document.' });
+    } finally { setBusy(false); }
   };
 
   // ── derived ──────────────────────────────────────────────────────
@@ -517,10 +535,23 @@ function StaffTab() {
                   <FileText size={15} style={{ color: C.cyan, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.subtle, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{entry.name}</div>
-                    <div style={{ fontSize: 9, color: C.muted }}>
-                      {Math.round((entry.size || 0) / 1024)} KB · uploaded {fmtDate(entry.uploadedAt?.slice(0, 10))}
+                    <div style={{ fontSize: 9, color: C.muted, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>{Math.round((entry.size || 0) / 1024)} KB · uploaded {fmtDate(entry.uploadedAt?.slice(0, 10))}</span>
+                      <span style={{
+                        padding: '1px 6px', borderRadius: 999, fontWeight: 800,
+                        background: entry.status === 'Verified' ? 'rgba(24,199,122,0.14)' : 'rgba(245,185,66,0.14)',
+                        color: entry.status === 'Verified' ? C.green : C.amber,
+                        border: `1px solid ${entry.status === 'Verified' ? 'rgba(24,199,122,0.4)' : 'rgba(245,185,66,0.4)'}`,
+                      }}>
+                        {entry.status === 'Verified' ? 'Verified' : 'Pending'}
+                      </span>
                     </div>
                   </div>
+                  {entry.status !== 'Verified' && (
+                    <ERPBtn size="sm" variant="success" disabled={busy} onClick={() => handleDocVerify(detail, entry)}>
+                      <CheckCircle2 size={11} /> Accept
+                    </ERPBtn>
+                  )}
                   <ERPBtn size="sm" variant="secondary" onClick={() => handleDownload(entry)}><Download size={11} /></ERPBtn>
                   <ERPBtn size="sm" variant="danger" onClick={() => setConfirmState({ type: 'doc', staff: detail, docEntry: entry })}><Trash2 size={11} /></ERPBtn>
                 </div>

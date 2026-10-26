@@ -73,7 +73,7 @@ export default function BranchMapSection() {
             <p className="text-[13px] text-[#5B6E88] dark:text-text-muted">{selectedBranch.city}</p>
           </div>
           <a
-            href="https://maps.google.com"
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedBranch.address}, Sri Lanka`)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-xl bg-primary text-white hover:bg-primary-hover transition-colors"

@@ -342,6 +342,29 @@
 .sp-spin-slow { animation: spSpinSlow 14s linear infinite; }
 .sp-sheen     { animation: spSheen 4.5s ease-in-out infinite; }
 
+/* Quotation Image Studio layout — keeps the canvas preview from being
+   squeezed to nothing on narrow windows (flex children need min-width:0). */
+.doc-studio-body   { flex: 1; display: flex; gap: 14px; padding: 14px; overflow: hidden; }
+.doc-studio-editor { width: 340px; flex-shrink: 0; min-width: 0; overflow-y: auto; padding-right: 6px;
+  display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
+.doc-studio-preview{ flex: 1; min-width: 0; overflow-y: auto; display: flex; justify-content: center;
+  align-items: flex-start; padding: 16px; scrollbar-width: thin; }
+.doc-studio-preview canvas { width: 100%; max-width: 640px; height: auto; }
+@media (max-width: 900px) {
+  .doc-studio-body    { flex-direction: column; overflow-y: auto; }
+  .doc-studio-editor  { width: 100%; overflow: visible; }
+  /* preview first on phones — the image must be visible without scrolling past the form */
+  .doc-studio-preview { overflow: visible; order: -1; width: 100%; padding: 4px 0 10px; }
+}
+@media (max-width: 600px) {
+  .doc-studio-overlay { padding: 0 !important; }
+  .doc-studio-modal   { height: 100dvh !important; border-radius: 0 !important; border: 0 !important; }
+  .doc-studio-head    { padding: 10px 12px !important; gap: 8px !important; }
+  .doc-studio-sub     { display: none; }
+  .doc-studio-body    { padding: 10px 12px; }
+  .doc-studio-preview canvas { width: 100%; max-width: 100%; }
+}
+
 /* Animated colourful gradient bar (topbar underline / accent strips) */
 @keyframes spGradMove { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 .sp-grad-move { background-size: 200% 100%; animation: spGradMove 3.5s linear infinite; }

@@ -106,3 +106,63 @@ export async function markConversationAsRead(conversationId, currentRole, isLive
     // Ignore permissions/offline errors during read sync
   }
 }
+
+// ── Sync Chat Access ──────────────────────────────────────────────
+// Pre-creates / updates conversation documents for every client that has
+// work assignments, stamping `assignedStaffUids` so the assigned staff
+// members can read the thread and post messages (firestore.rules check).
+// Returns the number of conversations synced.
+export async function syncChatAccessForAllClients() {
+  // 1. Fetch all work assignments
+  const assignSnap = await getDocs(collection(db, 'workAssignments'));
+  const assignments = assignSnap.docs.map(d => d.data());
+
+  // 2. Group by clientId → Set of staff UIDs
+  const byClient = {};
+  assignments.forEach(a => {
+    if (!a.clientId) return;
+    if (!byClient[a.clientId]) {
+      byClient[a.clientId] = {
+        staffUids: new Set(),
+        clientName: a.clientName || a.clientCompany || 'Client',
+        clientEmail: a.clientEmail || '',
+      };
+    }
+    if (a.authUid) byClient[a.clientId].staffUids.add(a.authUid);
+  });
+
+  // 3. For each client, upsert the conversation document
+  let count = 0;
+  for (const [clientId, info] of Object.entries(byClient)) {
+    const convId = getConversationId('client', clientId);
+    const convRef = doc(db, 'conversations', convId);
+    const existing = await getDoc(convRef);
+    const staffUids = Array.from(info.staffUids);
+
+    if (existing.exists()) {
+      // Merge assignedStaffUids (keep any already there)
+      const prev = existing.data().assignedStaffUids || [];
+      const merged = Array.from(new Set([...prev, ...staffUids]));
+      await updateDoc(convRef, { assignedStaffUids: merged, updatedAt: serverTimestamp() });
+    } else {
+      // Create the conversation document
+      await setDoc(convRef, {
+        id: convId,
+        type: 'client',
+        participantUid: clientId,
+        participantName: info.clientName,
+        participantRole: 'client',
+        participantEmail: info.clientEmail,
+        lastMessage: '',
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastSenderRole: '',
+        unreadForAdmin: 0,
+        unreadForParticipant: 0,
+        assignedStaffUids: staffUids,
+      });
+    }
+    count++;
+  }
+  return count;
+}

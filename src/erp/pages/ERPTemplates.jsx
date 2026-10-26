@@ -11,7 +11,8 @@ import {
   ERPPanel, ERPPanelHeader, ERPBtn, ERPModal, ERPInput, ERPTextarea,
   ERPEmpty, C
 } from '../components/ERPui';
-import { Plus, Pencil, Trash2, FileText, ClipboardList, Tag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, Trash2, FileText, ClipboardList, Tag, Info } from 'lucide-react';
 
 const uid = () => `c${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -27,6 +28,7 @@ const byName = (a, b) => String(a.serviceName || '').localeCompare(String(b.serv
 export default function ERPTemplates() {
   const { isDevSession } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
+  const navigate = useNavigate();
 
   const [tab,        setTab]        = useState('quotation'); // 'quotation' | 'requirement'
   const [qRows,      setQRows]      = useState([]);
@@ -234,6 +236,21 @@ export default function ERPTemplates() {
           </ERPBtn>
         </div>
       </div>
+
+      {tab === 'quotation' && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', padding:'9px 12px', borderRadius:10,
+          background:'rgba(0,198,224,0.07)', border:'1px solid rgba(0,198,224,0.22)', fontSize:11, color:C.muted }}>
+          <Info size={12} style={{ color:C.cyan, flexShrink:0 }}/>
+          <span style={{ flex:1, minWidth:180 }}>
+            These are service templates (text &amp; prices). Your <b style={{ color:C.subtle }}>letterhead image</b> is applied automatically when you create a quotation and open <b style={{ color:C.subtle }}>Letterhead / Image</b>.
+          </span>
+          <button onClick={() => navigate('/erp/quotations')}
+            style={{ background:'rgba(0,102,255,0.14)', border:'1px solid rgba(0,102,255,0.45)', color:'#8CC2FF',
+              borderRadius:8, padding:'4px 10px', fontSize:10.5, fontWeight:700, cursor:'pointer' }}>
+            Open Quotations
+          </button>
+        </div>
+      )}
 
       {loadError && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(240,90,103,0.12)', border: '1px solid rgba(240,90,103,0.35)', fontSize: 12, color: C.red }}>

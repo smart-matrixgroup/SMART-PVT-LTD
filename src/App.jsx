@@ -14,6 +14,7 @@ import HomePage from './pages/HomePage';
 const AboutPage           = lazy(() => import('./pages/AboutPage'));
 const ServicesPage        = lazy(() => import('./pages/ServicesPage'));
 const ServiceDetailPage   = lazy(() => import('./pages/ServiceDetailPage'));
+const QrServicePage       = lazy(() => import('./pages/QrServicePage'));
 const SolutionsPage       = lazy(() => import('./pages/SolutionsPage'));
 const ProjectsPage        = lazy(() => import('./pages/ProjectsPage'));
 const ProjectDetailPage   = lazy(() => import('./pages/ProjectDetailPage'));
@@ -21,7 +22,6 @@ const PricingPage         = lazy(() => import('./pages/PricingPage'));
 const InsightsPage        = lazy(() => import('./pages/InsightsPage'));
 const InsightDetailPage   = lazy(() => import('./pages/InsightDetailPage'));
 const ContactPage         = lazy(() => import('./pages/ContactPage'));
-const QRServicePage       = lazy(() => import('./pages/QRServicePage'));
 const ClientRequestQRPage = lazy(() => import('./pages/ClientRequestQRPage'));
 const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
@@ -29,6 +29,7 @@ const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
 const ERPApp              = lazy(() => import('./erp/ERPApp'));
 const StaffLoginPage      = lazy(() => import('./staff/StaffLoginPage'));
 const StaffPortalApp      = lazy(() => import('./staff/StaffPortalApp'));
+const StaffCheckInPage    = lazy(() => import('./pages/StaffCheckInPage'));
 const PrivacyPolicyPage   = lazy(() => import('./pages/PrivacyPolicyPage'));
 const TermsPage           = lazy(() => import('./pages/TermsPage'));
 const NotFoundPage        = lazy(() => import('./pages/NotFoundPage'));
@@ -71,6 +72,7 @@ function StandaloneRoutes() {
           <ProtectedRoute role="admin"><AdminPanelPage /></ProtectedRoute>
         } />
         <Route path="/staff-login" element={<StaffLoginPage />} />
+        <Route path="/staff-checkin" element={<StaffCheckInPage />} />
         <Route path="/staff-portal" element={
           <ProtectedRoute role="staff" redirectTo="/staff-login"><StaffPortalApp /></ProtectedRoute>
         } />
@@ -84,16 +86,24 @@ function StandaloneRoutes() {
 
 // ── Website (with Navbar / Footer / WhatsApp) ─────────────────────
 function WebsiteRoutes() {
+  const { pathname } = useLocation();
+  // QR scans get a phone-first "app" view without the website chrome.
+  const isQrApp = pathname.startsWith('/services/qr/');
   const [isQuoteOpen,         setIsQuoteOpen]         = useState(false);
   const [quoteService,        setQuoteService]         = useState('');
   const [quoteSource,         setQuoteSource]          = useState('Quote Request');
+  const [quoteTitle,          setQuoteTitle]           = useState('Request a Quote');
+  const [quoteEyebrow,        setQuoteEyebrow]         = useState('Get a Quote');
+  const [quoteSubtitle,       setQuoteSubtitle]        = useState('Tell us what you need — our team replies within 2 business hours.');
   const [isClientRequestOpen, setIsClientRequestOpen]  = useState(false);
 
-  const handleOpenQuote          = (s = '') => {
+  const handleOpenQuote = (s = '', opts = {}) => {
     setQuoteService(s);
-    // Tag leads opened from a scanned service QR page so the ERP can tell
-    // QR-scan requests apart from ordinary website quote requests.
-    setQuoteSource(window.location.pathname.startsWith('/services/qr/') ? 'QR Scan' : 'Quote Request');
+    const isQR = window.location.pathname.startsWith('/services/qr/');
+    setQuoteSource(isQR ? 'QR Scan' : (opts.source || 'Quote Request'));
+    setQuoteTitle(opts.title || 'Request a Quote');
+    setQuoteEyebrow(opts.eyebrow || 'Get a Quote');
+    setQuoteSubtitle(opts.subtitle || 'Tell us what you need — our team replies within 2 business hours.');
     setIsQuoteOpen(true);
   };
   const handleCloseQuote         = ()       => setIsQuoteOpen(false);
@@ -101,15 +111,17 @@ function WebsiteRoutes() {
   const handleCloseClientRequest = ()       => setIsClientRequestOpen(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-[#0A1E3F] dark:bg-navy-950 dark:text-white transition-colors duration-200">
-      <Navbar onOpenQuote={() => handleOpenQuote()} />
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${isQrApp ? 'bg-[#040D1F]' : 'bg-white text-[#0A1E3F] dark:bg-navy-950 dark:text-white'}`}>
+      {!isQrApp && <Navbar onOpenQuote={() => handleOpenQuote()} />}
       <main className="flex-grow">
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} />} />
             <Route path="/about" element={<PublicPage><AboutPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/services" element={<PublicPage><ServicesPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
-            <Route path="/services/qr/:slug" element={<PublicPage><QRServicePage onOpenQuote={handleOpenQuote} /></PublicPage>} />
+            {/* QR codes point here. Same page a normal service visit shows —
+                scanning simply opens that service's details. */}
+            <Route path="/services/qr/:slug" element={<QrServicePage onOpenQuote={handleOpenQuote} />} />
             <Route path="/services/:slug" element={<PublicPage><ServiceDetailPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/solutions" element={<PublicPage><SolutionsPage onOpenQuote={handleOpenQuote} onOpenClientRequest={handleOpenClientRequest} /></PublicPage>} />
             <Route path="/projects" element={<PublicPage><ProjectsPage onOpenQuote={handleOpenQuote} /></PublicPage>} />
@@ -129,9 +141,9 @@ function WebsiteRoutes() {
           </Routes>
         </Suspense>
       </main>
-      <Footer onOpenQuote={() => handleOpenQuote()} />
-      <WhatsAppButton />
-      <QuoteModal isOpen={isQuoteOpen} onClose={handleCloseQuote} initialService={quoteService} source={quoteSource} />
+      {!isQrApp && <Footer onOpenQuote={() => handleOpenQuote()} />}
+      {!isQrApp && <WhatsAppButton />}
+      <QuoteModal isOpen={isQuoteOpen} onClose={handleCloseQuote} initialService={quoteService} source={quoteSource} title={quoteTitle} eyebrow={quoteEyebrow} subtitle={quoteSubtitle} />
       <ClientRequestForm isOpen={isClientRequestOpen} onClose={handleCloseClientRequest} />
     </div>
   );
@@ -146,7 +158,8 @@ function AppRouter() {
     pathname.startsWith('/client-dashboard') ||
     pathname.startsWith('/admin-panel') ||
     pathname.startsWith('/staff-portal') ||
-    pathname.startsWith('/staff-login');
+    pathname.startsWith('/staff-login') ||
+    pathname.startsWith('/staff-checkin');
 
   return isStandalone ? <StandaloneRoutes /> : <WebsiteRoutes />;
 }

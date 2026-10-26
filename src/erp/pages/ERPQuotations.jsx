@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   collection, query, where, onSnapshot,
-  addDoc, updateDoc, deleteDoc, doc, getDocs, serverTimestamp, runTransaction,
+  addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, serverTimestamp, runTransaction,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../../config/firebase';
+import { db, storage, isFirebaseConfigured } from '../../config/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
 import { company } from '../../config/company';
 import { QUOTATION_TEMPLATE_SEEDS, seedId } from '../data/seedTemplates';
@@ -17,8 +18,11 @@ import {
 import {
   Plus, Send, Trash2, Edit2, CheckCircle2, Eye, Copy, Info,
   Printer, CreditCard, Play, AlertTriangle, Receipt as ReceiptIcon, XCircle,
-  MessageSquare
+  MessageSquare, Image as ImageIcon
 } from 'lucide-react';
+import QuotationDocStudio from '../components/QuotationDocStudio';
+import QuotationLetterheadPreview from '../components/QuotationLetterheadPreview';
+import { renderQuotationImageBlob, preloadQuotationTemplate } from '../components/quotationImage';
 
 // ── Helpers ───────────────────────────────────────────────────────
 const buid = () => `b${Date.now()}_${Math.random().toString(36).slice(2,5)}`;
@@ -153,6 +157,8 @@ const EMPTY_FORM = {
   description:'', scope:'',
   items:[{ id:buid(), label:'', amount:'' }],
   customFields:[],
+  // Screenshots shown inside the laptop / phone mockups on the letterhead
+  laptopShot:'', phoneShot:'',
   advancePct:30, validUntil:'', terms:'', paymentTerms:'', notes:'',
 };
 const EMPTY_PAY = { amount:'', date:'', method:'Bank Transfer', reference:'', notes:'' };
@@ -184,6 +190,41 @@ export default function ERPQuotations() {
   const [payForm,  setPayForm]  = useState(EMPTY_PAY);
   const [payError, setPayError] = useState('');
   const [payBusy,  setPayBusy]  = useState(false);
+
+  // Auto quotation image — bank details feed the letterhead, and the
+  // template is preloaded so "Save & Send" can paint instantly.
+  const [bankDetails, setBankDetails] = useState(null);
+  const [toast, setToast] = useState('');
+
+  // Quotation → shareable image / PDF studio
+  const [studioOpen, setStudioOpen] = useState(false);
+  // /erp/quotations?docdemo=1 → open the studio with a sample quotation so
+  // the document design can be previewed (read-only, writes nothing).
+  const [searchParams] = useSearchParams();
+  const [demoQuote, setDemoQuote] = useState(null);
+  useEffect(() => {
+    if (searchParams.get('docdemo') === '1') {
+      setDemoQuote(DEV_QUOTES[0]);
+      setStudioOpen(true);
+    }
+  }, [searchParams]);
+
+  // Warm the letterhead + bank details once per page visit
+  useEffect(() => {
+    preloadQuotationTemplate();
+    if (!live) return;
+    let alive = true;
+    getDoc(doc(db, 'settings', 'bankDetails'))
+      .then(snap => { if (alive && snap.exists()) setBankDetails(snap.data()); })
+      .catch(() => { /* bank section is optional */ });
+    return () => { alive = false; };
+  }, [live]);
+
+  // Lightweight toast for the auto-send result
+  const showToast = (t) => {
+    setToast(t);
+    setTimeout(() => setToast(''), 4200);
+  };
 
   // Receipt modal
   const [receipt,  setReceipt]  = useState(null);
@@ -268,7 +309,7 @@ ${lines}
 💰 Total: ${formatLKR(sel.totalAmount)}
 📌 Advance (${toInt(sel.advancePct)}%): ${formatLKR(sel.advanceAmount)}
 
-🔗 View & accept in your client portal: ${window.location.origin}/client-login
+${sel.renderImage?.url ? `🖼 Quotation image: ${sel.renderImage.url}\n` : ''}🔗 View & accept in your client portal: ${window.location.origin}/client-login
 
 — ${company.fullName} Team`;
   };
@@ -298,6 +339,30 @@ We've received your payment — thank you! 🙏
   const total          = form.items.reduce((s,i) => s + toInt(i.amount), 0);
   const advancePreview = Math.round(total * toInt(form.advancePct) / 100);
 
+  // Unsaved form data shaped like a quotation doc, so the letterhead preview
+  // and the Image Studio work before the quotation is saved.
+  const editingQuote = editId ? quotes.find(q => q.id === editId) : null;
+  const formPreview = {
+    id: `form-${editId || 'new'}`,
+    quotationNo: editingQuote?.quotationNo || '',
+    clientName: clientSel?.name || '',
+    clientCompany: clientSel?.company || '',
+    projectTitle: form.projectTitle || '',
+    service: form.service || '',
+    description: form.description || '',
+    scope: form.scope || '',
+    items: form.items.filter(i => i.label.trim() && toInt(i.amount) > 0)
+      .map(i => ({ label:i.label, amount:toInt(i.amount) })),
+    totalAmount: total,
+    advanceAmount: advancePreview,
+    validUntil: form.validUntil || '',
+    createdAt: todayISO(),
+    status: 'Draft',
+    laptopShot: form.laptopShot || '',
+    phoneShot: form.phoneShot || '',
+    renderImage: editingQuote?.renderImage || null,
+  };
+
   // ── Form open / close ────────────────────────────────────────────
   const openCreate = () => {
     setEditId(null); setForm(EMPTY_FORM); setFormError('');
@@ -320,6 +385,8 @@ We've received your payment — thank you! 🙏
       terms:       q.terms || '',
       paymentTerms:q.paymentTerms || '',
       notes:       q.notes || '',
+      laptopShot:  q.laptopShot || '',
+      phoneShot:   q.phoneShot || '',
     });
     setFormError('');
     setView('form');
@@ -327,6 +394,74 @@ We've received your payment — thank you! 🙏
   };
 
   const closeForm = () => { setView('list'); setEditId(null); setForm(EMPTY_FORM); setFormError(''); };
+
+  // Screenshots uploaded in the Image Studio (laptop / phone mockups).
+  // In the form they live in form state and are saved with the quotation;
+  // for a saved quotation they are written straight to Firestore.
+  const handleShotsChange = (patch) => {
+    if (view === 'form') { setForm(p => ({ ...p, ...patch })); return; }
+    if (!sel) return;
+    setQuotes(rows => rows.map(q => q.id === sel.id ? { ...q, ...patch } : q));
+    if (live) {
+      updateDoc(doc(db, 'quotations', sel.id), { ...patch, updatedAt: serverTimestamp() })
+        .catch(e => console.error('quotation screenshot save failed', e));
+    }
+  };
+
+
+  // Save the rendered letterhead image onto the quotation (Storage + doc URL),
+  // so it stays available after the studio is closed — view / download later.
+  const renderPath = (id) => `quotation-renders/${id}/letterhead.jpg`;
+
+  // `edited: true` = saved from the Image Studio (manually touched), so the
+  // auto-renderer must not repaint over it and Send must deliver this copy.
+  const saveQuoteImage = async (id, blob, { edited = false } = {}) => {
+    const path = renderPath(id);
+    const r = storageRef(storage, path);
+    // Same path is overwritten on every save — make the URL revalidate so
+    // the client never sees a cached older quotation.
+    await uploadBytes(r, blob, { contentType: 'image/jpeg', cacheControl: 'public,max-age=0' });
+    const url = await getDownloadURL(r);
+    await updateDoc(doc(db, 'quotations', id), {
+      renderImage: { url, path, savedAt: serverTimestamp(), edited },
+      updatedAt: serverTimestamp(),
+    });
+    setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: { url, path, edited } } : q));
+    return url;
+  };
+
+  const handleSaveRender = async (blob) => {
+    if (!live) throw new Error('Image save needs the live database — connect Firebase first.');
+    const targetId = (view === 'form' ? editId : sel?.id) || null;
+    if (!targetId) throw new Error('Save the quotation first, then save its image.');
+    await saveQuoteImage(targetId, blob, { edited: true });
+    showToast('Edited image saved — this is the copy the client will receive.');
+  };
+
+  // ── Automatic quotation image ───────────────────────────────────
+  // Every save paints the quotation onto the letterhead with the saved
+  // data, uploads it, and stores the URL on the doc. Sending updates the
+  // status — the image rides along in the client's own portal, no
+  // WhatsApp hop needed.
+  // Paint + upload the letterhead image. The client portal listens to the
+  // quotation doc, so the moment renderImage lands it is visible there.
+  const saveQuoteImageNow = async (q, id) => {
+    const blob = await renderQuotationImageBlob(q, bankDetails);
+    await saveQuoteImage(id, blob);
+  };
+
+  const autoQuoteImage = async (q, id, sendNow) => {
+    if (!live || !id || !q) return;
+    try {
+      await saveQuoteImageNow(q, id);
+      showToast(sendNow
+        ? 'Quotation image saved & sent to the client portal.'
+        : 'Quotation image saved automatically.');
+    } catch (e) {
+      console.error('automatic quotation image failed', e);
+      showToast('Quotation saved, but its image could not be built.');
+    }
+  };
 
   // ── Template copy-on-create ──────────────────────────────────────
   const applyTemplate = (tpl) => {
@@ -404,9 +539,44 @@ We've received your payment — thank you! 🙏
     } catch (e) { console.error('project status sync failed', e); }
   };
 
+  // Image first, then flip to Sent. The portal only lists non-Draft
+  // quotations, so the client always opens a copy that already carries
+  // its letterhead image — no WhatsApp step involved.
+  // If an image is already saved (auto or edited in the studio), that exact
+  // copy is what gets sent — an edited image is never repainted over.
+  const sendQuoteWithImage = async (q, id) => {
+    let imageOk = false;
+    const existing = q?.renderImage?.url || quotes.find(r => r.id === id)?.renderImage?.url || null;
+    if (live) {
+      if (existing) {
+        imageOk = true;
+      } else {
+        try { await saveQuoteImageNow(q, id); imageOk = true; }
+        catch (e) { console.error('quotation image before send failed', e); }
+      }
+      try {
+        await updateDoc(doc(db, 'quotations', id), {
+          status: 'Sent', sentAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+        setQuotes(rows => rows.map(r => r.id === id ? { ...r, status: 'Sent' } : r));
+        await syncProjectStatus({ ...q, id }, 'Sent');
+      } catch (e) {
+        console.error(e);
+        setLoadError('Could not mark the quotation as sent.');
+        return;
+      }
+    } else {
+      setQuotes(rows => rows.map(r => r.id === id ? { ...r, status: 'Sent' } : r));
+    }
+    showToast(imageOk
+      ? 'Quotation sent to the client portal with its letterhead image.'
+      : 'Quotation sent — the image could not be built this time.');
+  };
+
   // ── Save (create or update) ──────────────────────────────────────
   const handleSave = async (sendNow = false) => {
-    if (!form.clientId)           { setFormError('Select a client.'); return; }
+    // Drafts can be saved without a client — only sending needs one.
+    if (sendNow && !form.clientId) { setFormError('Select a client before sending the quotation.'); return; }
     if (!form.projectTitle.trim()) { setFormError('Enter the project / service title.'); return; }
     const items = form.items.filter(i => i.label.trim() && toInt(i.amount) > 0)
       .map(i => ({ id:i.id, label:i.label.trim(), amount:toInt(i.amount) }));
@@ -434,6 +604,8 @@ We've received your payment — thank you! 🙏
       terms:        form.terms,
       paymentTerms: form.paymentTerms,
       notes:        form.notes,
+      laptopShot:   form.laptopShot || '',
+      phoneShot:    form.phoneShot || '',
       validUntil:   form.validUntil,
       updatedAt:    serverTimestamp(),
     };
@@ -441,32 +613,51 @@ We've received your payment — thank you! 🙏
     setSaving(true);
     setFormError('');
 
+    // A manually edited letterhead (Image Studio) is never auto-repainted on
+    // a plain save — the admin's edited image is the one that goes out.
+    const currentQuote = editId ? quotes.find(q => q.id === editId) : null;
+    const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.url);
+
     try {
+      let savedId = editId || null;
+      let savedQuote = null;
       if (editId) {
         const current = quotes.find(q => q.id === editId);
         const patch = { ...base };
-        if (sendNow && current?.status === 'Draft') { patch.status = 'Sent'; patch.sentAt = serverTimestamp(); }
         if (live) {
           await updateDoc(doc(db, 'quotations', editId), patch);
         } else {
           setQuotes(p => p.map(q => q.id === editId ? { ...q, ...patch } : q));
         }
+        savedQuote = { ...(current || {}), ...base, ...patch, id: editId };
       } else {
         const quotationNo = live ? await nextNumber('quotations', 'Q') : `Q-${Date.now().toString().slice(-6)}`;
         // Link to the client's open pipeline project (created when the lead was accepted)
         const linkedProj = await findLinkedProject(form.clientId, form.projectTitle);
+        // Always created as Draft — it flips to Sent only after the
+        // letterhead image is stored, so the client never sees a
+        // quotation without its image.
         const docData = { ...base, quotationNo, projectId: linkedProj?.id || null, paidTotal:0, paymentsCount:0,
-                          status: sendNow ? 'Sent' : 'Draft',
-                          ...(sendNow ? { sentAt: serverTimestamp() } : {}),
-                          createdAt: serverTimestamp() };
+                          status: 'Draft', createdAt: serverTimestamp() };
         if (live) {
-          await addDoc(collection(db, 'quotations'), docData);
+          const ref = await addDoc(collection(db, 'quotations'), docData);
+          savedId = ref.id;
+          savedQuote = { ...docData, id: ref.id };
         } else {
-          setQuotes(p => [{ id:`QT${Date.now()}`, ...docData, createdAt: new Date().toISOString() }, ...p]);
+          const localId = `QT${Date.now()}`;
+          setQuotes(p => [{ id:localId, ...docData, createdAt: new Date().toISOString() }, ...p]);
+          savedQuote = { ...docData, id: localId };
         }
       }
       setSaving(false);
       closeForm();
+      if (savedId) setSelected(savedId);
+      // Automatic image (paint → upload → renderImage) and send when asked.
+      if (live && savedQuote) {
+        if (sendNow) await sendQuoteWithImage(savedQuote, savedId);
+        else if (keepEditedImage) showToast('Saved — your edited letterhead image is kept.');
+        else await autoQuoteImage(savedQuote, savedId, false);
+      }
     } catch (e) {
       console.error(e);
       setFormError('Could not save the quotation. Please try again.');
@@ -489,7 +680,26 @@ We've received your payment — thank you! 🙏
     }
   };
 
-  const handleSend      = (qid) => patchQuote(qid, { status:'Sent', sentAt: serverTimestamp() });
+  // Send to Client = save the letterhead image first, then mark Sent.
+  const handleSend = async (qid) => {
+    const q = quotes.find(x => x.id === qid);
+    if (!q) return;
+    if (!q.clientId) {
+      showToast('This draft has no client — select one, then send.');
+      openEdit(q);
+      return;
+    }
+    await sendQuoteWithImage(q, qid);
+  };
+
+  // Re-deliver an already-sent quotation after its image was edited.
+  // The saved image is reused as-is (never repainted) and the client's
+  // portal shows the fresh copy instantly.
+  const handleResendImage = async (qid) => {
+    const q = quotes.find(x => x.id === qid);
+    if (!q) return;
+    await sendQuoteWithImage(q, qid);
+  };
   const handleAccept    = (qid) => patchQuote(qid, { status:'Accepted', acceptedAt: serverTimestamp() });
   const handleStartWork = (qid) => patchQuote(qid, { status:'In Progress' });
 
@@ -628,6 +838,50 @@ We've received your payment — thank you! 🙏
           .qt-split  { grid-template-columns: 1fr !important; }
           .qt-sticky { position: static !important; }
         }
+        /* Phone view: panels arrive as app-style bottom sheets */
+        .qt-sheet-backdrop { display: none; }
+        .qt-sheet-grip { display: none; }
+        @media (max-width: 640px) {
+          .qt-sheet-backdrop {
+            display: block; position: fixed; inset: 0; z-index: 149;
+            background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+            animation: qtFade 0.2s ease;
+          }
+          .qt-form-sheet, .qt-detail-sheet {
+            position: fixed !important;
+            left: 0; right: 0; bottom: 0; top: auto !important;
+            width: 100% !important; max-width: 100% !important;
+            max-height: 92dvh !important; height: auto !important;
+            overflow-y: auto !important; -webkit-overflow-scrolling: touch;
+            z-index: 150;
+            margin: 0 !important;
+            padding: 0 12px calc(14px + env(safe-area-inset-bottom)) !important;
+            border-radius: 22px 22px 0 0 !important;
+            background: #06112B !important;
+            border-left: none !important; border-right: none !important; border-bottom: none !important;
+            box-shadow: 0 -24px 70px rgba(0,0,0,0.65);
+            animation: qtSheetUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+          }
+          .qt-form-sheet { gap: 12px !important; padding-top: 6px !important; }
+          .qt-form-sheet .qt-sticky { position: static !important; max-height: none !important; }
+          .qt-detail-sheet > div:first-child,
+          .qt-detail-sheet .qt-detail-head { border-radius: 22px 22px 0 0; }
+          .qt-detail-body { max-height: none !important; overflow: visible !important; padding-bottom: 6px !important; }
+          .qt-form-sheet .qt-form-actions {
+            position: sticky; bottom: calc(-1 * env(safe-area-inset-bottom)); z-index: 3;
+            background: linear-gradient(to top, #06112B 72%, rgba(6,17,43,0));
+            padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+            margin-top: -2px;
+          }
+          .qt-sheet-grip {
+            display: flex; justify-content: center; align-items: center;
+            grid-column: 1 / -1; padding: 10px 0 4px; position: sticky; top: 0; z-index: 4;
+            background: inherit; border-radius: 22px 22px 0 0;
+          }
+          .qt-sheet-grip span { width: 44px; height: 4px; border-radius: 99px; background: rgba(145,160,188,0.5); }
+          @keyframes qtSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+          @keyframes qtFade { from { opacity: 0; } to { opacity: 1; } }
+        }
         @media print {
           body * { visibility: hidden !important; }
           .receipt-print, .receipt-print * { visibility: visible !important; }
@@ -644,7 +898,10 @@ We've received your payment — thank you! 🙏
 
       {/* ═══════════════ CREATE / EDIT FORM ═══════════════ */}
       {view === 'form' && (
-        <div className="qt-split" style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:16, alignItems:'start' }}>
+        <>
+        <div className="qt-sheet-backdrop" onClick={closeForm}/>
+        <div className="qt-split qt-form-sheet" style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:16, alignItems:'start' }}>
+          <div className="qt-sheet-grip"><span/></div>
 
           {/* Left — form */}
           <div style={{ display:'flex', flexDirection:'column', gap:12, minWidth:0 }}>
@@ -657,7 +914,12 @@ We've received your payment — thank you! 🙏
                     Client → Service → Template, then edit and save as draft or send to the client
                   </div>
                 </div>
-                <ERPBtn variant="ghost" onClick={closeForm}>✕ Cancel</ERPBtn>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                  <ERPBtn variant="secondary" onClick={() => setStudioOpen(true)} title="Preview the letterhead and export as image / PDF">
+                    <ImageIcon size={13}/> Letterhead / Image
+                  </ERPBtn>
+                  <ERPBtn variant="ghost" onClick={closeForm}>✕ Cancel</ERPBtn>
+                </div>
               </div>
             </ERPPanel>
 
@@ -846,7 +1108,7 @@ We've received your payment — thank you! 🙏
             </ERPPanel>
 
             {/* Actions */}
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            <div className="qt-form-actions" style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
               <ERPBtn variant="secondary" onClick={closeForm} style={{ flex:1, minWidth:110, justifyContent:'center' }}>Cancel</ERPBtn>
               <ERPBtn variant="ghost" onClick={() => handleSave(false)} disabled={saving}
                 style={{ flex:1, minWidth:110, justifyContent:'center' }}>💾 Save Draft</ERPBtn>
@@ -858,12 +1120,14 @@ We've received your payment — thank you! 🙏
           </div>
 
           {/* Right — live preview */}
-          <ERPPanel className="qt-sticky" style={{ position:'sticky', top:0 }}>
+          <ERPPanel className="qt-sticky" style={{ position:'sticky', top:0, maxHeight:'calc(100vh - 110px)', overflowY:'auto' }}>
             <ERPPanelHeader title="Preview" icon="👁️"/>
             <div style={{ padding:18, display:'flex', flexDirection:'column', gap:12 }}>
               <div style={{ fontSize:11, color:C.muted }}>
                 {editId ? 'Editing existing quotation' : 'New quotation — number is assigned on save'}
               </div>
+              <QuotationLetterheadPreview quotation={formPreview} onOpen={() => setStudioOpen(true)} />
+              <div style={{ height:1, background:C.border }}/>
               {form.clientId && (
                 <div style={{ display:'flex', gap:10, alignItems:'center' }}>
                   <ERPAvatar name={clientSel?.name || '?'} color={C.blue} size={32}/>
@@ -919,6 +1183,7 @@ We've received your payment — thank you! 🙏
             </div>
           </ERPPanel>
         </div>
+        </>
       )}
 
       {/* ═══════════════ LIST VIEW ═══════════════ */}
@@ -1025,7 +1290,10 @@ We've received your payment — thank you! 🙏
 
               {/* Detail panel */}
               {sel && (
-                <ERPPanel className="qt-sticky" style={{ position:'sticky', top:0 }}>
+                <>
+                <div className="qt-sheet-backdrop" onClick={() => setSelected(null)}/>
+                <ERPPanel className="qt-sticky qt-detail-sheet" style={{ position:'sticky', top:0 }}>
+                  <div className="qt-sheet-grip"><span/></div>
                   <div style={{ padding:'14px 18px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
                     <div style={{ minWidth:0 }}>
                       <div style={{ fontSize:13, fontWeight:800, color:C.text }}>{sel.quotationNo || sel.id}</div>
@@ -1040,7 +1308,7 @@ We've received your payment — thank you! 🙏
                     </div>
                   </div>
 
-                  <div style={{ padding:18, display:'flex', flexDirection:'column', gap:14, maxHeight:'70vh', overflowY:'auto' }}>
+                  <div className="qt-detail-body" style={{ padding:18, display:'flex', flexDirection:'column', gap:14, maxHeight:'70vh', overflowY:'auto' }}>
 
                     {/* Meta */}
                     <div style={{ fontSize:11, color:C.subtle, lineHeight:1.7 }}>
@@ -1173,6 +1441,32 @@ We've received your payment — thank you! 🙏
                     {sel.terms &&       <div style={{ fontSize:10, color:C.muted }}>📑 {sel.terms}</div>}
                     {sel.notes &&       <div style={{ fontSize:10, color:C.muted }}>📝 {sel.notes}</div>}
 
+                    {/* Saved letterhead image (from the Image Studio) */}
+                    {sel.renderImage?.url && (
+                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:9, borderRadius:10,
+                        background:'rgba(24,199,122,0.07)', border:'1px solid rgba(24,199,122,0.25)' }}>
+                        <img src={sel.renderImage.url} alt="Saved quotation letterhead"
+                          style={{ width:44, height:62, objectFit:'cover', objectPosition:'top', borderRadius:6,
+                            border:`1px solid ${C.border}`, background:'#fff' }} />
+                        <div style={{ flex:1, minWidth:120 }}>
+                          <div style={{ fontSize:11, fontWeight:700, color:C.green }}>
+                            {sel.renderImage.edited ? 'Edited letterhead saved' : 'Letterhead image saved'}
+                          </div>
+                          <div style={{ fontSize:10, color:C.muted }}>
+                            {sel.renderImage.edited
+                              ? 'This edited copy is what gets sent to the client.'
+                              : 'Open or send it anytime — no need to rebuild.'}
+                          </div>
+                        </div>
+                        <a href={sel.renderImage.url} target="_blank" rel="noopener noreferrer"
+                          style={{ display:'flex', alignItems:'center', gap:5, textDecoration:'none', padding:'6px 10px',
+                            borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
+                            color:C.green, fontWeight:700, fontSize:11 }}>
+                          <ImageIcon size={11}/> Open
+                        </a>
+                      </div>
+                    )}
+
                     {/* Actions */}
                     <div style={{ display:'flex', flexDirection:'column', gap:8, borderTop:`1px solid ${C.border}`, paddingTop:12 }}>
                       {sel.status === 'Advance Paid' && (
@@ -1197,6 +1491,15 @@ We've received your payment — thank you! 🙏
                         {canPay(sel) && (
                           <ERPBtn size="sm" variant="success" onClick={() => openPay(sel)}><CreditCard size={12}/> Record Payment</ERPBtn>
                         )}
+                        <ERPBtn size="sm" variant="secondary" onClick={() => setStudioOpen(true)} title="Build an editable image / PDF of this quotation">
+                          <ImageIcon size={12}/> Image / PDF
+                        </ERPBtn>
+                        {sel.renderImage?.url && ['Sent','Accepted','Advance Paid','In Progress'].includes(sel.status) && (
+                          <ERPBtn size="sm" variant="secondary" onClick={() => handleResendImage(sel.id)}
+                            title="Push the saved / edited letterhead to the client portal again">
+                            <Send size={12}/> Re-send to Client
+                          </ERPBtn>
+                        )}
                         {selClient?.phone && ['Sent', 'Accepted'].includes(sel.status) && (
                           <a href={waLink(selClient.phone, quotationWhatsApp())} target="_blank" rel="noopener noreferrer"
                             style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, textDecoration:'none',
@@ -1219,6 +1522,7 @@ We've received your payment — thank you! 🙏
                     </div>
                   </div>
                 </ERPPanel>
+                </>
               )}
             </div>
           )}
@@ -1399,6 +1703,28 @@ We've received your payment — thank you! 🙏
           </div>
         )}
       </ERPModal>
+
+      {/* Auto quotation-image result */}
+      {toast && (
+        <div style={{
+          position:'fixed', right:20, bottom:20, zIndex:250, maxWidth:340, padding:'11px 16px',
+          borderRadius:12, background:'rgba(6,17,43,0.97)', border:'1px solid rgba(24,199,122,0.5)',
+          color:'#DFF7EC', fontSize:12, fontWeight:700, lineHeight:1.5,
+          boxShadow:'0 14px 34px rgba(0,0,0,0.55)',
+        }}>
+          {toast}
+        </div>
+      )}
+
+      {/* ═══════════════ IMAGE / PDF STUDIO ═══════════════ */}
+      <QuotationDocStudio
+        isOpen={studioOpen}
+        onClose={() => { setStudioOpen(false); setDemoQuote(null); }}
+        quotation={sel || demoQuote || (view === 'form' ? formPreview : null)}
+        waHref={selClient?.phone ? waLink(selClient.phone, quotationWhatsApp()) : ''}
+        onShotsChange={handleShotsChange}
+        onSaveImage={handleSaveRender}
+      />
     </div>
   );
 }

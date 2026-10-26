@@ -50,7 +50,7 @@ export default function PricingPage({ onOpenQuote, onOpenClientRequest }) {
               </p>
             </div>
             <button
-              onClick={() => onOpenQuote("Add-On Services")}
+              onClick={() => onOpenQuote("Add-On Services", { title: "Inquire About Add-On Services", eyebrow: "Add-Ons", subtitle: "Tell us which add-on services interest you — we'll send pricing details.", source: "Add-On Inquiry" })}
               className="px-4 py-2 rounded-xl text-xs font-bold text-primary-cyan bg-primary/20 hover:bg-primary/30 border border-primary/30 self-start sm:self-auto"
             >
               Inquire Add-ons

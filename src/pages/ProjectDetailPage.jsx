@@ -60,6 +60,20 @@ export default function ProjectDetailPage({ onOpenQuote }) {
                 </span>
               ))}
             </div>
+
+            {/* Live Website Link */}
+            {project.liveUrl && (
+              <div className="pt-2">
+                <a
+                  href={project.liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-glow-sm transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Visit Live Website
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -122,7 +136,7 @@ export default function ProjectDetailPage({ onOpenQuote }) {
               </ul>
 
               <button
-                onClick={() => onOpenQuote(project.name)}
+                onClick={() => onOpenQuote(project.name, { title: `Request Similar System`, eyebrow: "Case Study Inquiry", subtitle: `Interested in something like ${project.name}? Tell us your requirements.`, source: `Project Inquiry — ${project.name}` })}
                 className="w-full py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all"
               >
                 Request Similar System

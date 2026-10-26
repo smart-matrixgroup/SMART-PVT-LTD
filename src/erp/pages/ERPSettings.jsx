@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { ERPPanel, ERPPanelHeader, ERPBtn, ERPInput, ERPTextarea, C } from '../components/ERPui';
 import { Save, Shield, Bell, Building, User, Lock, ShieldCheck, Landmark } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../../config/firebase';
+import {
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword,
+} from 'firebase/auth';
+import { db, auth, isFirebaseConfigured } from '../../config/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { company } from '../../config/company';
 import ERPAccessRules from './ERPAccessRules';
 
@@ -16,12 +20,15 @@ const SECTIONS = [
 ];
 
 const EMPTY_BANK = {
-  bankName:'', accountName:'', accountNumber:'', branch:'', swiftCode:'', instructions:'',
+  bankName:'', accountName:'', accountNumber:'', branch:'', accountType:'', swiftCode:'', instructions:'',
 };
 
 export default function ERPSettings() {
+  const { currentUser } = useAuth();
   const [section, setSection] = useState('company');
   const [saved,   setSaved]   = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [savingSection, setSavingSection] = useState(null);
 
   const [compForm, setCompForm] = useState({
     name:    company.name,
@@ -59,6 +66,20 @@ export default function ERPSettings() {
       .catch(()=>setBankLoaded(true));
   }, []);
 
+  // Load the other settings sections from Firestore so edits persist.
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    Promise.all([
+      getDoc(doc(db, 'settings', 'companyInfo')),
+      getDoc(doc(db, 'settings', 'adminProfile')),
+      getDoc(doc(db, 'settings', 'notifications')),
+    ]).then(([comp, admin, notif]) => {
+      if (comp.exists()) setCompForm(p => ({ ...p, ...comp.data() }));
+      if (admin.exists()) setAdminForm(p => ({ ...p, ...admin.data() }));
+      if (notif.exists()) setNotifs(p => ({ ...p, ...notif.data() }));
+    }).catch(err => console.error('Settings load error', err));
+  }, []);
+
   const handleSaveBank = async () => {
     setBankError('');
     if (!bankForm.bankName.trim() || !bankForm.accountNumber.trim()) {
@@ -79,9 +100,67 @@ export default function ERPSettings() {
     }
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(()=>setSaved(false),2500);
+  // Persist a settings section to Firestore (settings/<doc>).
+  const persistSection = async (docId, data, sectionKey) => {
+    setSaveError('');
+    if (!isFirebaseConfigured) {
+      setSaveError('Firebase is not configured — settings can only be saved in the live app.');
+      return;
+    }
+    setSavingSection(sectionKey);
+    try {
+      await setDoc(doc(db, 'settings', docId), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2600);
+    } catch (e) {
+      console.error('Settings save failed', e);
+      setSaveError(e.message || 'Could not save settings. Please try again.');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const handleSaveCompany = () => persistSection('companyInfo', compForm, 'company');
+  const handleSaveAdmin   = () => persistSection('adminProfile', adminForm, 'admin');
+  const handleSaveNotifs  = () => persistSection('notifications', notifs, 'notify');
+
+  const handleUpdatePassword = async () => {
+    setSaveError('');
+    if (!passForm.current || !passForm.newPass || !passForm.confirm) {
+      setSaveError('Enter your current password, the new password and the confirmation.');
+      return;
+    }
+    if (passForm.newPass.length < 8) {
+      setSaveError('New password must be at least 8 characters.');
+      return;
+    }
+    if (passForm.newPass !== passForm.confirm) {
+      setSaveError('New password and confirmation do not match.');
+      return;
+    }
+    if (!isFirebaseConfigured || !currentUser?.email) {
+      setSaveError('Firebase is not configured — password can only be changed in the live app.');
+      return;
+    }
+    setSavingSection('security');
+    try {
+      const cred = EmailAuthProvider.credential(currentUser.email, passForm.current);
+      await reauthenticateWithCredential(currentUser, cred);
+      await updatePassword(currentUser, passForm.newPass);
+      setPassForm({ current: '', newPass: '', confirm: '' });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2600);
+    } catch (e) {
+      console.error('Password update failed', e);
+      const msg = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+        ? 'Current password is incorrect.'
+        : e.code === 'auth/weak-password'
+        ? 'New password is too weak — use 8+ characters with letters and numbers.'
+        : e.message || 'Could not update the password.';
+      setSaveError(msg);
+    } finally {
+      setSavingSection(null);
+    }
   };
 
   return (
@@ -109,10 +188,15 @@ export default function ERPSettings() {
       {/* Content */}
       <div style={{flex:1,display:'flex',flexDirection:'column',gap:14}}>
 
-        {/* Save success */}
+        {/* Save success / error */}
         {saved && (
           <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(24,199,122,0.1)',border:'1px solid rgba(24,199,122,0.3)',fontSize:12,color:C.green,fontWeight:600,display:'flex',alignItems:'center',gap:8}}>
-            ✅ Settings saved successfully!
+            ✅ Settings saved successfully — stored in Firestore, synced across devices.
+          </div>
+        )}
+        {saveError && (
+          <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(240,90,103,0.1)',border:'1px solid rgba(240,90,103,0.3)',fontSize:12,color:C.red,fontWeight:600,display:'flex',alignItems:'center',gap:8}}>
+            ⚠ {saveError}
           </div>
         )}
 
@@ -139,8 +223,8 @@ export default function ERPSettings() {
                   <ERPInput label="LinkedIn" value={compForm.linkedin} onChange={e=>setCompForm(p=>({...p,linkedin:e.target.value}))} placeholder="https://linkedin.com/..." />
                 </div>
               </div>
-              <ERPBtn variant="primary" onClick={handleSave} style={{alignSelf:'flex-end',gap:6}}>
-                <Save size={13}/> Save Changes
+              <ERPBtn variant="primary" onClick={handleSaveCompany} disabled={savingSection === 'company'} style={{alignSelf:'flex-end',gap:6}}>
+                <Save size={13}/> {savingSection === 'company' ? 'Saving…' : 'Save Changes'}
               </ERPBtn>
             </div>
           </ERPPanel>
@@ -165,8 +249,8 @@ export default function ERPSettings() {
                 <ERPInput label="Email" value={adminForm.email} type="email" onChange={e=>setAdminForm(p=>({...p,email:e.target.value}))} />
               </div>
               <ERPInput label="Phone" value={adminForm.phone} onChange={e=>setAdminForm(p=>({...p,phone:e.target.value}))} placeholder="+94 77 000 0000" />
-              <ERPBtn variant="primary" onClick={handleSave} style={{alignSelf:'flex-end'}}>
-                <Save size={13}/> Save Profile
+              <ERPBtn variant="primary" onClick={handleSaveAdmin} disabled={savingSection === 'admin'} style={{alignSelf:'flex-end'}}>
+                <Save size={13}/> {savingSection === 'admin' ? 'Saving…' : 'Save Profile'}
               </ERPBtn>
             </div>
           </ERPPanel>
@@ -184,8 +268,8 @@ export default function ERPSettings() {
               <ERPInput label="Current Password" value={passForm.current} type="password" onChange={e=>setPassForm(p=>({...p,current:e.target.value}))} placeholder="••••••••" />
               <ERPInput label="New Password" value={passForm.newPass} type="password" onChange={e=>setPassForm(p=>({...p,newPass:e.target.value}))} placeholder="Min 8 characters" />
               <ERPInput label="Confirm New Password" value={passForm.confirm} type="password" onChange={e=>setPassForm(p=>({...p,confirm:e.target.value}))} placeholder="Repeat new password" />
-              <ERPBtn variant="primary" onClick={handleSave} style={{alignSelf:'flex-end'}}>
-                <Lock size={13}/> Update Password
+              <ERPBtn variant="primary" onClick={handleUpdatePassword} disabled={savingSection === 'security'} style={{alignSelf:'flex-end'}}>
+                <Lock size={13}/> {savingSection === 'security' ? 'Updating…' : 'Update Password'}
               </ERPBtn>
             </div>
           </ERPPanel>
@@ -234,6 +318,7 @@ export default function ERPSettings() {
                 <ERPInput label="Branch" value={bankForm.branch} onChange={e=>setBankForm(p=>({...p,branch:e.target.value}))} placeholder="Colombo Main Branch" />
               </div>
               <ERPInput label="SWIFT / BIC Code (optional)" value={bankForm.swiftCode} onChange={e=>setBankForm(p=>({...p,swiftCode:e.target.value}))} placeholder="BCEYLYLX" />
+              <ERPInput label="Account Type" value={bankForm.accountType || ''} onChange={e=>setBankForm(p=>({...p,accountType:e.target.value}))} placeholder="Savings / Current" />
               <ERPTextarea label="Payment Instructions (shown to clients)" value={bankForm.instructions} rows={3} onChange={e=>setBankForm(p=>({...p,instructions:e.target.value}))} placeholder={'Transfer the advance to the account above.\nUse your project name as the payment reference.\nUpload a photo of the receipt/screenshot below.'} />
               <ERPBtn variant="primary" onClick={handleSaveBank} style={{alignSelf:'flex-end',gap:6,opacity:bankBusy?0.6:1}}>
                 <Save size={13}/> {bankBusy?'Saving…':'Save Bank Details'}
@@ -274,8 +359,8 @@ export default function ERPSettings() {
                   </div>
                 </div>
               ))}
-              <ERPBtn variant="primary" onClick={handleSave} style={{alignSelf:'flex-end',marginTop:8}}>
-                <Save size={13}/> Save Preferences
+              <ERPBtn variant="primary" onClick={handleSaveNotifs} disabled={savingSection === 'notify'} style={{alignSelf:'flex-end',marginTop:8}}>
+                <Save size={13}/> {savingSection === 'notify' ? 'Saving…' : 'Save Preferences'}
               </ERPBtn>
             </div>
           </ERPPanel>

@@ -188,7 +188,7 @@ export default function ClientLoginPage({ onOpenQuote }) {
           <div className="pt-2 border-t border-[#DCE6F2] dark:border-surface-border text-center text-xs text-[#5B6E88] dark:text-text-muted">
             Not a client yet?{' '}
             <button
-              onClick={() => onOpenQuote()}
+              onClick={() => onOpenQuote("", { title: "Request Client Onboarding", eyebrow: "New Client", subtitle: "Not a client yet? Tell us about your needs and we'll get you onboarded.", source: "Client Onboarding" })}
               className="text-primary dark:text-primary-cyan font-bold hover:underline"
             >
               Request onboarding →

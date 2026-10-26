@@ -3,6 +3,7 @@
 //  Dark 3D design system for all ERP pages
 // ─────────────────────────────────────────────────────────────────
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 // ── Colors ────────────────────────────────────────────────────────
 export const C = {
@@ -404,7 +405,10 @@ export function ERPEmpty({ icon='📭', title, sub, action, from='#0066FF', to='
 // ── Modal ──────────────────────────────────────────────────────────
 export function ERPModal({ isOpen, onClose, title, children, width=520 }) {
   if (!isOpen) return null;
-  return (
+  // Portal to <body>: the ERP page wrapper carries a `transform` for the 3D
+  // tilt, which would otherwise become the containing block for position:fixed
+  // and drop the modal into the middle of a tall form (cut off / misaligned).
+  return createPortal(
     <div style={{
       position:'fixed', inset:0, zIndex:200,
       background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)',
@@ -440,7 +444,8 @@ export function ERPModal({ isOpen, onClose, title, children, width=520 }) {
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

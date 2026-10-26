@@ -18,9 +18,20 @@ const services = objs.map(b => {
 }).filter(s => s.slug && s.title);
 console.log(`Parsed ${services.length} services`);
 
-const base = 'https://smartpvtltd.com';
+// Live hosting origin (custom domain is not registered yet).
+const base = process.env.QR_BASE_URL || 'https://smart-erp-2a2d3.web.app';
 const outDir = path.join(root, 'qr-codes');
 fs.mkdirSync(outDir, { recursive: true });
+
+// Master services QR — one code for the full catalogue.
+const servicesUrl = `${base}/services`;
+const masterFile = path.join(outDir, 'SMART-QR-all-services.png');
+await QRCode.toFile(masterFile, servicesUrl, {
+  width: 900, margin: 2, errorCorrectionLevel: 'H',
+  color: { dark: '#040D1F', light: '#FFFFFF' },
+});
+const masterB64 = fs.readFileSync(masterFile).toString('base64');
+console.log('OK', path.relative(root, masterFile), '->', servicesUrl);
 
 const rows = [];
 for (const s of services) {
@@ -34,7 +45,15 @@ for (const s of services) {
   console.log('OK', path.relative(root, file), '->', url);
 }
 
-const cards = rows.map(r => `
+const masterCard = `
+    <div class="card master">
+      <img src="data:image/png;base64,${masterB64}" alt="All Services"/>
+      <div class="t">All Services (Master)</div>
+      <div class="c">Full catalogue</div>
+      <div class="u">${servicesUrl}</div>
+    </div>`;
+
+const cards = masterCard + rows.map(r => `
     <div class="card">
       <img src="data:image/png;base64,${r.b64}" alt="${r.title}"/>
       <div class="t">${r.title}</div>
@@ -56,10 +75,11 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SMART Pvt 
   .u{font-size:8px;color:#777;margin-top:3px;word-break:break-all}
 </style></head><body>
 <h1>SMART Pvt Ltd — Official Service QR Codes</h1>
-<div class="sub">Scan to open the service page &amp; request form · smartpvtltd.com</div>
+<div class="sub">Scan to open the service page &amp; request form · ${base.replace(/^https?:\/\//, '')}</div>
 <div class="grid">${cards}</div>
 </body></html>`;
 
 fs.writeFileSync(path.join(outDir, 'PRINT-SHEET-all-14.html'), html);
-fs.writeFileSync(path.join(outDir, 'links.txt'), rows.map(r => `${r.title}  ->  ${r.url}`).join('\n'));
-console.log(`DONE: ${rows.length} QR PNGs + PRINT-SHEET-all-14.html + links.txt in qr-codes/`);
+fs.writeFileSync(path.join(outDir, 'links.txt'),
+  [`All Services  ->  ${servicesUrl}`, ...rows.map(r => `${r.title}  ->  ${r.url}`)].join('\n'));
+console.log(`DONE: ${rows.length + 1} QR PNGs (incl. master services) + PRINT-SHEET-all-14.html + links.txt in qr-codes/`);

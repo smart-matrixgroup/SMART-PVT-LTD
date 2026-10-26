@@ -19,6 +19,9 @@ import {
   getClientRequestPublicUrl,
   generateClientRequestQRCodeDataUrl,
   downloadClientRequestQRPng,
+  getServicesPublicUrl,
+  generateServicesQRCodeDataUrl,
+  downloadServicesQRPng,
 } from '../../utils/qrUtils';
 import {
   QrCode, Download, Printer, ExternalLink, Copy, Check,
@@ -32,6 +35,7 @@ export default function ERPQRServices() {
   const [activeTab, setActiveTab] = useState('master'); // 'master' | 'services'
   const [qrMap, setQrMap] = useState({});
   const [masterQr, setMasterQr] = useState(null);
+  const [masterServicesQr, setMasterServicesQr] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [copiedSlug, setCopiedSlug] = useState(null);
@@ -48,7 +52,13 @@ export default function ERPQRServices() {
         setMasterQr(masterDataUrl);
       }
 
-      // 2. Generate per-service QRs
+      // 2. Master services QR — opens the full /services listing
+      const servicesDataUrl = await generateServicesQRCodeDataUrl({ width: 500 });
+      if (isMounted && servicesDataUrl) {
+        setMasterServicesQr(servicesDataUrl);
+      }
+
+      // 3. Generate per-service QRs
       const map = {};
       for (const s of servicesList) {
         const dataUrl = await generateServiceQRCodeDataUrl(s.slug, { width: 450 });
@@ -63,6 +73,7 @@ export default function ERPQRServices() {
   }, [servicesList]);
 
   const masterRequestUrl = getClientRequestPublicUrl();
+  const servicesUrl = getServicesPublicUrl();
 
   const handleCopyMasterUrl = () => {
     navigator.clipboard.writeText(masterRequestUrl);
@@ -146,6 +157,43 @@ export default function ERPQRServices() {
             <div class="title">${service.title}</div>
             <img src="${qr}" class="qr-img" alt="QR" />
             <div class="url">${url}</div>
+          </div>
+          <script>window.onload = function() { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  const handlePrintServicesMaster = () => {
+    if (!masterServicesQr) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>SMART Pvt Ltd — All Services QR</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; margin: 0; padding: 40px; color: #040D1F; }
+            .card { border: 2px solid #0066FF; border-radius: 20px; padding: 30px; max-width: 400px; margin: 0 auto; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .logo { height: 44px; margin-bottom: 8px; }
+            .company { font-size: 16px; font-weight: 900; }
+            .title { font-size: 20px; font-weight: 800; color: #0066FF; margin-bottom: 4px; }
+            .sub { font-size: 12px; color: #475569; margin-bottom: 12px; }
+            .qr-img { width: 260px; height: 260px; margin: 0 auto; display: block; border-radius: 12px; }
+            .url { font-size: 11px; font-family: monospace; color: #64748B; margin-top: 14px; word-break: break-all; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <img src="/logos/SMART_LOGO_LM.png" class="logo" alt="SMART Pvt Ltd" onerror="this.style.display='none'" />
+            <div class="company">${company.fullName}</div>
+            <div class="title">All Services</div>
+            <div class="sub">Scan to explore our complete service catalogue</div>
+            <img src="${masterServicesQr}" class="qr-img" alt="Services QR" />
+            <div class="url">${servicesUrl}</div>
           </div>
           <script>window.onload = function() { window.print(); };</script>
         </body>
@@ -383,6 +431,107 @@ export default function ERPQRServices() {
       {/* ── TAB 2: INDIVIDUAL SERVICE QR CODES CATALOG ────────────── */}
       {activeTab === 'services' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Master Services QR — one QR for the full services listing */}
+          <ERPPanel style={{ overflow: 'hidden' }}>
+            <ERPPanelHeader
+              title="Master Services QR (All Services)"
+              icon={
+                <span style={{
+                  width: 30, height: 30, borderRadius: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'linear-gradient(135deg,#0066FF,#00D9FF)', color: '#fff',
+                }}>
+                  <LayoutGrid size={16} />
+                </span>
+              }
+              action={
+                <span style={{
+                  fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+                  background: 'rgba(0,217,255,0.14)', color: C.cyan, border: '1px solid rgba(0,217,255,0.35)'
+                }}>
+                  One QR → Full Catalogue
+                </span>
+              }
+            />
+            <div style={{
+              padding: '18px 22px', display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'center'
+            }}>
+              <div style={{
+                background: '#FFFFFF', padding: 12, borderRadius: 14,
+                boxShadow: '0 8px 26px rgba(0,102,255,0.22)', flexShrink: 0,
+              }}>
+                {masterServicesQr ? (
+                  <img src={masterServicesQr} alt="SMART All Services QR" style={{ width: 128, height: 128, display: 'block', borderRadius: 6 }} />
+                ) : (
+                  <div style={{ width: 128, height: 128, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: 10 }}>
+                    Generating…
+                  </div>
+                )}
+              </div>
+
+              <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Scan to browse every service</div>
+                <div style={{ fontSize: 11.5, color: C.subtle, lineHeight: 1.6, marginTop: 4 }}>
+                  Clients land on the full services catalogue and pick what they need — no request form, no extra pages.
+                  Every service still keeps its own individual QR below.
+                </div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '7px 10px',
+                  borderRadius: 8, background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+                }}>
+                  <Globe size={12} style={{ color: C.cyan, flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 10.5, fontFamily: 'monospace', color: C.subtle, flex: 1,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                  }}>{servicesUrl}</span>
+                  <button
+                    onClick={() => { navigator.clipboard?.writeText(servicesUrl); }}
+                    title="Copy URL"
+                    style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', display: 'flex', padding: 0 }}
+                  >
+                    <Copy size={12} />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                  <button
+                    disabled={!masterServicesQr}
+                    onClick={() => downloadServicesQRPng(masterServicesQr)}
+                    style={{
+                      padding: '8px 13px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: masterServicesQr ? 'pointer' : 'not-allowed',
+                      background: 'rgba(0,102,255,0.16)', border: `1px solid ${C.borderHi}`, color: C.cyan,
+                      display: 'flex', alignItems: 'center', gap: 5, opacity: masterServicesQr ? 1 : 0.5,
+                    }}
+                  >
+                    <Download size={12} /> Download PNG
+                  </button>
+                  <button
+                    disabled={!masterServicesQr}
+                    onClick={handlePrintServicesMaster}
+                    style={{
+                      padding: '8px 13px', borderRadius: 9, fontSize: 11, fontWeight: 700, cursor: masterServicesQr ? 'pointer' : 'not-allowed',
+                      background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.text,
+                      display: 'flex', alignItems: 'center', gap: 5, opacity: masterServicesQr ? 1 : 0.5,
+                    }}
+                  >
+                    <Printer size={12} /> Print
+                  </button>
+                  <a
+                    href={servicesUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      padding: '8px 13px', borderRadius: 9, fontSize: 11, fontWeight: 700, textDecoration: 'none',
+                      background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`, color: C.muted,
+                      display: 'flex', alignItems: 'center', gap: 5,
+                    }}
+                  >
+                    <ExternalLink size={12} /> Open Page
+                  </a>
+                </div>
+              </div>
+            </div>
+          </ERPPanel>
+
           {/* Search and Categories Bar */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', width: 280 }}>

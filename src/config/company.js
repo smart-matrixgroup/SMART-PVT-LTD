@@ -30,16 +30,17 @@ export const company = {
     { value: "Dedicated", label: "Post-Launch Support" },
   ],
 
-  // ⚠️ CONFIGURE_OFFICIAL_DETAILS — phone/address below are unverified
-  // placeholders (see master plan section 21). Replace with SMART's actual
-  // registered business details before launch.
+  // ⚠️ CONFIGURE_OFFICIAL_DETAILS — the address below is the owner-confirmed
+  // office location. Phone / WhatsApp are still unverified placeholders
+  // (see master plan section 21) — replace them with SMART's actual
+  // registered numbers before launch.
   contact: {
     phone: "+94 26 222 1234",
     phoneDisplay: "+94 26 222 1234",
     whatsapp: "+94770000000",
     whatsappDisplay: "+94 77 000 0000",
     email: "info@smartpvtltd.com",
-    address: "No. 123, Main Street, Trincomalee, Sri Lanka",
+    address: "135, 2nd Floor, Inner Harbour Rd, Orrshill, Trincomalee 31000, Sri Lanka",
     country: "Sri Lanka",
     currency: "LKR",
     businessHours: "Mon – Fri: 8:30 AM – 6:00 PM | Sat: 9:00 AM – 1:00 PM",

@@ -56,7 +56,7 @@ export default function ProjectCard({ project }) {
         </div>
       </div>
 
-      {/* View Case Study Link */}
+      {/* View Case Study Link + Live URL */}
       <div className="pt-6 mt-2 border-t border-[#DCE6F2] dark:border-surface-border/40 flex items-center justify-between">
         <Link
           to={`/projects/${project.slug}`}
@@ -64,7 +64,18 @@ export default function ProjectCard({ project }) {
         >
           View Case Study <ArrowUpRight className="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
         </Link>
-        <span className="text-[13px] text-[#5B6E88] dark:text-text-muted">Verified Solution</span>
+        {project.liveUrl ? (
+          <a
+            href={project.liveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors flex items-center gap-1"
+          >
+            <ArrowUpRight className="w-3 h-3" /> Live Site
+          </a>
+        ) : (
+          <span className="text-[13px] text-[#5B6E88] dark:text-text-muted">Verified Solution</span>
+        )}
       </div>
 
     </div>

@@ -84,7 +84,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
+        // The fixed conversation-ID checks make collection queries provable
+        // for rules (a query on conversations/admin_staff_<uid>/messages must
+        // be allowed for the whole path). Without them Firestore rejects the
+        // listener with "Missing or insufficient permissions" even though
+        // every individual message has the right receiverId.
         allow read: if isAdmin() || (request.auth != null && (
+          convId == 'admin_staff_' + request.auth.uid ||
+          convId == 'admin_client_' + request.auth.uid ||
           resource.data.receiverId == request.auth.uid ||
           resource.data.senderId == request.auth.uid ||
           ('assignedStaffUids' in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data
@@ -92,8 +99,8 @@ service cloud.firestore {
         allow create: if isAdmin() || (request.auth != null &&
           request.resource.data.senderId == request.auth.uid && (
           request.resource.data.receiverRole == 'admin' ||
-          ('assignedStaffUids' in get(/databases/$(database)/documents/conversations/$(conversationId)).data
-           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.assignedStaffUids)));
+          ('assignedStaffUids' in get(/databases/$(database)/documents/conversations/$(convId)).data
+           && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.assignedStaffUids)));
         allow update: if isAdmin() || (request.auth != null && resource.data.receiverId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']));
         allow delete: if isAdmin();
       }
@@ -247,6 +254,14 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.resource.data.clientId == request.auth.uid;
       allow update, delete: if isAdmin();
+    }
+
+    // Invoices (Invoice Centre). Admin manages everything; a client may
+    // read only their own invoices (portal → Invoices tab).
+    match /invoices/{invoiceId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.clientId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
     }
 
     // Report requests — the admin "sends" a pre-filled DAILY WORK LOG sheet

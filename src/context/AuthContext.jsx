@@ -4,7 +4,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../config/firebase';
 
 // ─── DEV MOCK ACCOUNTS ───────────────────────────────────────────
@@ -145,6 +145,21 @@ export function AuthProvider({ children }) {
 
     return unsubscribe;
   }, []);
+
+  // ── Live staff profile ───────────────────────────────────────────
+  // The role lookup above reads staff/{uid} once. Documents uploaded from
+  // the staff portal (and admin verify/delete actions) must appear without
+  // a page reload, so keep the staff record in sync while signed in.
+  useEffect(() => {
+    if (role !== 'staff' || !currentUser?.uid) return;
+    if (sessionStorage.getItem('smart_dev_session')) return;
+    const un = onSnapshot(doc(db, 'staff', currentUser.uid), snap => {
+      if (snap.exists() && !snap.data().deleted) {
+        setStaffProfile({ id: snap.id, ...snap.data() });
+      }
+    }, err => console.error('staff profile live sync failed', err));
+    return un;
+  }, [role, currentUser?.uid]);
 
   // ── LOGIN ──────────────────────────────────────────────────────
   const login = async (email, password) => {

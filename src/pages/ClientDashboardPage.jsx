@@ -257,6 +257,13 @@ function AssignedTeam({ works, heading = "Who's working on this" }) {
   );
 }
 
+// Dev-mode seed messages for the Phase 4 admin 1-on-1 chat
+const DEV_CLIENT_CHAT = [
+  { id: 'dc1', senderId: 'admin', senderRole: 'admin', senderName: 'SMART Administration', text: 'Welcome to SMART! Your project kickoff documents have been shared. Please review and confirm.', createdAt: new Date(Date.now() - 172800000) },
+  { id: 'dc2', senderId: 'dev-client-001', senderRole: 'client', senderName: 'Test Client', text: 'Thank you! I reviewed the documents. Everything looks good, proceeding with the advance payment.', createdAt: new Date(Date.now() - 86400000) },
+  { id: 'dc3', senderId: 'admin', senderRole: 'admin', senderName: 'SMART Administration', text: 'Advance payment received and confirmed. Your project is now in progress — we will keep you updated!', createdAt: new Date(Date.now() - 43200000) },
+];
+
 // ─── MAIN ─────────────────────────────────────────────────────────
 export default function ClientDashboardPage() {
   const navigate  = useNavigate();
@@ -279,6 +286,7 @@ export default function ClientDashboardPage() {
   const [chatMessages,setChatMessages] = useState([]);
   const [chatInput,setChatInput]       = useState('');
   const [chatSending,setChatSending]   = useState(false);
+  const [chatSendError,setChatSendError] = useState('');
   const [unreadMsgCount,setUnreadMsgCount] = useState(0);
   const chatEndRef                     = useRef(null);
   const chatInputRef                   = useRef(null);
@@ -309,6 +317,9 @@ export default function ClientDashboardPage() {
   // Assigned team — 'workAssignments' scoped to this client
   const [myWorks,setMyWorks]         = useState([]);
 
+  // Invoices raised by the office (Firestore `invoices`, clientId == auth uid)
+  const [invoices,setInvoices]       = useState([]);
+
   const client = clientProfile && {projects:[],invoices:[],tickets:[],...clientProfile};
   const uid    = currentUser?.uid;
   const convId = uid ? getConversationId('client', uid) : null;
@@ -333,7 +344,7 @@ export default function ClientDashboardPage() {
 
   useEffect(()=>{
     if(!uid||!convId) return;
-    if(!isFirebaseConfigured||isDevSession){setChatMessages([]);return;}
+    if(!isFirebaseConfigured||isDevSession){setChatMessages(DEV_CLIENT_CHAT);return;}
     const qMsg=query(collection(db,'conversations',convId,'messages'),orderBy('createdAt','asc'));
     const unMsg=onSnapshot(qMsg,snap=>{
       setChatMessages(snap.docs.map(d=>({id:d.id,...d.data()})));
@@ -397,6 +408,16 @@ export default function ClientDashboardPage() {
     return ()=>{un&&un();};
   },[uid,isDevSession]);
 
+  // Invoices raised by the office — live, own invoices only.
+  useEffect(()=>{
+    if(!uid) return;
+    if(!isFirebaseConfigured||isDevSession){setInvoices([]);return;}
+    const un=onSnapshot(query(collection(db,'invoices'),where('clientId','==',uid)),snap=>{
+      setInvoices(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt)));
+    },err=>console.error('Client invoices listener error',err));
+    return ()=>{un&&un();};
+  },[uid,isDevSession]);
+
   // Works attached to a project (matched by id, else by project title).
   const worksFor=(proj)=>{
     if(!proj) return [];
@@ -437,6 +458,7 @@ export default function ClientDashboardPage() {
     if (e) e.preventDefault();
     if (!chatInput.trim() || chatSending) return;
     setChatSending(true);
+    setChatSendError('');
     const text = chatInput.trim();
     setChatInput('');
     try {
@@ -461,6 +483,8 @@ export default function ClientDashboardPage() {
       }
     } catch (err) {
       console.error('Failed to send message', err);
+      setChatSendError(err?.message || 'Failed to send message. Please try again.');
+      setChatInput(text); // restore the unsent text so the user doesn't lose it
     } finally {
       setChatSending(false);
       // keep the typing flow unbroken: focus returns to the input after send
@@ -1455,6 +1479,21 @@ export default function ClientDashboardPage() {
                   <div style={{fontSize:16,fontWeight:800,color:'#059669'}}>{formatLKR(toInt(q.advanceAmount))}</div>
                 </div>}
               </div>
+              {q.renderImage?.url&&(
+                <a href={q.renderImage.url} target="_blank" rel="noreferrer" style={{
+                  display:'block',borderRadius:14,overflow:'hidden',textDecoration:'none',
+                  border:'1px solid rgba(255,255,255,0.12)',background:'#fff',
+                }}>
+                  <img src={q.renderImage.url} alt="Quotation letterhead"
+                    style={{width:'100%',display:'block'}}/>
+                  <div style={{
+                    display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px 12px',
+                    fontSize:12,fontWeight:800,color:'#A5B4FC',background:'rgba(99,102,241,0.12)',
+                  }}>
+                    <ExternalLink size={12}/> View / download quotation image
+                  </div>
+                </a>
+              )}
               {(q.items||[]).length>0&&(
                 <div>
                   <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.8px',color:'#94A3B8',marginBottom:8}}>Breakdown</div>
@@ -1989,6 +2028,20 @@ export default function ClientDashboardPage() {
             <div ref={chatEndRef}/>
           </div>
 
+          {/* Send error banner */}
+          {chatSendError && (
+            <div style={{
+              padding:'8px 14px',fontSize:11,fontWeight:600,color:'#F05A67',
+              background:'rgba(240,90,103,0.08)',borderTop:'1px solid rgba(240,90,103,0.25)',
+              display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,
+            }}>
+              <span>{chatSendError}</span>
+              <button onClick={()=>setChatSendError('')} style={{
+                background:'none',border:'none',color:'#F05A67',cursor:'pointer',fontSize:14,fontWeight:700,padding:0,lineHeight:1,
+              }}>×</button>
+            </div>
+          )}
+
           {/* Input form */}
           <form onSubmit={handleSendPhase4Chat} style={{
             padding:'12px 14px',borderTop:'1px solid rgba(255,255,255,0.08)',display:'flex',gap:10,alignItems:'center',background:'#141C2E'
@@ -2033,23 +2086,38 @@ export default function ClientDashboardPage() {
   };
 
   // ── INVOICES ──────────────────────────────────────────────────
-  const InvoicesTab=()=>(
-    <div style={{display:'flex',flexDirection:'column',gap:12}}>
-      <div style={{fontSize:17,fontWeight:900,color:'#F1F5F9'}}>Invoices</div>
-      {!client.invoices?.length?<div style={{...cardSt,padding:'48px 24px',textAlign:'center'}}><FileText size={36} style={{color:'#CBD5E1',margin:'0 auto 12px'}}/><div style={{fontSize:14,color:'#94A3B8'}}>No invoices yet.</div></div>
-      :<div style={{display:'flex',flexDirection:'column',gap:8}}>{client.invoices.map(inv=>(
-        <div key={inv.id} style={{...cardSt,padding:'14px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
-          <div>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><span style={{fontSize:11,fontWeight:800,color:'#A5B4FC',fontFamily:'monospace'}}>{inv.id}</span><Chip status={inv.status}/></div>
-            <div style={{fontSize:14,fontWeight:700,color:'#F1F5F9'}}>{inv.description}</div>
-            <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>{inv.date}</div>
+  const InvoicesTab=()=>{
+    // Live invoices raised by the office + older invoices stored on the client doc.
+    const list=[...invoices];
+    (client?.invoices||[]).forEach(x=>{ if(!list.some(y=>y.id===x.id)) list.push(x); });
+    const fmtAmt=inv=>typeof inv.amount==='number'?`LKR ${inv.amount.toLocaleString()}`
+      :(inv.amount || (inv.amountValue?`LKR ${Number(inv.amountValue).toLocaleString()}`:'—'));
+    const fmtDay=v=>{
+      if(!v) return '';
+      const d=typeof v==='string'?new Date(v.length<=10?v+'T00:00:00':v):(v.toDate?v.toDate():new Date(v));
+      return isNaN(d.getTime())?'':d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+    };
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{fontSize:17,fontWeight:900,color:'#F1F5F9'}}>Invoices</div>
+        {!list.length?<div style={{...cardSt,padding:'48px 24px',textAlign:'center'}}><FileText size={36} style={{color:'#CBD5E1',margin:'0 auto 12px'}}/><div style={{fontSize:14,color:'#94A3B8'}}>No invoices yet.</div></div>
+        :<div style={{display:'flex',flexDirection:'column',gap:8}}>{list.map(inv=>(
+          <div key={inv.id} style={{...cardSt,padding:'14px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><span style={{fontSize:11,fontWeight:800,color:'#A5B4FC',fontFamily:'monospace'}}>{inv.invoiceNo||inv.id}</span><Chip status={inv.status}/></div>
+              <div style={{fontSize:14,fontWeight:700,color:'#F1F5F9'}}>{inv.description}</div>
+              <div style={{fontSize:12,color:'#94A3B8',marginTop:2}}>
+                {inv.milestone?`${inv.milestone} · `:''}Issued {fmtDay(inv.issuedAt)||inv.date||'—'}
+                {inv.paidAt?` · Paid ${fmtDay(inv.paidAt)}`:''}
+              </div>
+            </div>
+            <div style={{fontSize:17,fontWeight:900,color:'#F1F5F9',flexShrink:0}}>{fmtAmt(inv)}</div>
           </div>
-          <div style={{fontSize:17,fontWeight:900,color:'#F1F5F9',flexShrink:0}}>{inv.amount}</div>
-        </div>
-      ))}</div>}
-      <div style={{textAlign:'center',fontSize:12,color:'#94A3B8'}}>Invoice queries? <a href="mailto:accounts@smartpvtltd.com" style={{color:'#A5B4FC',fontWeight:600,textDecoration:'none'}}>accounts@smartpvtltd.com</a></div>
-    </div>
-  );
+        ))}</div>}
+        <div style={{textAlign:'center',fontSize:12,color:'#94A3B8'}}>Invoice queries? <a href="mailto:accounts@smartpvtltd.com" style={{color:'#A5B4FC',fontWeight:600,textDecoration:'none'}}>accounts@smartpvtltd.com</a></div>
+      </div>
+    );
+  };
 
   // ── SUPPORT ───────────────────────────────────────────────────
   const SupportTab=()=>(

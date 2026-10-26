@@ -19,7 +19,7 @@ import {
 import { fmtDate } from '../../erp/money';
 import {
   Briefcase, AlertTriangle, Clock, CheckCircle2, ClipboardList,
-  ArrowRight, CalendarDays, Play,
+  ArrowRight, CalendarDays, Play, FileText, ShieldCheck,
 } from 'lucide-react';
 
 const inDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
@@ -131,6 +131,13 @@ export default function MyDashboard({ onNavigate = () => {} }) {
   const lastUpdate = [...updates]
     .sort((a, b) => toMs(b.submittedAt || b.createdAt) - toMs(a.submittedAt || a.createdAt))[0];
 
+  // KYC / certificate documents (live profile via AuthContext)
+  const allDocs = staffProfile?.docs || [];
+  const myDocs = [...allDocs]
+    .sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
+    .slice(0, 4);
+  const pendingDocs = allDocs.filter(d => d.status !== 'Verified').length;
+
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const greetEmoji = h < 12 ? '🌅' : h < 17 ? '☀️' : '🌙';
@@ -198,6 +205,58 @@ export default function MyDashboard({ onNavigate = () => {} }) {
         <Stat icon={AlertTriangle} label="Overdue"            value={overdue.length} tone={overdue.length ? 'red' : 'blue'} riseDelay={0.24} />
         <Stat icon={CalendarDays}  label="Due within 7 days"  value={dueSoon.length} tone={dueSoon.length ? 'amber' : 'blue'} riseDelay={0.30} />
       </div>
+
+      {/* My KYC / certificate documents — same list the admin reviews */}
+      <ERPPanel className="sp-rise" style={{ animationDelay: '0.33s' }}>
+        <ERPPanelHeader
+          title="My documents (KYC & certificates)"
+          icon={FileText}
+          action={
+            <ERPBtn size="sm" variant="secondary" onClick={() => onNavigate('kyc')}>
+              Manage <ArrowRight size={12} />
+            </ERPBtn>
+          }
+        />
+        {myDocs.length === 0 ? (
+          <div style={{ padding: '18px 14px', textAlign: 'center', fontSize: 12, color: C.muted }}>
+            No documents uploaded yet. Go to <strong style={{ color: C.text }}>KYC Documents</strong> or{' '}
+            <strong style={{ color: C.text }}>Certificates</strong> in the menu to upload.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {myDocs.map(d => (
+              <div key={d.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+                borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`,
+              }}>
+                <FileText size={15} style={{ color: C.blue, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 12, fontWeight: 700, color: C.text,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>{d.name}</div>
+                  <div style={{ fontSize: 10, color: C.muted }}>
+                    {d.category === 'certificate' ? 'Certificate' : 'KYC'} · uploaded {fmtDate(d.uploadedAt?.slice(0, 10))}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, flexShrink: 0,
+                  background: d.status === 'Verified' ? 'rgba(24,199,122,0.14)' : 'rgba(245,185,66,0.14)',
+                  color: d.status === 'Verified' ? C.green : C.amber,
+                  border: `1px solid ${d.status === 'Verified' ? 'rgba(24,199,122,0.4)' : 'rgba(245,185,66,0.4)'}`,
+                }}>
+                  {d.status === 'Verified' ? '✓ Verified' : 'Pending'}
+                </span>
+              </div>
+            ))}
+            {pendingDocs > 0 && (
+              <div style={{ fontSize: 10.5, color: C.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <ShieldCheck size={11} /> {pendingDocs} document{pendingDocs > 1 ? 's' : ''} waiting for admin review.
+              </div>
+            )}
+          </div>
+        )}
+      </ERPPanel>
 
       {/* Upcoming deadlines */}
       <ERPPanel className="sp-rise" style={{ animationDelay: '0.36s' }}>

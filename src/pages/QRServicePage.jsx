@@ -1,393 +1,333 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useParams, Navigate } from 'react-router-dom';
 import { services } from '../config/services';
 import { company } from '../config/company';
 import SEO from '../components/SEO';
 import {
-  CheckCircle2, ArrowRight, Phone, MessageSquare, ExternalLink,
-  ShieldCheck, Sparkles, Building2, Globe, FileCheck, Calculator,
-  Cpu, Smartphone, Code2, LayoutGrid, Receipt, ChevronDown, ChevronUp,
-  Search, Award, Clock, DollarSign, Layers
+  MessageSquare, Phone, Sparkles, ShieldCheck, ChevronDown,
+  CheckCircle2, Clock, Layers, BadgeCheck, ArrowRight,
 } from 'lucide-react';
 
-const ICON_MAP = {
-  LayoutGrid, Code2, UserCheck: Award, Globe, Smartphone,
-  Cpu, Sparkles, Calculator, FileCheck, ShieldCheck, Building2, Receipt
+// ────────────────────────────────────────────────────────────────────
+// QR scan landing page — a phone-first "app" view of ONE service.
+// No website navbar/footer: brand app-bar on top, scrollable service
+// content, and a sticky bottom action dock (Quote / WhatsApp / Call).
+// ────────────────────────────────────────────────────────────────────
+
+const C = {
+  bg: '#040D1F',
+  card: 'rgba(10,23,48,0.88)',
+  cardSoft: 'rgba(13,29,59,0.72)',
+  border: 'rgba(96,165,250,0.16)',
+  borderSoft: 'rgba(96,165,250,0.10)',
+  text: '#F1F5F9',
+  muted: '#94A3B8',
+  dim: '#64748B',
+  blue: '#3B82F6',
+  cyan: '#22D3EE',
+  green: '#34D399',
 };
 
-export default function QRServicePage({ onOpenQuote }) {
+const PAGE_CSS = `
+  .qr-app-page{min-height:100dvh;background:
+    radial-gradient(900px 420px at 15% -8%, rgba(37,99,235,0.22), transparent 60%),
+    radial-gradient(700px 420px at 95% 8%, rgba(6,182,212,0.14), transparent 60%),
+    #020817;display:flex;justify-content:center}
+  .qr-app-shell{width:100%;max-width:460px;min-height:100dvh;position:relative;
+    background:linear-gradient(180deg,#061127 0%,#040D1F 40%,#040D1F 100%);
+    display:flex;flex-direction:column;overflow:hidden}
+  @media(min-width:640px){
+    .qr-app-page{padding:22px 16px}
+    .qr-app-shell{min-height:calc(100dvh - 44px);border-radius:32px;
+      border:1px solid rgba(96,165,250,0.16);
+      box-shadow:0 40px 90px rgba(0,0,0,0.65),0 0 0 6px rgba(10,23,48,0.55)}
+  }
+  .qr-app-scroll{flex:1;overflow:visible;padding:14px 16px 22px}
+  .qr-card{background:${C.card};border:1px solid ${C.border};border-radius:20px}
+  .qr-tap{-webkit-tap-highlight-color:transparent;transition:transform .16s ease, box-shadow .16s ease, opacity .16s ease}
+  .qr-tap:active{transform:scale(.97)}
+  .qr-fade{animation:qrFade .45s ease both}
+  @keyframes qrFade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .qr-dock{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .qr-hero{position:relative;overflow:hidden;border-radius:22px;padding:20px;
+    border:1px solid rgba(96,165,250,0.22);
+    background:
+      radial-gradient(360px 220px at 88% 0%, rgba(6,182,212,0.22), transparent 65%),
+      linear-gradient(150deg, rgba(29,78,216,0.38), rgba(8,19,42,0.94) 55%)}
+  .qr-hero:after{content:'';position:absolute;right:-46px;top:-56px;width:170px;height:170px;
+    border-radius:50%;border:1px solid rgba(96,165,250,0.22)}
+  .qr-faq summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+  .qr-faq summary::-webkit-details-marker{display:none}
+  .qr-faq[open] .qr-chev{transform:rotate(180deg)}
+  .qr-chev{transition:transform .2s ease;flex-shrink:0}
+  .qr-sec-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;
+    letter-spacing:.09em;text-transform:uppercase;color:${C.cyan};margin:26px 4px 10px}
+  .qr-sec-title:after{content:'';flex:1;height:1px;background:${C.borderSoft}}
+`;
+
+export default function QrServicePage({ onOpenQuote }) {
   const { slug } = useParams();
-  const [search, setSearch] = useState('');
-  const [expandedFaq, setExpandedFaq] = useState(null);
+  const [openFaq, setOpenFaq] = useState(0);
+  const service = services.find(s => s.slug === slug);
+  if (!service) return <Navigate to="/services" replace />;
 
-  // Normalize slug matching
-  const scannedSlug = (slug || '').toLowerCase().trim();
-
-  // Find scanned service (check slug, id, or close match).
-  // `recognized` stays false when NOTHING matches — then we must not
-  // auto-open the request form for a service the customer never scanned.
-  const exactMatch = useMemo(() => {
-    return (
-      services.find(s => s.slug?.toLowerCase() === scannedSlug || s.id?.toLowerCase() === scannedSlug) ||
-      services.find(s => s.title?.toLowerCase().includes(scannedSlug)) ||
-      null
-    );
-  }, [scannedSlug]);
-  const recognized = !!exactMatch;
-  const scannedService = exactMatch || services[0];
-
-  const ScannedIcon = ICON_MAP[scannedService?.icon] || Sparkles;
-
-  const filteredServices = useMemo(() => {
-    if (!search.trim()) return services;
-    const q = search.toLowerCase();
-    return services.filter(
-      s => s.title.toLowerCase().includes(q) ||
-           s.category.toLowerCase().includes(q) ||
-           s.shortDesc?.toLowerCase().includes(q)
-    );
-  }, [search]);
-
-  const whatsappUrl = `https://wa.me/${company.contact.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(
-    `Hello SMART Pvt Ltd, I scanned the QR code for ${scannedService?.title}. I would like more information.`
-  )}`;
-
-  // ── Scan → straight into the request form ────────────────────────
-  // A customer who scanned a service QR lands here expecting the request
-  // form. Open it once (short delay so the page paints first) with the
-  // scanned service already selected. The "Request Quotation" button and
-  // every other CTA still work exactly as before.
-  const autoOpened = useRef(false);
-  useEffect(() => {
-    if (!onOpenQuote || autoOpened.current || !recognized || !scannedService) return;
-    autoOpened.current = true;
-    const t = setTimeout(() => onOpenQuote(scannedService.title), 700);
-    return () => clearTimeout(t);
-  }, [onOpenQuote, recognized, scannedService]);
+  const waText = `Hi ${company.fullName}, I scanned the QR for "${service.title}" and I'm interested. Could you share the details?`;
+  const waUrl = `https://wa.me/${company.contact.whatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(waText)}`;
+  const telUrl = `tel:${company.contact.phone.replace(/[^\d+]/g, '')}`;
+  const requestQuote = () => onOpenQuote(service.title, {
+    title: `Request ${service.title} Quote`,
+    eyebrow: 'Service Quote',
+    subtitle: `Get a detailed quotation and scope for ${service.title}.`,
+    source: `Service Quote — ${service.title}`,
+  });
 
   return (
-    <div className="min-h-screen bg-[#070D1F] text-slate-100 selection:bg-blue-600 selection:text-white">
-      <SEO
-        title={`${scannedService?.title || 'Service'} — SMART Verified QR`}
-        description={scannedService?.shortDesc || 'SMART Pvt Ltd official service details.'}
-      />
+    <div className="qr-app-page">
+      <style>{PAGE_CSS}</style>
+      <div className="qr-app-shell">
+        <SEO title={service.title} description={service.shortDesc} />
 
-      {/* Top Banner / Verification Header */}
-      <header className="border-b border-white/10 bg-[#0B1530]/90 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center gap-3 group">
-            <img
-              src="/logos/SMART_LOGO_DM_WTHOT_BG_1.png"
-              alt="SMART Pvt Ltd"
-              className="h-9 w-auto object-contain drop-shadow"
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
-            <div className="hidden sm:flex flex-col">
-              <span className="font-extrabold text-white text-sm tracking-tight leading-none group-hover:text-blue-400 transition-colors">
-                {company.fullName}
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium tracking-wider uppercase mt-0.5">
-                Verified Service System
-              </span>
+        {/* ── App bar ─────────────────────────────────────────── */}
+        <header style={{
+          position: 'sticky', top: 0, zIndex: 30,
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '13px 16px', borderBottom: `1px solid ${C.borderSoft}`,
+          background: 'rgba(4,13,31,0.88)', backdropFilter: 'blur(14px)',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 11, flexShrink: 0,
+            display: 'grid', placeItems: 'center',
+            background: 'linear-gradient(135deg,#1D4ED8,#06B6D4)',
+            boxShadow: '0 6px 16px rgba(37,99,235,0.35)',
+          }}>
+            <img src={company.logos?.headOnly || '/logos/SMART_LOGO_ONLY_HEAD.png'} alt="SMART"
+              style={{ width: 22, height: 22, objectFit: 'contain' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 900, color: C.text, letterSpacing: 0.2 }}>
+              {company.fullName}
             </div>
-          </Link>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{company.positioning}</div>
+          </div>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase',
+            color: C.green, background: 'rgba(52,211,153,0.10)',
+            border: '1px solid rgba(52,211,153,0.25)', borderRadius: 20, padding: '5px 9px',
+          }}>
+            <BadgeCheck size={11} /> QR Verified
+          </span>
+        </header>
 
-          <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            <ShieldCheck size={14} className="text-emerald-400 flex-shrink-0" />
-            <span>Verified QR Scan</span>
+        <div className="qr-app-scroll">
+          {/* ── Hero ──────────────────────────────────────────── */}
+          <section className="qr-hero qr-fade" style={{ marginTop: 4 }}>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
+                  color: C.cyan, background: 'rgba(34,211,238,0.10)',
+                  border: '1px solid rgba(34,211,238,0.25)', borderRadius: 20, padding: '5px 10px',
+                }}>{service.category}</span>
+                {service.badge && (
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase',
+                    color: '#FBBF24', background: 'rgba(251,191,36,0.10)',
+                    border: '1px solid rgba(251,191,36,0.25)', borderRadius: 20, padding: '5px 10px',
+                  }}>{service.badge}</span>
+                )}
+              </div>
+
+              <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.22, fontWeight: 900, color: '#fff', letterSpacing: -0.3 }}>
+                {service.title}
+              </h1>
+              <p style={{ margin: '8px 0 0', fontSize: 13, fontWeight: 700, color: '#93C5FD', lineHeight: 1.45 }}>
+                {service.subtitle}
+              </p>
+              <p style={{ margin: '10px 0 0', fontSize: 12.5, lineHeight: 1.65, color: C.muted }}>
+                {service.overview}
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 16 }}>
+                <div style={{
+                  padding: '10px 12px', borderRadius: 14,
+                  background: 'rgba(4,13,31,0.55)', border: `1px solid ${C.borderSoft}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, color: C.dim, textTransform: 'uppercase' }}>
+                    <Sparkles size={11} /> Starting
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 14, fontWeight: 900, color: '#fff', lineHeight: 1.25 }}>
+                    {service.startingPrice}
+                  </div>
+                </div>
+                <div style={{
+                  padding: '10px 12px', borderRadius: 14,
+                  background: 'rgba(4,13,31,0.55)', border: `1px solid ${C.borderSoft}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, color: C.dim, textTransform: 'uppercase' }}>
+                    <Clock size={11} /> Timeline
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 14, fontWeight: 900, color: '#fff', lineHeight: 1.25 }}>
+                    {service.timeline}
+                  </div>
+                </div>
+              </div>
+
+              <button onClick={requestQuote} className="qr-tap" style={{
+                width: '100%', marginTop: 14, padding: '14px', border: 'none', borderRadius: 15,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                fontSize: 13.5, fontWeight: 900, color: '#fff',
+                background: 'linear-gradient(135deg,#2563EB,#06B6D4)',
+                boxShadow: '0 10px 26px rgba(37,99,235,0.38)',
+              }}>
+                Request Quotation & Scope <ArrowRight size={16} />
+              </button>
+            </div>
+          </section>
+
+          {/* ── Features ──────────────────────────────────────── */}
+          <div className="qr-sec-title"><Sparkles size={12} /> What this service covers</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {service.features.map((feat, i) => (
+              <div key={i} className="qr-card qr-fade" style={{
+                padding: '12px 14px', display: 'flex', gap: 10, alignItems: 'flex-start',
+                animationDelay: `${Math.min(i, 6) * 40}ms`,
+              }}>
+                <span style={{
+                  width: 28, height: 28, borderRadius: 9, flexShrink: 0, display: 'grid', placeItems: 'center',
+                  background: 'rgba(34,211,238,0.10)', border: '1px solid rgba(34,211,238,0.22)',
+                }}>
+                  <CheckCircle2 size={15} color={C.cyan} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{feat.name}</div>
+                  <div style={{ marginTop: 3, fontSize: 11.5, lineHeight: 1.55, color: C.muted }}>{feat.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Deliverables ──────────────────────────────────── */}
+          <div className="qr-sec-title"><Layers size={12} /> What you receive</div>
+          <div className="qr-card" style={{ padding: '14px 14px 6px' }}>
+            {service.deliverables.map((item, i) => (
+              <div key={i} style={{
+                display: 'flex', gap: 9, alignItems: 'flex-start',
+                padding: '9px 2px',
+                borderBottom: i < service.deliverables.length - 1 ? `1px solid ${C.borderSoft}` : 'none',
+              }}>
+                <CheckCircle2 size={14} color={C.green} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span style={{ fontSize: 12, lineHeight: 1.55, color: '#CBD5E1' }}>{item}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Pricing ───────────────────────────────────────── */}
+          <div className="qr-sec-title"><ShieldCheck size={12} /> Pricing & scope</div>
+          <div className="qr-card" style={{ padding: 16 }}>
+            <div style={{
+              padding: '12px 14px', borderRadius: 14, marginBottom: 10,
+              background: 'rgba(37,99,235,0.10)', border: '1px solid rgba(96,165,250,0.22)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, color: C.muted }}>Pricing baseline</span>
+                <span style={{ fontSize: 13.5, fontWeight: 900, color: C.green, textAlign: 'right' }}>
+                  {service.startingPrice}
+                </span>
+              </div>
+              <p style={{ margin: '6px 0 0', fontSize: 11.5, lineHeight: 1.6, color: C.muted }}>
+                {service.priceNote}
+              </p>
+            </div>
+            <button onClick={requestQuote} className="qr-tap" style={{
+              width: '100%', padding: '13px', border: '1px solid rgba(96,165,250,0.35)',
+              borderRadius: 14, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
+              color: '#BFDBFE', background: 'rgba(37,99,235,0.14)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            }}>
+              Get itemized quotation <ArrowRight size={14} />
+            </button>
+          </div>
+
+          {/* ── FAQs ──────────────────────────────────────────── */}
+          {service.faqs?.length > 0 && (
+            <>
+              <div className="qr-sec-title"><MessageSquare size={12} /> Common questions</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {service.faqs.map((faq, i) => {
+                  const isOpen = openFaq === i;
+                  return (
+                    <div key={i} className="qr-card" style={{ padding: '0 14px' }}>
+                      <button
+                        onClick={() => setOpenFaq(isOpen ? -1 : i)}
+                        className="qr-tap"
+                        style={{
+                          width: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                          padding: '13px 0', textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text, lineHeight: 1.45 }}>{faq.q}</span>
+                        <ChevronDown size={15} color={C.muted}
+                          style={{ flexShrink: 0, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }} />
+                      </button>
+                      {isOpen && (
+                        <div style={{ padding: '0 0 13px', fontSize: 11.5, lineHeight: 1.65, color: C.muted }}>
+                          {faq.a}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ── Footer ────────────────────────────────────────── */}
+          <div style={{
+            margin: '26px 4px 6px', paddingTop: 16, borderTop: `1px solid ${C.borderSoft}`,
+            fontSize: 10, lineHeight: 1.7, color: C.dim, textAlign: 'center',
+          }}>
+            {company.fullName} · {company.contact.address}<br />
+            {company.contact.phoneDisplay} · {company.contact.email}<br />
+            <span style={{ color: C.dim }}>Scanned via official SMART service QR</span>
           </div>
         </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8 md:py-12 space-y-12">
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* 1. SCANNED SERVICE HIGHLIGHTED SECTION (HERO)                  */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section className="relative overflow-hidden rounded-3xl border-2 border-blue-500/60 bg-gradient-to-br from-[#10234E] via-[#0E1A3A] to-[#0A1329] p-6 sm:p-10 shadow-2xl shadow-blue-900/30">
-          {/* Subtle Ambient Backing Glow */}
-          <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-blue-600/20 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-indigo-600/15 blur-3xl pointer-events-none" />
-
-          {/* Scanned Badge */}
-          {!recognized && (
-            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-semibold mb-4">
-              <ShieldCheck size={14} className="mt-0.5 flex-shrink-0" />
-              <span>This QR code could not be matched to a service — showing our flagship service instead. Browse all services below or request any service directly.</span>
-            </div>
-          )}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/40 text-blue-300 text-xs font-bold uppercase tracking-wider mb-6">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-            Scanned Service Highlight
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            <div className="lg:col-span-8 space-y-5">
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-600/30 flex-shrink-0">
-                  <ScannedIcon size={28} />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
-                    {scannedService.title}
-                  </h1>
-                  <p className="text-blue-300 font-medium text-sm sm:text-base mt-1">
-                    {scannedService.subtitle}
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                {scannedService.overview || scannedService.shortDesc}
-              </p>
-
-              {/* Quick Tags / Meta */}
-              <div className="flex flex-wrap gap-3 pt-2">
-                <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 flex items-center gap-1.5 font-medium">
-                  <Layers size={13} className="text-blue-400" />
-                  Category: <span className="text-white font-semibold">{scannedService.category}</span>
-                </div>
-                {scannedService.startingPrice && (
-                  <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 flex items-center gap-1.5 font-medium">
-                    <DollarSign size={13} className="text-emerald-400" />
-                    Starting: <span className="text-emerald-300 font-semibold">{scannedService.startingPrice}</span>
-                  </div>
-                )}
-                {scannedService.timeline && (
-                  <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 flex items-center gap-1.5 font-medium">
-                    <Clock size={13} className="text-amber-400" />
-                    Timeline: <span className="text-amber-300 font-semibold">{scannedService.timeline}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* CTA Box */}
-            <div className="lg:col-span-4 bg-[#081226]/80 rounded-2xl border border-white/10 p-5 space-y-4">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Direct Engagement
-              </div>
-              <p className="text-xs text-slate-300 leading-normal">
-                Ready to get started or request an official quotation? Connect directly with our specialists.
-              </p>
-
-              <div className="space-y-2.5">
-                <a
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-900/40 transition-transform active:scale-95"
-                >
-                  <MessageSquare size={16} />
-                  Inquire via WhatsApp
-                </a>
-
-                {onOpenQuote && (
-                  <button
-                    onClick={() => onOpenQuote(scannedService.title)}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-900/40 transition-colors"
-                  >
-                    Request Quotation
-                  </button>
-                )}
-
-                <a
-                  href={`tel:${company.contact.phone}`}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-semibold text-xs transition-colors"
-                >
-                  <Phone size={13} className="text-slate-400" />
-                  Call {company.contact.phoneDisplay}
-                </a>
-              </div>
-            </div>
-          </div>
-
-          {/* Key Features Breakdown */}
-          {scannedService.features && scannedService.features.length > 0 && (
-            <div className="mt-8 pt-8 border-t border-white/10">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Sparkles size={14} className="text-blue-400" /> Key Features & Capabilities
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {scannedService.features.map((feat, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3.5 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-blue-500/30 transition-colors"
-                  >
-                    <div className="font-bold text-xs sm:text-sm text-slate-100 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
-                      {feat.name}
-                    </div>
-                    {feat.desc && (
-                      <p className="text-xs text-slate-400 mt-1 leading-relaxed pl-3.5">
-                        {feat.desc}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Deliverables Checklist */}
-          {scannedService.deliverables && scannedService.deliverables.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-white/10">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-emerald-400" /> Official Deliverables
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {scannedService.deliverables.map((del, idx) => (
-                  <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-300">
-                    <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                    <span>{del}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* FAQs */}
-          {scannedService.faqs && scannedService.faqs.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-white/10 space-y-3">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider mb-2">
-                Frequently Asked Questions
-              </h3>
-              {scannedService.faqs.map((faq, idx) => {
-                const isOpen = expandedFaq === idx;
-                return (
-                  <div
-                    key={idx}
-                    className="rounded-xl bg-white/[0.03] border border-white/[0.08] overflow-hidden"
-                  >
-                    <button
-                      onClick={() => setExpandedFaq(isOpen ? null : idx)}
-                      className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold text-slate-200 hover:text-white"
-                    >
-                      <span>{faq.q}</span>
-                      {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                    {isOpen && (
-                      <div className="px-4 pb-3.5 text-xs text-slate-400 leading-relaxed border-t border-white/[0.05] pt-2.5">
-                        {faq.a}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* 2. ALL OTHER SERVICES LISTED BELOW                             */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-                All SMART Services & Solutions
-              </h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-1">
-                Explore our full ecosystem of business technology and financial services.
-              </p>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search services..."
-                className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredServices.map((service) => {
-              const isCurrent = service.slug === scannedService.slug || service.id === scannedService.id;
-              const CardIcon = ICON_MAP[service.icon] || Sparkles;
-
-              return (
-                <div
-                  key={service.slug || service.id}
-                  className={`relative rounded-2xl p-6 transition-all duration-200 flex flex-col justify-between ${
-                    isCurrent
-                      ? 'bg-gradient-to-br from-[#122554] to-[#0A1636] border-2 border-blue-400 shadow-xl shadow-blue-900/30 ring-2 ring-blue-500/20'
-                      : 'bg-[#0E172E] border border-white/10 hover:border-white/25 hover:-translate-y-1'
-                  }`}
-                >
-                  {/* Highlight Tag on Scanned One */}
-                  {isCurrent && (
-                    <div className="absolute -top-3 left-4 px-3 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-extrabold uppercase tracking-wider shadow-md">
-                      Currently Scanned
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        isCurrent
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40'
-                          : 'bg-white/5 text-slate-300'
-                      }`}>
-                        <CardIcon size={20} />
-                      </div>
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/5 text-slate-400 border border-white/10">
-                        {service.category}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h3 className={`font-bold text-base leading-snug ${isCurrent ? 'text-white' : 'text-slate-100'}`}>
-                        {service.title}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                        {service.shortDesc || service.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-emerald-400">
-                      {service.startingPrice || 'Custom Quote'}
-                    </span>
-
-                    <Link
-                      to={`/services/qr/${service.slug}`}
-                      className={`inline-flex items-center gap-1.5 text-xs font-bold transition-colors ${
-                        isCurrent
-                          ? 'text-blue-300 hover:text-white'
-                          : 'text-slate-300 hover:text-blue-400'
-                      }`}
-                    >
-                      {isCurrent ? 'Viewing' : 'View Details'} <ArrowRight size={12} />
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* 3. COMPANY FOOTER / TRUST BANNER                               */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 text-center space-y-3">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            {company.name} · Official Public Portal
-          </div>
-          <p className="text-xs text-slate-400 max-w-xl mx-auto">
-            {company.description}
-          </p>
-          <div className="pt-2 text-xs text-slate-500">
-            Head Office: {company.contact.address} · Tel: {company.contact.phoneDisplay}
-          </div>
-        </section>
-      </main>
+        {/* ── Bottom app dock ─────────────────────────────────── */}
+        <div className="qr-dock" style={{
+          position: 'sticky', bottom: 0, zIndex: 30,
+          display: 'flex', gap: 8, alignItems: 'center',
+          padding: '10px 14px 10px', borderTop: `1px solid ${C.borderSoft}`,
+          background: 'rgba(4,13,31,0.94)', backdropFilter: 'blur(16px)',
+        }}>
+          <a href={telUrl} className="qr-tap" aria-label="Call SMART"
+            style={{
+              width: 46, height: 46, flexShrink: 0, borderRadius: 14,
+              display: 'grid', placeItems: 'center', textDecoration: 'none',
+              background: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.24)',
+            }}>
+            <Phone size={18} color="#93C5FD" />
+          </a>
+          <a href={waUrl} target="_blank" rel="noopener noreferrer" className="qr-tap" aria-label="WhatsApp SMART"
+            style={{
+              width: 46, height: 46, flexShrink: 0, borderRadius: 14,
+              display: 'grid', placeItems: 'center', textDecoration: 'none',
+              background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.26)',
+            }}>
+            <MessageSquare size={18} color="#34D399" />
+          </a>
+          <button onClick={requestQuote} className="qr-tap" style={{
+            flex: 1, height: 46, border: 'none', borderRadius: 14, cursor: 'pointer',
+            fontSize: 13, fontWeight: 900, color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            background: 'linear-gradient(135deg,#2563EB,#06B6D4)',
+            boxShadow: '0 8px 22px rgba(37,99,235,0.34)',
+          }}>
+            Get Quotation <ArrowRight size={15} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

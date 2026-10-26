@@ -489,7 +489,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
               {/* Action Buttons */}
               <div className="pt-4 flex items-center gap-3">
                 <button
-                  onClick={() => onOpenQuote("SMART ERP")}
+                  onClick={() => onOpenQuote("SMART ERP", { title: "Request ERP Demo", eyebrow: "Book a Demo", subtitle: "See SMART ERP in action — schedule a live demo with our team.", source: "ERP Demo Request" })}
                   className="px-5 py-2.5 rounded-full text-xs font-bold text-white bg-[#0066FF] hover:bg-blue-600 shadow-md shadow-blue-500/30 transition-all flex items-center gap-1.5"
                 >
                   View Demo <ArrowRight className="w-3.5 h-3.5" />
@@ -698,7 +698,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
 
               <div className="pt-2">
                 <button
-                  onClick={() => onOpenQuote()}
+                  onClick={() => onOpenQuote("", { title: "Talk to Our Team", eyebrow: "Consultation", subtitle: "Have questions? Our experts are here to help you find the right solution.", source: "Consultation Request" })}
                   className="w-full py-2.5 rounded-full text-xs font-bold text-white bg-[#0066FF] hover:bg-[#0052CC] shadow-md transition-all"
                 >
                   Consult Our Team
@@ -855,13 +855,13 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
             {/* Left 3 Cols: Our Branches */}
             <div className="lg:col-span-3 space-y-4 text-left">
               <span className="text-[12px] font-extrabold uppercase tracking-wider text-[#0066FF]">
-                OUR BRANCHES
+                OUR BRANCH
               </span>
               <h3 className="text-xl font-extrabold text-[#0A1E3F] dark:text-white">
-                Visit Our Branches.
+                Visit Our Branch.
               </h3>
               <p className="text-xs text-[#5B6E88] dark:text-text-muted">
-                We're here to serve you across multiple locations in Sri Lanka.
+                Visit our Head Office in Trincomalee for on-site meetings and consultations.
               </p>
 
               {/* Branch Switcher Tabs */}
@@ -975,7 +975,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
 
               <div className="space-y-2 pt-2">
                 <button
-                  onClick={() => onOpenQuote()}
+                  onClick={() => onOpenQuote("", { title: "Get a Free Consultation", eyebrow: "Free Consultation", subtitle: "Tell us about your business needs — we'll provide expert guidance at no cost.", source: "Free Consultation" })}
                   className="w-full py-2.5 rounded-full text-xs font-bold text-[#0A1E3F] bg-white hover:bg-slate-100 shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
                   Get a Free Consultation <ArrowRight className="w-3.5 h-3.5" />

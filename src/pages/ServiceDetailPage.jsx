@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link, Navigate, useLocation } from 'react-router-dom';
 import { services } from '../config/services';
 import { company } from '../config/company';
 import SEO from '../components/SEO';
@@ -12,6 +12,10 @@ import {
 
 export default function ServiceDetailPage({ onOpenQuote }) {
   const { slug } = useParams();
+  const location = useLocation();
+  // QR scans land on /services/qr/<slug> — show ONLY the scanned service
+  // (no "related solutions"), while a normal visit keeps the full page.
+  const isQrScan = location.pathname.startsWith('/services/qr/');
   const service = services.find(s => s.slug === slug);
 
   if (!service) {
@@ -87,7 +91,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
             {/* Action Buttons */}
             <div className="pt-4 flex flex-wrap items-center gap-3">
               <button
-                onClick={() => onOpenQuote(service.title)}
+                onClick={() => onOpenQuote(service.title, { title: `Request ${service.title} Quote`, eyebrow: "Service Quote", subtitle: `Get a detailed quotation and scope for ${service.title}.`, source: `Service Quote — ${service.title}` })}
                 className="px-6 py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all"
               >
                 Request Quotation & Scope
@@ -185,7 +189,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
             </div>
 
             <button
-              onClick={() => onOpenQuote(service.title)}
+              onClick={() => onOpenQuote(service.title, { title: `Get ${service.title} Quotation`, eyebrow: "Itemized Quote", subtitle: `Receive a detailed itemized quotation for ${service.title} with pricing breakdown.`, source: `Itemized Quote — ${service.title}` })}
               className="w-full py-3 rounded-xl text-xs font-bold text-white bg-primary hover:bg-primary-hover shadow-glow-sm transition-all"
             >
               Get Itemized Quotation
@@ -210,7 +214,8 @@ export default function ServiceDetailPage({ onOpenQuote }) {
         </section>
       )}
 
-      {/* 5. RELATED SERVICES */}
+      {/* 5. RELATED SERVICES — hidden on QR scans (single-service view) */}
+      {!isQrScan && (
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 border-t border-[#DCE6F2] dark:border-surface-border">
         <h3 className="text-lg font-bold text-[#0A1E3F] dark:text-white mb-6">Explore Related Solutions</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -233,6 +238,7 @@ export default function ServiceDetailPage({ onOpenQuote }) {
           ))}
         </div>
       </section>
+      )}
 
     </div>
   );
