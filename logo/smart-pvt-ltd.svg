@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" role="img" aria-label="SMART Pvt Ltd">
+  <rect width="56" height="56" rx="12" fill="#0066FF"/>
+  <path d="M16 36c0-8 6-12 14-12 5 0 8 2 8 5s-3 4-8 5c-6 1-10 3-10 8 0 5 5 8 12 8 6 0 11-2 14-6" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+  <text x="68" y="24" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" fill="#FFFFFF">SMART</text>
+  <text x="68" y="44" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="600" fill="#00D9FF">Pvt Ltd</text>
+</svg>
