@@ -14,59 +14,12 @@ import { ERPPanel, ERPBadge, ERPBtn, ERPModal, C } from '../components/ERPui';
 import { sendChatMessage, markConversationAsRead, getConversationId, syncChatAccessForAllClients } from '../messagingUtils';
 import { Send, MessageCircle, Search, Plus, User, Briefcase, Users, CheckCheck } from 'lucide-react';
 
-const DEV_CONVERSATIONS = [
-  {
-    id: 'admin_client_C001',
-    type: 'client',
-    participantUid: 'C001',
-    participantName: 'John Perera',
-    participantRole: 'client',
-    participantEmail: 'john@pereraholdings.com',
-    lastMessage: 'Can we change the hero section color to blue?',
-    lastMessageAt: new Date(Date.now() - 3600000),
-    unreadForAdmin: 1,
-    color: '#0066FF',
-  },
-  {
-    id: 'admin_staff_dev-staff-001',
-    type: 'staff',
-    participantUid: 'dev-staff-001',
-    participantName: 'Ashan Perera',
-    participantRole: 'staff',
-    participantEmail: 'staff@smart.com',
-    lastMessage: 'I have pushed the latest updates for the ERP staff attendance module.',
-    lastMessageAt: new Date(Date.now() - 7200000),
-    unreadForAdmin: 0,
-    color: '#18C77A',
-  },
-  {
-    id: 'admin_client_C002',
-    type: 'client',
-    participantUid: 'C002',
-    participantName: 'Sarah Fernando (Mehala Restaurant)',
-    participantRole: 'client',
-    participantEmail: 'sarah@mehala.lk',
-    lastMessage: 'The POS billing module works perfectly! Our staff loves it.',
-    lastMessageAt: new Date(Date.now() - 86400000),
-    unreadForAdmin: 0,
-    color: '#8B5CF6',
-  },
-];
+// Dev preview carries no scripted conversations — fake client/staff chats were
+// test data and are removed. Live mode reads the real `conversations` /
+// `messages` collections.
+const DEV_CONVERSATIONS = [];
 
-const DEV_SEED_MESSAGES = {
-  admin_client_C001: [
-    { id: 'm1', senderId: 'C001', senderName: 'John Perera', senderRole: 'client', receiverId: 'admin', receiverRole: 'admin', text: 'Hi! I reviewed the homepage design. It looks really clean!', createdAt: new Date(Date.now() - 7200000) },
-    { id: 'm2', senderId: 'admin', senderName: 'SMART Admin', senderRole: 'admin', receiverId: 'C001', receiverRole: 'client', text: 'Thank you! We spent extra time on the responsive layout.', createdAt: new Date(Date.now() - 6800000) },
-    { id: 'm3', senderId: 'C001', senderName: 'John Perera', senderRole: 'client', receiverId: 'admin', receiverRole: 'admin', text: 'Can we change the hero section color to blue?', createdAt: new Date(Date.now() - 3600000) },
-  ],
-  'admin_staff_dev-staff-001': [
-    { id: 'ms1', senderId: 'admin', senderName: 'SMART Admin', senderRole: 'admin', receiverId: 'dev-staff-001', receiverRole: 'staff', text: 'Hi Ashan, please test the attendance checkout auto-close logic.', createdAt: new Date(Date.now() - 14400000) },
-    { id: 'ms2', senderId: 'dev-staff-001', senderName: 'Ashan Perera', senderRole: 'staff', receiverId: 'admin', receiverRole: 'admin', text: 'I have pushed the latest updates for the ERP staff attendance module.', createdAt: new Date(Date.now() - 7200000) },
-  ],
-  admin_client_C002: [
-    { id: 'm4', senderId: 'C002', senderName: 'Sarah Fernando', senderRole: 'client', receiverId: 'admin', receiverRole: 'admin', text: 'The POS billing module works perfectly! Our staff loves it.', createdAt: new Date(Date.now() - 86400000) },
-  ],
-};
+const DEV_SEED_MESSAGES = {};
 
 export default function ERPMessages() {
   const { isDevSession, currentUser } = useAuth();
@@ -144,19 +97,9 @@ export default function ERPMessages() {
     setShowNewModal(true);
     setLoadingContacts(true);
     if (!live) {
-      setContactList({
-        staff: [
-          { id: 'dev-staff-001', name: 'Ashan Perera', role: 'Full Stack Developer', email: 'staff@smart.com' },
-          { id: 'dev-staff-002', name: 'Nimali Silva', role: 'UI/UX Designer', email: 'nimali@smartpvtltd.com' },
-          { id: 'dev-staff-003', name: 'Ruwan Jayasuriya', role: 'Accountant', email: 'ruwan@smartpvtltd.com' },
-        ],
-        clients: [
-          { id: 'C001', name: 'John Perera', company: 'Perera Holdings', email: 'john@pereraholdings.com' },
-          { id: 'C002', name: 'Sarah Fernando', company: 'Mehala Restaurant', email: 'sarah@mehala.lk' },
-          { id: 'C003', name: 'Kumar Arasan', company: 'KA Retail', email: 'kumar@karetail.lk' },
-          { id: 'C004', name: 'Priya Nair', company: 'PN Accounting', email: 'priya@pnaccounting.lk' },
-        ],
-      });
+      // No invented staff or client contacts — dev mode shows an empty list
+      // instead of fake people that look like live records.
+      setContactList({ staff: [], clients: [] });
       setLoadingContacts(false);
       return;
     }

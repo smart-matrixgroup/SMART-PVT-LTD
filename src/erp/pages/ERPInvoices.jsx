@@ -5,6 +5,7 @@ import {
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar, C } from '../components/ERPui';
+import PrivateFileLink from '../components/PrivateFileLink';
 import { Plus, CheckCircle2, FileText, ExternalLink, ReceiptText, XCircle } from 'lucide-react';
 
 // Only used when the app is running without a live Firebase connection.
@@ -336,14 +337,12 @@ export default function ERPInvoices() {
                     fontSize: 9.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20,
                     background: tone.bg, color: tone.fg, border: `1px solid ${tone.border}`,
                   }}>{p.status || 'New'}</span>
-                  {p.fileUrl && (
-                    <a href={p.fileUrl} target="_blank" rel="noopener noreferrer" style={{
-                      padding: '6px 11px', borderRadius: 8, fontSize: 10.5, fontWeight: 700, textDecoration: 'none',
-                      background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.text,
-                      display: 'flex', alignItems: 'center', gap: 4,
-                    }}>
-                      <ExternalLink size={11} /> View
-                    </a>
+                  {(p.filePath || p.fileUrl) && (
+                    <PrivateFileLink file={{ name: p.fileName, path: p.filePath, url: p.fileUrl }} label="View"
+                      style={{
+                        padding: '6px 11px', borderRadius: 8, fontSize: 10.5, fontWeight: 700,
+                        background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.text,
+                      }}/>
                   )}
                   {p.status !== 'Verified' && (
                     <ERPBtn size="sm" variant="success" disabled={busy} onClick={() => handleProofReview(p, 'Verified')}>

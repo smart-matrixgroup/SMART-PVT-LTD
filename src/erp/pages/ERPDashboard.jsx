@@ -10,34 +10,10 @@ import {
   ERPBtn, ERPProgress, ERPAvatar, C
 } from '../components/ERPui';
 
-// ── DEV mock data (dev sessions only — live mode uses Firestore) ──
-const DEV_STATS = { clients:12, projects:8, revenue:'LKR 4.85M', leads:3 };
-const DEV_PROJECTS = [
-  { id:'p1', title:'Corporate Website Redesign', clientName:'John Perera',   status:'In Progress',  completion:65 },
-  { id:'p2', title:'Restaurant POS System',      clientName:'Sarah Fernando', status:'advance_paid', completion:40 },
-  { id:'p3', title:'Mobile App Development',     clientName:'Kumar Arasan',   status:'quotation_sent', completion:0 },
-  { id:'p4', title:'ERP Implementation',         clientName:'Priya Nair',     status:'Completed',   completion:100 },
-];
-const DEV_LEADS = [
-  { id:'l1', name:'Rahul Mendis',   company:'RMG Trading',    service:'ERP System',  type:'client_request', status:'New', createdAt:'2 min ago' },
-  { id:'l2', name:'Thilak Rajah',   company:'TR Holdings',    service:'Website',     type:'quote_modal',    status:'New', createdAt:'18 min ago' },
-  { id:'l3', name:'Amali Senerath', company:'AS Enterprises', service:'Mobile App',  type:'client_request', status:'New', createdAt:'1 hr ago' },
-];
-const DEV_STAFF = [
-  { id:'s1', name:'Ashan Perera',     role:'Full Stack Developer', status:'active' },
-  { id:'s2', name:'Nimali Silva',     role:'UI/UX Designer',       status:'busy' },
-  { id:'s3', name:'Ruwan Jayasuriya', role:'Accountant',           status:'on-leave' },
-];
-const DEV_ASSIGNMENTS = [
-  { id:'wa1', projectId:'p1', title:'Home page build', staffId:'s1', staffName:'Ashan Perera', status:'In Progress', progress:60 },
-  { id:'wa2', projectId:'p2', title:'Order screen UI', staffId:'s2', staffName:'Nimali Silva', status:'Assigned', progress:0 },
-];
-const DEV_ACTIVITY = [
-  { icon:'🔔', text:'New client request from Rahul M. — ERP System',  time:'2 min ago',  color:'#18C77A' },
-  { icon:'✅', text:'John P. accepted quotation #QT-024',             time:'18 min ago', color:'#0066FF' },
-  { icon:'💰', text:'Advance payment confirmed — Sarah Fernando',     time:'1 hr ago',   color:'#F5B942' },
-  { icon:'📁', text:'Project created — Mobile App Development',       time:'2 hr ago',   color:'#00D9FF' },
-];
+// ── DEV mock data ──────────────────────────────────────────────────
+// Deleted on purpose: the dashboard builds every card from live Firestore
+// listeners. The old scripted clients / staff / activity rows were dead test
+// data that could be mistaken for real records.
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
 const EMPTY_STATS = { clients:0, projects:0, revenue:'LKR 0', leads:0 };

@@ -41,6 +41,16 @@ const INITIAL_TASK_ROW = {
 
 const DEV_REPORTS = [];
 
+// Exact submission stamp (server time) shown on each saved report, so the
+// staff member can see the date AND time their update reached the admin.
+const submittedStampOf = (r) => {
+  const ms = toMs(r?.submittedAt || r?.createdAt);
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })} · ` +
+    `${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
 export default function DailyUpdate() {
   const { staffProfile, isFirebaseConfigured, isDevSession } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
@@ -885,6 +895,18 @@ export default function DailyUpdate() {
                           color: C.green, border: '1px solid rgba(24,199,122,0.3)', fontWeight: 700
                         }}>
                           TODAY
+                        </span>
+                      )}
+
+                      {submittedStampOf(r) && (
+                        <span
+                          title="The exact date and time this report was sent to the admin"
+                          style={{
+                            fontSize: 9.5, padding: '2px 8px', borderRadius: 6,
+                            background: 'rgba(0,217,255,0.10)', color: C.cyan,
+                            border: '1px solid rgba(0,217,255,0.28)', fontWeight: 700
+                          }}>
+                          🕒 {submittedStampOf(r)}
                         </span>
                       )}
 

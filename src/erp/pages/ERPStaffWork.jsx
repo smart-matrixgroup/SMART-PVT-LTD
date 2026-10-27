@@ -27,29 +27,13 @@ const EMPTY_FORM = {
   staffId: '', startDate: todayKey(), deadline: '', priority: 'Medium', status: 'Assigned', progress: 0,
 };
 
-const DEV_CLIENTS = [
-  { id: 'C001', name: 'John Perera', company: 'Perera Holdings' },
-  { id: 'C002', name: 'Sarah Fernando', company: 'Mehala Restaurant' },
-  { id: 'C004', name: 'Priya Nair', company: 'PN Accounting' },
-];
+// Dev preview data removed — the Work tab starts empty so nobody mistakes a
+// scripted row (fake staff, client or project) for real ERP data.
+const DEV_CLIENTS = [];
 
-const DEV_PROJECTS = [
-  { id: 'P001', clientId: 'C001', title: 'Corporate Website Redesign', serviceType: 'Corporate Business Website' },
-  { id: 'P003', clientId: 'C002', title: 'Restaurant POS System',      serviceType: 'ERP & POS System' },
-  { id: 'P004', clientId: 'C004', title: 'Annual Tax Filing 2024',     serviceType: 'Accounting & Tax Services' },
-];
+const DEV_PROJECTS = [];
 
-const DEV_ASSIGNMENTS = [
-  { id: 'wa1', clientId:'C001', clientName:'John Perera', clientCompany:'Perera Holdings', serviceType:'Corporate Business Website',
-    projectId: 'P001', projectTitle: 'Corporate Website Redesign', title: 'Home page component build', staffId: 'dev-staff-001', staffName: 'Ashan Perera', staffRole:'Full Stack Developer',
-    startDate: '2026-10-01', deadline: '2026-10-10', priority: 'High', status: 'In Progress', progress: 60 },
-  { id: 'wa2', clientId:'C002', clientName:'Sarah Fernando', clientCompany:'Mehala Restaurant', serviceType:'ERP & POS System',
-    projectId: 'P003', projectTitle: 'Restaurant POS System', title: 'Order screen UI', staffId: 'dev-staff-002', staffName: 'Nimali Silva', staffRole:'UI/UX Designer',
-    startDate: '2026-09-28', deadline: '2026-10-04', priority: 'Critical', status: 'Assigned', progress: 0 },
-  { id: 'wa3', clientId:'C004', clientName:'Priya Nair', clientCompany:'PN Accounting', serviceType:'Accounting & Tax Services',
-    projectId: '', projectTitle: '', title: 'September bookkeeping close', staffId: 'dev-staff-003', staffName: 'Ruwan Jayasuriya', staffRole:'Accountant',
-    startDate: '2026-10-01', deadline: '2026-10-07', priority: 'Medium', status: 'Completed', progress: 100 },
-];
+const DEV_ASSIGNMENTS = [];
 
 export default function ERPStaffWork() {
   const { isFirebaseConfigured, isDevSession } = useAuth();
@@ -79,11 +63,7 @@ export default function ERPStaffWork() {
   useEffect(() => {
     if (!live) {
       setAssignments(DEV_ASSIGNMENTS);
-      setStaff([
-        { id: 'dev-staff-001', name: 'Ashan Perera', role: 'Full Stack Developer', department: 'Engineering', status: 'active' },
-        { id: 'dev-staff-002', name: 'Nimali Silva', role: 'UI/UX Designer', department: 'Design', status: 'busy' },
-        { id: 'dev-staff-003', name: 'Ruwan Jayasuriya', role: 'Accountant', department: 'Finance', status: 'on-leave' },
-      ]);
+      setStaff([]);
       setClients(DEV_CLIENTS);
       setProjects(DEV_PROJECTS);
       setLoading(false);

@@ -43,13 +43,9 @@ export default function ERPAccessRules() {
     } catch { /* ignore */ }
 
     if (!live) {
-      setStaffList([
-        { id: 'dev-staff-001', name: 'Ashan Perera', role: 'Full Stack Developer', email: 'staff@smart.com', status: 'active' },
-        { id: 'dev-staff-002', name: 'Nimali Silva', role: 'UI/UX Designer', email: 'nimali@smartpvtltd.com', status: 'active' },
-      ]);
-      setClientsList([
-        { id: 'dev-client-001', name: 'Test Client', company: 'Test Company Pvt Ltd', email: 'testclient@smart.com', status: 'active' },
-      ]);
+      // Dev mode keeps the rule editor usable without fake people in the lists.
+      setStaffList([]);
+      setClientsList([]);
       setLoading(false);
       return;
     }

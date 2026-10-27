@@ -181,10 +181,14 @@ export default function ServiceDetailPage({ onOpenQuote }) {
             <div className="text-xs space-y-2">
               <p className="font-semibold text-[#0A1E3F] dark:text-white">What Factors Affect Final Cost?</p>
               <ul className="list-disc list-inside space-y-1 text-[13px] text-[#5B6E88] dark:text-text-muted">
-                <li>Number of custom workflow roles & approval levels</li>
-                <li>Third-party API connectors and hardware integrations</li>
-                <li>Initial data migration volume (items, past ledgers)</li>
-                <li>On-site vs. remote training and dedicated SLA tier</li>
+                {(service.costFactors || [
+                  'Number of custom workflow roles & approval levels',
+                  'Third-party API connectors and hardware integrations',
+                  'Initial data migration volume (items, past ledgers)',
+                  'On-site vs. remote training and dedicated SLA tier'
+                ]).map((factor, idx) => (
+                  <li key={idx}>{factor}</li>
+                ))}
               </ul>
             </div>
 

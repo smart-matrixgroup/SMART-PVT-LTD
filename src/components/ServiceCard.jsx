@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { 
   ArrowRight, LayoutGrid, Code2, Globe, 
   Smartphone, Cpu, Sparkles, Calculator, 
-  FileCheck, ShieldCheck, UserCheck 
+  FileCheck, ShieldCheck, UserCheck, Megaphone 
 } from 'lucide-react';
 
 export default function ServiceCard({ service, onOpenQuote }) {
@@ -19,6 +19,7 @@ export default function ServiceCard({ service, onOpenQuote }) {
       case 'Calculator': return <Calculator className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />;
       case 'FileCheck': return <FileCheck className="w-6 h-6 text-blue-600 dark:text-blue-400" />;
       case 'ShieldCheck': return <ShieldCheck className="w-6 h-6 text-purple-600 dark:text-purple-400" />;
+      case 'Megaphone': return <Megaphone className="w-6 h-6 text-rose-600 dark:text-rose-400" />;
       default: return <Globe className="w-6 h-6 text-primary dark:text-primary-cyan" />;
     }
   };

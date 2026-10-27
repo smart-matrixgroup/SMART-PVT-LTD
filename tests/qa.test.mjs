@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toInt, formatLKR } from '../src/erp/money.js';
+import { passwordError, generateStrongPassword, PASSWORD_HINT } from '../src/erp/passwordPolicy.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. PAYMENT CALCULATION & RECONCILIATION TESTS
@@ -407,4 +408,38 @@ test('Access Control Rules - Staff Client page restriction & defaults', () => {
   // Overridden staff member should be granted access
   const isSpecialStaffAllowed = restrictedRules.memberOverrides['staff-special'].allowStaffClientProjects;
   assert.equal(isSpecialStaffAllowed, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. PASSWORD POLICY — every account the ERP creates must be hard to guess
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Password Policy - simple passwords are rejected', () => {
+  ['smart123', 'password', '12345678', 'admin123', 'Smart@12345678', 'welcome1'].forEach(pw => {
+    assert.notEqual(passwordError(pw), '', `${pw} must be rejected`);
+  });
+});
+
+test('Password Policy - missing character classes are reported', () => {
+  assert.match(passwordError('abcdefgh12'), /capital letter/);        // no A-Z
+  assert.match(passwordError('ABCDEFGH12'), /small letter/);          // no a-z
+  assert.match(passwordError('Abcdefgh#'),  /number/);                // no digit
+  assert.match(passwordError('Abcdefgh12'), /symbol/);                // no symbol
+  assert.match(passwordError('Ab1!'),       /at least 8 characters/); // too short
+  assert.equal(passwordError(''),           'Password is required.');
+});
+
+test('Password Policy - strong passwords pass, account email cannot be reused', () => {
+  assert.equal(passwordError('Smart@Tech99'), '');
+  assert.equal(passwordError('Kandy#Client24'), '');
+  assert.match(passwordError('Thilak@2026x', 'thilak@trholdings.lk'), /cannot contain the account name/);
+});
+
+test('Password Policy - generated one-time passwords satisfy the policy', () => {
+  for (let i = 0; i < 200; i++) {
+    const pw = generateStrongPassword();
+    assert.equal(passwordError(pw), '', `generated ${pw} must pass`);
+    assert.ok(pw.length >= 8, `generated ${pw} is long enough`);
+  }
+  assert.ok(PASSWORD_HINT.includes('symbol'));
 });

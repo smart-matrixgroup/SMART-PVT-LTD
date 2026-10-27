@@ -6,10 +6,11 @@ const MONTHLY = [
   {m:'Aug',rev:415000,proj:5},{m:'Sep',rev:380000,proj:4},{m:'Oct',rev:485000,proj:6},
 ];
 const SERVICES = [
-  {name:'ERP & POS',pct:38,amount:'LKR 1.84M',color:'#0066FF'},
-  {name:'Websites',pct:28,amount:'LKR 1.36M',color:'#00D9FF'},
-  {name:'Mobile Apps',pct:18,amount:'LKR 0.87M',color:'#8B5CF6'},
-  {name:'Accounting & Tax',pct:16,amount:'LKR 0.78M',color:'#18C77A'},
+  {name:'ERP & POS',pct:32,amount:'LKR 1.55M',color:'#0066FF'},
+  {name:'Websites',pct:24,amount:'LKR 1.16M',color:'#00D9FF'},
+  {name:'Digital Marketing',pct:18,amount:'LKR 0.87M',color:'#F5B942'},
+  {name:'Mobile Apps',pct:14,amount:'LKR 0.68M',color:'#8B5CF6'},
+  {name:'Accounting & Tax',pct:12,amount:'LKR 0.58M',color:'#18C77A'},
 ];
 
 const maxRev = Math.max(...MONTHLY.map(m=>m.rev));

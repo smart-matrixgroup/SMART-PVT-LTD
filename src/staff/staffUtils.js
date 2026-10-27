@@ -259,6 +259,50 @@ export function calculateAttendanceHours(arrival, lunchStart, lunchEnd, departur
   };
 }
 
+export function compressImage(file, maxDimension = 360, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) {
+      reject(new Error('Please select a valid image file.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDimension) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        canvas.toBlob(
+          (blob) => {
+            resolve({ dataUrl, blob, width, height });
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function getDayName(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');

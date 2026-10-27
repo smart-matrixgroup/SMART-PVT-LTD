@@ -9,6 +9,7 @@ import { db, auth, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { company } from '../../config/company';
 import ERPAccessRules from './ERPAccessRules';
+import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
 
 const SECTIONS = [
   {id:'company',  label:'Company Info',     icon:<Building size={14}/> },
@@ -130,8 +131,9 @@ export default function ERPSettings() {
       setSaveError('Enter your current password, the new password and the confirmation.');
       return;
     }
-    if (passForm.newPass.length < 8) {
-      setSaveError('New password must be at least 8 characters.');
+    const pwErr = passwordError(passForm.newPass, currentUser?.email || '');
+    if (pwErr) {
+      setSaveError(pwErr);
       return;
     }
     if (passForm.newPass !== passForm.confirm) {
@@ -155,7 +157,7 @@ export default function ERPSettings() {
       const msg = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
         ? 'Current password is incorrect.'
         : e.code === 'auth/weak-password'
-        ? 'New password is too weak — use 8+ characters with letters and numbers.'
+        ? `New password is too weak. ${PASSWORD_HINT}`
         : e.message || 'Could not update the password.';
       setSaveError(msg);
     } finally {
@@ -263,10 +265,10 @@ export default function ERPSettings() {
             <div style={{padding:20,display:'flex',flexDirection:'column',gap:14}}>
               <div style={{padding:'12px 16px',borderRadius:10,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`,fontSize:11,color:C.subtle,lineHeight:1.6}}>
                 🔐 Admin ID: <strong style={{color:C.text}}>SMART-ADMIN</strong><br/>
-                Change your ERP admin password below. Use a strong password with uppercase, numbers and symbols.
+                Change your ERP admin password below. {PASSWORD_HINT}
               </div>
               <ERPInput label="Current Password" value={passForm.current} type="password" onChange={e=>setPassForm(p=>({...p,current:e.target.value}))} placeholder="••••••••" />
-              <ERPInput label="New Password" value={passForm.newPass} type="password" onChange={e=>setPassForm(p=>({...p,newPass:e.target.value}))} placeholder="Min 8 characters" />
+              <ERPInput label="New Password" value={passForm.newPass} type="password" onChange={e=>setPassForm(p=>({...p,newPass:e.target.value}))} placeholder="Min 8, caps + small + number + symbol" />
               <ERPInput label="Confirm New Password" value={passForm.confirm} type="password" onChange={e=>setPassForm(p=>({...p,confirm:e.target.value}))} placeholder="Repeat new password" />
               <ERPBtn variant="primary" onClick={handleUpdatePassword} disabled={savingSection === 'security'} style={{alignSelf:'flex-end'}}>
                 <Lock size={13}/> {savingSection === 'security' ? 'Updating…' : 'Update Password'}

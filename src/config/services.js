@@ -431,6 +431,48 @@ export const services = [
     faqs: [
       { q: "Can my website include online payment accepting?", a: "Yes, we integrate leading payment gateways including PayHere, Stripe, and direct bank transfer slips." }
     ]
+  },
+  {
+    id: "digital-marketing",
+    slug: "digital-marketing",
+    title: "Digital Marketing & Social Media Management",
+    subtitle: "Monthly Social Media, SEO & Campaign Management",
+    category: "Digital Marketing",
+    shortDesc: "End-to-end digital marketing including weekly social posts/stories, comment engagement, weekly reports, campaign management, Google access handling and basic SEO.",
+    icon: "Megaphone",
+    badge: "Monthly Plan",
+    startingPrice: "From LKR 15,000 / month",
+    priceNote: "Basic, Standard & Premium tiers available; Standard includes website + Google Business",
+    overview: "Build and maintain a strong online presence with SMART's monthly digital marketing service. We manage your social media content, audience engagement, paid campaigns, Google Business presence, and foundational SEO so you can focus on running your business.",
+    features: [
+      { name: "Weekly Social Content", desc: "3 feed posts + 3 stories every week, designed and scheduled to keep your brand active and engaging." },
+      { name: "Community Engagement", desc: "Active monitoring and replies to comments, messages, and social interactions to build trust." },
+      { name: "Weekly Performance Reports", desc: "Clear weekly reports covering reach, engagement, follower growth, and action items." },
+      { name: "Campaign Management", desc: "Planning, execution and tracking of promotional campaigns across social platforms." },
+      { name: "Google Access Management", desc: "Google Business Profile, Search Console, Analytics and ad account setup and access handling." },
+      { name: "Basic SEO", desc: "On-page SEO fundamentals, keyword targeting, and local search optimization." }
+    ],
+    deliverables: [
+      "Monthly social media content calendar",
+      "3 posts + 3 stories per week",
+      "Weekly engagement & growth report",
+      "Comment / inbox reply management",
+      "Campaign plan and execution report",
+      "Google Business & Search Console setup/management",
+      "Basic on-page SEO recommendations"
+    ],
+    costFactors: [
+      "Number of social platforms managed",
+      "Posting frequency (Basic vs Standard vs Premium)",
+      "Ad spend budget and campaign complexity",
+      "Need for website + Google Business setup"
+    ],
+    timeline: "Monthly recurring engagement",
+    faqs: [
+      { q: "What is included in the Basic LKR 15,000 plan?", a: "The Basic plan includes weekly 3 posts + 3 stories, comment/engagement replies, weekly reports, basic SEO, and campaign planning support." },
+      { q: "What does the Standard plan include?", a: "The Standard LKR 45,000 plan includes everything in Basic plus a corporate business website and Google Business profile management. First installment is LKR 30,000, then LKR 15,000 monthly." },
+      { q: "Can the Premium plan be customized?", a: "Yes. Premium is fully customizable and can include ERP integration, advanced ad spend management, influencer campaigns, and extended content volume — quoted on request." }
+    ]
   }
 ];
 

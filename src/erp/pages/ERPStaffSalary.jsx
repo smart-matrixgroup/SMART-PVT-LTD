@@ -18,15 +18,9 @@ import { Plus, FileText, Trash2, AlertTriangle } from 'lucide-react';
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online'];
 
-const DEV_STAFF = [
-  { id: 'dev-staff-001', staffId: 'STF-2026-0001', name: 'Ashan Perera', role: 'Full Stack Developer', basicSalary: 120000, allowances: 10000, deductions: 8000 },
-  { id: 'dev-staff-002', staffId: 'STF-2026-0002', name: 'Nimali Silva', role: 'UI/UX Designer', basicSalary: 95000, allowances: 5000, deductions: 5000 },
-];
-const DEV_PAYMENTS = [
-  { id: 'sp1', payslipNo: 'PS-2026-0001', staffId: 'dev-staff-001', staffName: 'Ashan Perera', staffRole: 'Full Stack Developer',
-    month: thisMonthKey(), basicSalary: 120000, allowances: 10000, deductions: 8000, net: 122000,
-    paidOn: todayISO(), method: 'Bank Transfer', reference: 'FT-88213', authUid: 'dev-staff-001' },
-];
+// Dev preview starts empty — no invented staff, salary or payslip rows.
+const DEV_STAFF = [];
+const DEV_PAYMENTS = [];
 
 const EMPTY_FORM = { staffId: '', month: '', amount: '', paidOn: '', method: 'Bank Transfer', reference: '' };
 

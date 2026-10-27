@@ -11,9 +11,10 @@ import {
   ERPModal, ERPInput, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
+import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
 import {
   Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText, Pencil, Trash2,
-  Key, Shield, CheckCircle2, RotateCcw
+  Key, Shield, CheckCircle2, RotateCcw, MapPin
 } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
@@ -43,7 +44,7 @@ const DEV_PROJECTS = {
   ],
 };
 
-const EMPTY_FORM = { name:'', company:'', email:'', phone:'', clientSince:'', createAccount:true, password:'' };
+const EMPTY_FORM = { name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'' };
 
 async function countWhere(col, field, value) {
   const snap = await getDocs(query(collection(db, col), where(field, '==', value)));
@@ -106,6 +107,7 @@ export default function ERPClients() {
       company: c.company || '',
       email: c.loginEmail || c.email || '',
       phone: c.phone || '',
+      address: c.address || '',
       clientSince: c.clientSince || '',
       createAccount: false,
       password: '',
@@ -115,13 +117,28 @@ export default function ERPClients() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setSaveError('Name and email are required.');
+    if (!form.name.trim()) {
+      setSaveError('Name is required.');
       return;
     }
-    if (!editId && form.createAccount && (!form.password || form.password.length < 6)) {
-      setSaveError('Password must be at least 6 characters.');
+    // Either email or phone is enough — never force both.
+    if (!form.email.trim() && !form.phone.trim()) {
+      setSaveError('Enter an email or a phone number — one of them is enough.');
       return;
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setSaveError('That email address doesn\'t look right — please check it.');
+      return;
+    }
+    if (form.phone.trim() && form.phone.replace(/\D/g, '').length < 9) {
+      setSaveError('Please enter a valid phone number (at least 9 digits).');
+      return;
+    }
+    // A portal login needs an email; with phone only the client is saved without one.
+    const wantsAccount = !editId && form.createAccount && !!form.email.trim();
+    if (wantsAccount) {
+      const pwErr = passwordError(form.password, form.email.trim());
+      if (pwErr) { setSaveError(pwErr); return; }
     }
     setSaveError('');
     setSaving(true);
@@ -131,6 +148,7 @@ export default function ERPClients() {
       email: form.email.trim(),
       loginEmail: form.email.trim(),
       phone: form.phone.trim(),
+      address: form.address.trim(),
       clientSince: form.clientSince.trim(),
       status: 'active',
     };
@@ -141,7 +159,7 @@ export default function ERPClients() {
         if (live) await updateDoc(doc(db, 'clients', editId), { ...payload, updatedAt: serverTimestamp() });
         setNotice({ kind: 'ok', msg: `Client ${form.name} updated.` });
       } else {
-        if (live && form.createAccount) {
+        if (live && wantsAccount) {
           // Provision client auth user and store at clients/{uid}
           const uid = await createClientAuthAccount(form.email.trim(), form.password);
           const clientData = {
@@ -166,7 +184,12 @@ export default function ERPClients() {
           } else {
             setClients(p => [local, ...p]);
           }
-          setNotice({ kind: 'ok', msg: `Client ${form.name} saved.` });
+          setNotice({
+            kind: 'ok',
+            msg: form.createAccount && !form.email.trim()
+              ? `Client ${form.name} saved without a portal login (add an email later to create one).`
+              : `Client ${form.name} saved.`,
+          });
         }
       }
       setShowForm(false);
@@ -177,7 +200,7 @@ export default function ERPClients() {
       const msg = err.code === 'auth/email-already-in-use'
         ? 'That email already has a login account. Use a different email.'
         : err.code === 'auth/weak-password'
-        ? 'Password is too weak (minimum 6 characters).'
+        ? `Password is too weak. ${PASSWORD_HINT}`
         : (err.message || "Couldn't save the client. Please try again.");
       setSaveError(msg);
     } finally {
@@ -201,10 +224,9 @@ export default function ERPClients() {
   };
 
   const handleCreateAccountForClient = async () => {
-    if (!pwModal?.client || !pwModal.password || pwModal.password.length < 6) {
-      setPwModal(p => ({ ...p, error: 'Password must be at least 6 characters.' }));
-      return;
-    }
+    if (!pwModal?.client) return;
+    const pwErr = passwordError(pwModal.password, pwModal.client?.email || '');
+    if (pwErr) { setPwModal(p => ({ ...p, error: pwErr })); return; }
     setPwModal(p => ({ ...p, busy: true, error: '' }));
     try {
       const client = pwModal.client;
@@ -464,6 +486,13 @@ export default function ERPClients() {
                 ))}
               </div>
 
+              {selected.address && (
+                <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                  <span style={{ color:C.amber, flexShrink:0, marginTop:1 }}><MapPin size={12}/></span>
+                  <span style={{ fontSize:11, color:C.muted, width:80, flexShrink:0 }}>Address</span>
+                  <span style={{ fontSize:11, color:C.subtle, fontWeight:600, lineHeight:1.5 }}>{selected.address}</span>
+                </div>
+              )}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
                 {[
                   { label:'Projects', val:selected.projects||selectedProjects.length, color:'#0066FF' },
@@ -575,8 +604,12 @@ export default function ERPClients() {
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <ERPInput label="Full Name" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} required placeholder="e.g. John Perera" />
           <ERPInput label="Company" value={form.company} onChange={e=>setForm(p=>({...p,company:e.target.value}))} placeholder="e.g. Perera Holdings Pvt Ltd" />
-          <ERPInput label="Email" value={form.email} type="email" onChange={e=>setForm(p=>({...p,email:e.target.value}))} required placeholder="john@company.com" />
+          <ERPInput label="Email" value={form.email} type="email" onChange={e=>setForm(p=>({...p,email:e.target.value}))} placeholder="john@company.com" />
           <ERPInput label="Phone / WhatsApp" value={form.phone} type="tel" onChange={e=>setForm(p=>({...p,phone:e.target.value}))} placeholder="+94 77 000 0000" />
+          <div style={{ fontSize:10.5, color:C.muted, marginTop:-6 }}>
+            Email or phone — at least one is required, both are not needed.
+          </div>
+          <ERPInput label="Address" value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))} placeholder="No, street, city" />
           <ERPInput label="Client since" value={form.clientSince} onChange={e=>setForm(p=>({...p,clientSince:e.target.value}))} placeholder="e.g. March 2024" />
 
           {!editId && (
@@ -588,19 +621,22 @@ export default function ERPClients() {
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 700, color: C.text, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={form.createAccount}
+                  checked={form.createAccount && !!form.email.trim()}
+                  disabled={!form.email.trim()}
                   onChange={e => setForm(p => ({ ...p, createAccount: e.target.checked }))}
                 />
-                <span>Create Client Portal Login Account</span>
+                <span style={{ opacity: form.email.trim() ? 1 : 0.55 }}>
+                  Create Client Portal Login Account{!form.email.trim() ? ' (needs an email)' : ''}
+                </span>
               </label>
 
-              {form.createAccount && (
+              {form.createAccount && form.email.trim() && (
                 <ERPInput
                   label="Initial Password"
                   type="password"
                   value={form.password}
                   onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                  placeholder="Min 6 characters (e.g. Client@1234)"
+                  placeholder="Min 8, caps + small + number + symbol (e.g. Client@1234)"
                   required
                 />
               )}
@@ -658,7 +694,7 @@ export default function ERPClients() {
             type="password"
             value={pwModal?.password || ''}
             onChange={e => setPwModal(p => ({ ...p, password: e.target.value }))}
-            placeholder="Min 6 characters (e.g. Client@1234)"
+            placeholder="Min 8, caps + small + number + symbol (e.g. Client@1234)"
             required
           />
 

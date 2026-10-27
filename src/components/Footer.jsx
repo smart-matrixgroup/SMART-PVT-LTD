@@ -137,6 +137,7 @@ export default function Footer({ onOpenQuote }) {
               <li><Link to="/services/mobile-app" className="transition-colors hover:text-[#E3B977]">Mobile Apps</Link></li>
               <li><Link to="/services/accounting" className="transition-colors hover:text-[#E3B977]">Accounting & Tax</Link></li>
               <li><Link to="/services/audit" className="transition-colors hover:text-[#E3B977]">Audit & Assurance</Link></li>
+              <li><Link to="/services/digital-marketing" className="transition-colors hover:text-[#E3B977]">Digital Marketing</Link></li>
               <li><Link to="/services/business-automation" className="transition-colors hover:text-[#E3B977]">Business Advisory</Link></li>
             </ul>
           </div>

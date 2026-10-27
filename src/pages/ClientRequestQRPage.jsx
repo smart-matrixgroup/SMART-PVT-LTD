@@ -14,7 +14,7 @@ import SEO from '../components/SEO';
 import {
   Send, CheckCircle2, AlertCircle, Phone, Mail, Building,
   User, Briefcase, FileText, Sparkles, ArrowRight, MessageSquare,
-  ShieldCheck, HelpCircle
+  ShieldCheck, HelpCircle, MapPin
 } from 'lucide-react';
 
 const SERVICE_OPTIONS = [
@@ -25,6 +25,7 @@ const SERVICE_OPTIONS = [
   'Mobile App (Android & iOS)',
   'Business Process Automation',
   'AI-Powered Solutions',
+  'Digital Marketing',
   'Accounting & Tax Services',
   'Other / Custom Requirement'
 ];
@@ -49,6 +50,7 @@ export default function ClientRequestQRPage() {
     company: '',
     phone: '',
     email: '',
+    address: '',
     service: 'ERP & POS System',
     budget: 'LKR 100,000 – LKR 250,000',
     message: '',
@@ -65,8 +67,19 @@ export default function ClientRequestQRPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { setError('Please enter your name.'); return; }
-    if (!form.phone.trim()) { setError('Please enter your WhatsApp / phone number.'); return; }
-    if (!form.email.trim()) { setError('Please enter your email address.'); return; }
+    // Email or phone — at least one is enough.
+    if (!form.phone.trim() && !form.email.trim()) {
+      setError('Please give us an email or a phone number — one of them is enough.');
+      return;
+    }
+    if (form.phone.trim() && form.phone.replace(/\D/g, '').length < 9) {
+      setError('Please enter a valid phone number (at least 9 digits).');
+      return;
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError('That email address doesn\'t look right — please check it.');
+      return;
+    }
     if (!form.message.trim()) { setError('Please describe your project requirements.'); return; }
 
     setLoading(true);
@@ -79,6 +92,7 @@ export default function ClientRequestQRPage() {
         phone: form.phone.trim(),
         whatsapp: form.phone.trim(),
         email: form.email.trim().toLowerCase(),
+        address: form.address.trim(),
         service: form.service,
         budget: form.budget,
         description: form.message.trim(),
@@ -159,8 +173,20 @@ export default function ClientRequestQRPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Phone / WhatsApp:</span>
-                  <span className="font-bold text-white">{form.phone}</span>
+                  <span className="font-bold text-white">{form.phone || '—'}</span>
                 </div>
+                {form.email && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Email:</span>
+                    <span className="font-bold text-white break-all text-right">{form.email}</span>
+                  </div>
+                )}
+                {form.address && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-400 shrink-0">Address:</span>
+                    <span className="font-bold text-white text-right">{form.address}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-slate-400">Lead Source:</span>
                   <span className="font-bold text-primary-cyan">QR Code Scan</span>
@@ -178,7 +204,7 @@ export default function ClientRequestQRPage() {
                 </a>
                 <button
                   type="button"
-                  onClick={() => { setSubmitted(false); setForm({ name: '', company: '', phone: '', email: '', service: 'ERP & POS System', budget: 'LKR 100,000 – LKR 250,000', message: '' }); }}
+                  onClick={() => { setSubmitted(false); setForm({ name: '', company: '', phone: '', email: '', address: '', service: 'ERP & POS System', budget: 'LKR 100,000 – LKR 250,000', message: '' }); }}
                   className="inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-all"
                 >
                   Submit Another Request
@@ -233,13 +259,12 @@ export default function ClientRequestQRPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    WhatsApp / Phone Number <span className="text-rose-400">*</span>
+                    WhatsApp / Phone Number
                   </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                     <input
                       type="tel"
-                      required
                       name="phone"
                       value={form.phone}
                       onChange={handleChange}
@@ -251,13 +276,12 @@ export default function ClientRequestQRPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Email Address <span className="text-rose-400">*</span>
+                    Email Address
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                     <input
                       type="email"
-                      required
                       name="email"
                       value={form.email}
                       onChange={handleChange}
@@ -265,6 +289,27 @@ export default function ClientRequestQRPage() {
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#0A1838] border border-slate-700/80 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-primary-electric transition-colors"
                     />
                   </div>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 -mt-1.5">
+                Give at least one — email or phone number is enough.
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Address
+                </label>
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    name="address"
+                    value={form.address}
+                    onChange={handleChange}
+                    placeholder="No, street, city"
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#0A1838] border border-slate-700/80 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-primary-electric transition-colors"
+                  />
                 </div>
               </div>
 

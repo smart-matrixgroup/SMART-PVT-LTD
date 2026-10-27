@@ -104,8 +104,28 @@ service firebase.storage {
     }
 
     // Saved quotation letterhead images ("Save to quotation" in the Image
-    // Studio), organised as quotation-renders/{quotationId}/{fileName}.
-    // The quotation doc stores the download URL, so the client can open it.
+    // Studio), organised as quotation-renders/{clientUid}/{quotationId}/{fileName}.
+    // Only the Storage PATH is stored on the quotation doc — the app reads the
+    // bytes with the Firebase SDK (getBytes), so these rules run on EVERY view.
+    // No getDownloadURL() / ?token= link exists for quotations.
+    //
+    // The folder is the client's own Firebase Auth uid, which is exactly what
+    // the client portal is signed in with, so a client can only ever load their
+    // own quotation image. Admin uploads and reads every copy.
+    match /quotation-renders/{authUid}/{quotationId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      allow create, update: if isAdmin() &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+
+      allow delete: if isAdmin();
+    }
+
+    // Legacy two-segment path (quotation-renders/{quotationId}/{fileName}) left
+    // over from before the uid folder existed. Admin-only, read + write, so old
+    // quotation docs keep working until they are re-saved under the uid path.
     match /quotation-renders/{quotationId}/{fileName} {
       allow read: if request.auth != null && isAdmin();
 
@@ -114,6 +134,16 @@ service firebase.storage {
         request.resource.contentType.matches('image/.*');
 
       allow delete: if isAdmin();
+    }
+
+    // Staff profile photos / avatars — readable by authenticated users and public
+    match /staff-photos/{authUid}/{fileName} {
+      allow read: if true;
+      allow create, update: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin()) &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == authUid);
     }
 
     // No other match block → every other path is denied by default.

@@ -10,18 +10,18 @@
 // ─────────────────────────────────────────────────────────────────
 import React, { useEffect, useRef, useState } from 'react';
 import { doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getBytes } from 'firebase/storage';
+import { ref as storageRef, uploadBytes, getBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPInput,
+  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPInput, ERPAvatar,
 } from '../../erp/components/ERPui';
 import StaffEmpty from '../components/StaffEmpty';
-import { DOC_CATEGORIES } from '../staffUtils';
+import { DOC_CATEGORIES, compressImage } from '../staffUtils';
 import { fmtDate } from '../../erp/money';
 import {
   User, Mail, Phone, MapPin, CalendarDays, GraduationCap, Briefcase, Info,
-  Save, Upload, FileText, Download, AlertCircle, CheckCircle2,
+  Save, Upload, FileText, Download, AlertCircle, CheckCircle2, Camera, Trash2,
 } from 'lucide-react';
 
 const fmtWhen = iso => {
@@ -48,6 +48,8 @@ export default function MyProfile() {
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState('');
   const [ok, setOk]           = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoRef = useRef(null);
 
   useEffect(() => {
     setPhone(staffProfile?.phone || '');
@@ -102,6 +104,50 @@ export default function MyProfile() {
     { icon: GraduationCap, label: 'Education',  value: staffProfile.education || '—' },
   ];
 
+  // ── Profile photo ───────────────────────────────────────────────
+  // Compressed locally, uploaded to staff-photos/{uid}/ (public-read
+  // avatar path in storage.rules) and the URL is stamped on the staff
+  // doc — the admin's Staff page and portal header update live.
+  const onPhotoPick = async (e) => {
+    const file = e.target.files?.[0];
+    if (photoRef.current) photoRef.current.value = '';
+    if (!file) return;
+    setErr(''); setOk('');
+    if (!file.type.startsWith('image/')) { setErr('Please choose a JPG or PNG image.'); return; }
+    if (file.size > 5 * 1024 * 1024) { setErr('Photo is larger than 5 MB — please choose a smaller image.'); return; }
+    if (!live) { setErr('Photo upload needs the live Firebase backend (not available in dev session).'); return; }
+    setPhotoBusy(true);
+    try {
+      const { blob } = await compressImage(file, 480, 0.86);
+      const path = `staff-photos/${staffProfile.id}/avatar_${Date.now()}.jpg`;
+      const snap = await uploadBytes(storageRef(storage, path), blob, { contentType: 'image/jpeg' });
+      const url = await getDownloadURL(snap.ref);
+      await updateDoc(doc(db, 'staff', staffProfile.id), {
+        photoURL: url,
+        updatedAt: serverTimestamp(),
+      });
+      setOk('Profile photo updated — your admin sees it immediately.');
+    } catch (ex) {
+      setErr(
+        ex?.code === 'storage/unauthorized' || ex?.code === 'permission-denied'
+          ? 'Upload denied — ask your administrator to publish the latest Storage rules.'
+          : 'Photo upload failed. Please try again.'
+      );
+    } finally { setPhotoBusy(false); }
+  };
+
+  const removePhoto = async () => {
+    setErr(''); setOk('');
+    if (!live) { setErr('Photo changes need the live Firebase backend.'); return; }
+    setPhotoBusy(true);
+    try {
+      await updateDoc(doc(db, 'staff', staffProfile.id), { photoURL: '', updatedAt: serverTimestamp() });
+      setOk('Profile photo removed.');
+    } catch {
+      setErr('Could not remove the photo. Please try again.');
+    } finally { setPhotoBusy(false); }
+  };
+
   const avColor = AVATAR_COLORS[(staffProfile.name || '').length % AVATAR_COLORS.length];
 
   return (
@@ -111,12 +157,23 @@ export default function MyProfile() {
 
         {/* Identity header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-          <div style={{
-            width: 54, height: 54, borderRadius: 16, flexShrink: 0,
-            background: avColor, color: '#fff', fontSize: 20, fontWeight: 800,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {(staffProfile.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <ERPAvatar name={staffProfile.name} color={avColor} size={64} src={staffProfile.photoURL || null} />
+            <button
+              type="button"
+              onClick={() => photoRef.current?.click()}
+              disabled={photoBusy}
+              title="Upload / change profile photo"
+              style={{
+                position: 'absolute', bottom: -5, right: -5, width: 24, height: 24, borderRadius: '50%',
+                border: '2px solid #06112B', background: 'linear-gradient(135deg,#0066FF,#8B5CF6)',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: photoBusy ? 'wait' : 'pointer', padding: 0, boxShadow: '0 3px 10px rgba(0,0,0,0.45)',
+              }}
+            >
+              <Camera size={11} />
+            </button>
+            <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onPhotoPick} />
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{staffProfile.name || '—'}</div>
@@ -128,6 +185,20 @@ export default function MyProfile() {
               <span style={{ fontSize: 11.5, color: C.muted }}>{staffProfile.role || '—'}</span>
               {staffProfile.status && <ERPBadge status={staffProfile.status} />}
             </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <ERPBtn size="sm" variant="secondary" disabled={photoBusy} onClick={() => photoRef.current?.click()}>
+              <Camera size={12} /> {photoBusy ? 'Uploading…' : staffProfile.photoURL ? 'Change photo' : 'Upload photo'}
+            </ERPBtn>
+            {staffProfile.photoURL && (
+              <button type="button" disabled={photoBusy} onClick={removePhoto} style={{
+                background: 'transparent', border: 'none', color: C.muted, fontSize: 10, fontWeight: 700,
+                cursor: photoBusy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center',
+                justifyContent: 'center', gap: 4, padding: 0,
+              }}>
+                <Trash2 size={10} /> Remove photo
+              </button>
+            )}
           </div>
         </div>
 

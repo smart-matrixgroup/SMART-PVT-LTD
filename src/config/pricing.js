@@ -98,6 +98,75 @@ export const pricingTiers = [
     highlight: false,
     ctaText: "Discuss Architecture",
     serviceSlug: "custom-software"
+  },
+  {
+    id: "digital-marketing-basic",
+    name: "Digital Marketing — Basic",
+    category: "Digital Marketing",
+    badge: "Monthly Plan",
+    price: "15,000",
+    currency: "LKR",
+    period: "/ month",
+    description: "Monthly social media management with weekly posts, stories, engagement replies, reports and basic SEO.",
+    features: [
+      "Weekly 3 Feed Posts + 3 Stories",
+      "Comment & Message Reply Management",
+      "Weekly Performance Report",
+      "Basic Campaign Planning",
+      "Google Access Management",
+      "Basic On-Page SEO",
+      "Monthly Content Calendar",
+      "Monthly Recurring Engagement"
+    ],
+    highlight: false,
+    ctaText: "Get Digital Quote",
+    serviceSlug: "digital-marketing"
+  },
+  {
+    id: "digital-marketing-standard",
+    name: "Digital Marketing — Standard",
+    category: "Digital Marketing",
+    badge: "Includes Website",
+    price: "45,000",
+    currency: "LKR",
+    period: "package",
+    description: "Full digital marketing plus a corporate website and Google Business setup. LKR 30,000 initial installment, then LKR 15,000/month.",
+    features: [
+      "Everything in Basic Plan",
+      "Professional Corporate Business Website",
+      "Google Business Profile Setup & Management",
+      "Search Console & Analytics Integration",
+      "Advanced Monthly Campaign Management",
+      "Priority Content Approval Workflow",
+      "Quarterly Strategy Review Call",
+      "Initial Setup: LKR 30,000 + LKR 15,000/mo"
+    ],
+    highlight: true,
+    ctaText: "Choose Standard Plan",
+    serviceSlug: "digital-marketing"
+  },
+  {
+    id: "digital-marketing-premium",
+    name: "Digital Marketing — Premium",
+    category: "Digital Marketing",
+    badge: "Custom / ERP",
+    price: "On Request",
+    currency: "",
+    period: "customizable",
+    description: "Fully customizable digital marketing with ERP integration, advanced ads, influencer campaigns and expanded content volume.",
+    features: [
+      "Everything in Standard Plan",
+      "ERP / CRM Marketing Integration",
+      "Advanced Paid Ad Campaign Management",
+      "Influencer / Collaboration Campaigns",
+      "Daily Posting & Story Options",
+      "Dedicated Account Manager",
+      "Custom Reporting Dashboard",
+      "Tailored Scope & Pricing"
+    ],
+    highlight: false,
+    ctaText: "Build Premium Scope",
+    serviceSlug: "digital-marketing"
   }
 ];
 

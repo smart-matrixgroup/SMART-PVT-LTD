@@ -315,8 +315,29 @@ export function ERPSelect({ label, value, onChange, options=[], placeholder, req
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────
-export function ERPAvatar({ name='?', color='#0066FF', size=32 }) {
+export function ERPAvatar({ name='?', color='#0066FF', size=32, src=null }) {
+  const [imgError, setImgError] = React.useState(false);
   const initial = name?.[0]?.toUpperCase() || '?';
+
+  if (src && !imgError) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgError(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size * 0.28,
+          objectFit: 'cover',
+          border: `1.5px solid ${color}55`,
+          boxShadow: `0 3px 10px ${color}30`,
+          flexShrink: 0,
+          display: 'block',
+        }}
+      />
+    );
+  }
   return (
     <div style={{
       width: size, height: size, borderRadius: size * 0.28,

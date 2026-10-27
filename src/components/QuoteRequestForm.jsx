@@ -4,7 +4,7 @@ import { db, isFirebaseConfigured } from '../config/firebase';
 import { services } from '../config/services';
 import { company } from '../config/company';
 import {
-  X, User, Building, Phone, Mail, Briefcase, FileText,
+  X, User, Building, Phone, Mail, Briefcase, FileText, MapPin,
   Send, CheckCircle2, AlertCircle, MessageSquare, ArrowRight, Sparkles,
 } from 'lucide-react';
 
@@ -13,7 +13,7 @@ import {
 // so the website, quote modal and contact form can never drift apart.
 const SERVICE_OPTIONS = [...services.map(s => s.title), 'Other / Not Sure Yet'];
 
-const EMPTY_FORM = { name: '', company: '', email: '', phone: '', service: '', message: '' };
+const EMPTY_FORM = { name: '', company: '', email: '', phone: '', address: '', service: '', message: '' };
 
 // Resolve a free-text service hint ("SMART ERP" from the homepage
 // banner, a full service title from a service page, etc.) to the closest
@@ -32,11 +32,12 @@ export function matchServiceOption(hint) {
 // ── Validation ─────────────────────────────────────────────────────
 function validate(form) {
   if (!form.name.trim())                return 'Please enter your name.';
-  if (!form.email.trim())               return 'Please enter your email address.';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+  // Either email or phone is enough — never force both.
+  if (!form.email.trim() && !form.phone.trim())
+                                        return 'Please give us an email or a phone number — one of them is enough.';
+  if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
                                         return 'That email address doesn\'t look right — please check it.';
-  if (!form.phone.trim())               return 'Please enter your phone / WhatsApp number.';
-  if (form.phone.replace(/\D/g, '').length < 9)
+  if (form.phone.trim() && form.phone.replace(/\D/g, '').length < 9)
                                         return 'Please enter a valid phone number (at least 9 digits).';
   if (!form.service)                    return 'Please select the service you\'re interested in.';
   if (!form.message.trim())             return 'Please tell us briefly what you need.';
@@ -99,6 +100,7 @@ export default function QuoteRequestForm({ source = 'Quote Request', initialServ
         email:       form.email.trim(),
         phone:       form.phone.trim(),
         whatsapp:    form.phone.trim(),   // mirrored: ERP WhatsApp actions + security rules
+        address:     form.address.trim(),
         service:     form.service,
         message:     form.message.trim(),
         description: form.message.trim(), // mirrored: older ERP/admin views read this field
@@ -188,23 +190,36 @@ export default function QuoteRequestForm({ source = 'Quote Request', initialServ
         </div>
       </div>
 
-      {/* Email + Phone */}
+      {/* Email + Phone — either one is enough */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className={labelCls}>Email Address <span className="text-red-500">*</span></label>
+          <label className={labelCls}>Email Address</label>
           <div className="relative">
             <Mail className="w-4 h-4 text-[#5B6E88] dark:text-text-muted absolute left-3 top-3" />
-            <input type="email" required value={form.email} onChange={e => set('email', e.target.value)}
+            <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
               placeholder="john@company.com" className={inputCls} />
           </div>
         </div>
         <div>
-          <label className={labelCls}>Phone / WhatsApp <span className="text-red-500">*</span></label>
+          <label className={labelCls}>Phone / WhatsApp</label>
           <div className="relative">
             <Phone className="w-4 h-4 text-[#5B6E88] dark:text-text-muted absolute left-3 top-3" />
-            <input type="tel" required value={form.phone} onChange={e => set('phone', e.target.value)}
+            <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)}
               placeholder="+94 77 123 4567" className={inputCls} />
           </div>
+        </div>
+        <p className="sm:col-span-2 text-[11px] text-[#5B6E88] dark:text-text-muted -mt-1">
+          Give at least one — email or phone number is enough.
+        </p>
+      </div>
+
+      {/* Address */}
+      <div>
+        <label className={labelCls}>Address</label>
+        <div className="relative">
+          <MapPin className="w-4 h-4 text-[#5B6E88] dark:text-text-muted absolute left-3 top-3" />
+          <input type="text" value={form.address} onChange={e => set('address', e.target.value)}
+            placeholder="No, street, city" className={inputCls} />
         </div>
       </div>
 

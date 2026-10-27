@@ -4,7 +4,7 @@ import {
   collection, query, where, orderBy, onSnapshot,
   addDoc, updateDoc, doc, serverTimestamp
 } from 'firebase/firestore';
-import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref as sRef, uploadBytes } from 'firebase/storage';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { getStaffByIds } from '../config/staff';
@@ -12,6 +12,8 @@ import SEO from '../components/SEO';
 import { company } from '../config/company';
 import { toMillis, formatWhen } from '../erp/formatWhen';
 import { toInt, formatLKR } from '../erp/money';
+import { usePrivateUrl } from '../erp/usePrivateUrl';
+import PrivateFileLink from '../erp/components/PrivateFileLink';
 import { getConversationId, sendChatMessage, markConversationAsRead } from '../erp/messagingUtils';
 import NotificationAlert from '../components/NotificationAlert';
 import {
@@ -182,25 +184,49 @@ const NAV = [
   {id:'support',      label:'Support',            icon:HeadphonesIcon},
 ];
 
-const REQ_SERVICES = ['ERP & POS System','Custom Software Development','Portfolio Website','Corporate Business Website','Mobile App (Android & iOS)','Business Process Automation','AI-Powered Solutions','Accounting & Tax Services','Audit & Assurance','Other'];
+const REQ_SERVICES = ['ERP & POS System','Custom Software Development','Portfolio Website','Corporate Business Website','Mobile App (Android & iOS)','Business Process Automation','AI-Powered Solutions','Digital Marketing','Accounting & Tax Services','Audit & Assurance','Other'];
 const REQ_TIMELINES = ['Less than 1 month','1–2 months','2–3 months','3–6 months','6+ months','Flexible'];
 const REQ_BUDGETS   = ['Below LKR 25,000','LKR 25,000–50,000','LKR 50,000–100,000','LKR 100,000–250,000','LKR 250,000+','Let\'s discuss'];
+
+// The quotation letterhead is read straight from Cloud Storage with the
+// client's own signed-in session (quotation-renders/{their uid}/{quote id}/…),
+// so storage.rules decide access on every view. Nothing here is a public
+// ?token= link that could be forwarded to someone else.
+function QuotationLetterheadImage({ path }) {
+  const { url, busy, err } = usePrivateUrl(path, !!path);
+  if (err) return (
+    <div style={{ padding:'10px 12px', borderRadius:12, fontSize:12, fontWeight:700,
+      color:'#FCA5A5', background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.3)' }}>{err}</div>
+  );
+  if (busy || !url) return (
+    <div style={{ padding:'18px 12px', borderRadius:12, fontSize:12, fontWeight:700, textAlign:'center',
+      color:'#94A3B8', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.10)' }}>
+      Loading your quotation image…
+    </div>
+  );
+  return (
+    <a href={url} target="_blank" rel="noreferrer" style={{
+      display:'block',borderRadius:14,overflow:'hidden',textDecoration:'none',
+      border:'1px solid rgba(255,255,255,0.12)',background:'#fff',
+    }}>
+      <img src={url} alt="Quotation letterhead" style={{width:'100%',display:'block'}}/>
+      <div style={{
+        display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px 12px',
+        fontSize:12,fontWeight:800,color:'#A5B4FC',background:'rgba(99,102,241,0.12)',
+      }}>
+        <ExternalLink size={12}/> View / download quotation image
+      </div>
+    </a>
+  );
+}
 
 // ─── Assigned team ────────────────────────────────────────────────
 // Read live from 'workAssignments' (clientId is embedded by the admin
 // when the work is assigned), so the client always sees who is doing
 // their work, what stage that person is at, and the deadline.
-const DEV_WORKS = [
-  { id:'dw1', projectId:'dp1', projectTitle:'Corporate Website Redesign', title:'Home page & navigation build',
-    staffName:'Ashan Perera', staffRole:'Full Stack Developer', staffEmail:'ashan@smartpvtltd.com',
-    status:'In Progress', progress:60, deadline:'2026-10-18' },
-  { id:'dw2', projectId:'dp1', projectTitle:'Corporate Website Redesign', title:'UI/UX design screens',
-    staffName:'Nimal Fernando', staffRole:'UI/UX Designer', staffEmail:'nimal@smartpvtltd.com',
-    status:'Accepted', progress:20, deadline:'2026-10-22' },
-  { id:'dw3', projectId:'dp3', projectTitle:'Accounting & Tax Automation', title:'Ledger configuration & handover',
-    staffName:'Kavitha Rajah', staffRole:'Accounting & Tax Consultant', staffEmail:'kavitha@smartpvtltd.com',
-    status:'Completed', progress:100, deadline:'2026-09-28' },
-];
+// No fake team members: the dev preview stays empty until real assignments
+// exist, so demo names can never be mistaken for live staff data.
+const DEV_WORKS = [];
 
 const TEAM_TONE = {
   'Assigned':    { c:'#A5B4FC', bg:'rgba(99,102,241,0.16)'  },
@@ -542,15 +568,18 @@ export default function ClientDashboardPage() {
     if(!amt||amt<=0){setProofError('Please enter the amount you paid.');return;}
     setProofBusy(true);
     try{
-      let fileUrl='';
+      // Live: keep ONLY the Storage path on the doc. The bytes are fetched
+      // through the SDK whenever the client or an admin clicks "View", so
+      // storage.rules re-check the session every time — no shareable link.
+      let filePath='';
+      let devUrl='';
       const safeName=proofForm.file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
       if(!isFirebaseConfigured||isDevSession){
-        fileUrl=URL.createObjectURL(proofForm.file);
+        devUrl=URL.createObjectURL(proofForm.file);
       }else{
         const storage=getStorage();
-        const r=sRef(storage,`payment-proofs/${uid}/${proofModal.id}/${Date.now()}_${safeName}`);
-        await uploadBytes(r,proofForm.file);
-        fileUrl=await getDownloadURL(r);
+        filePath=`payment-proofs/${uid}/${proofModal.id}/${Date.now()}_${safeName}`;
+        await uploadBytes(sRef(storage,filePath),proofForm.file);
       }
       const docData={
         quotationId:proofModal.id,
@@ -560,7 +589,7 @@ export default function ClientDashboardPage() {
         amount:amt,
         note:(proofForm.note||'').trim(),
         fileName:proofForm.file.name,
-        fileUrl,
+        ...(filePath?{filePath}:{fileUrl:devUrl}),
         status:'New',
         createdAt:serverTimestamp(),
       };
@@ -685,13 +714,16 @@ export default function ClientDashboardPage() {
           if(!isFirebaseConfigured||isDevSession){cleaned[k]=v.map(f=>({name:f.name,url:'#dev-upload'}));}
           else{
             const storage=getStorage();
-            const urls=[];
+            // Path only — the admin opens the file through PrivateFileLink,
+            // which reads the bytes with their own session (rules enforced).
+            const files=[];
             for(const f of v){
-              const r=sRef(storage,`requirement-files/${uid}/${activeForm.id}/${Date.now()}_${f.name}`);
-              await uploadBytes(r,f);
-              urls.push(await getDownloadURL(r));
+              const safe=String(f.name).replace(/[^a-zA-Z0-9._-]/g,'_');
+              const path=`requirement-files/${uid}/${activeForm.id}/${Date.now()}_${safe}`;
+              await uploadBytes(sRef(storage,path),f);
+              files.push({name:f.name,path});
             }
-            cleaned[k]=urls.map((url,i)=>({name:v[i].name,url}));
+            cleaned[k]=files;
           }
         }else cleaned[k]=v;
       }
@@ -1479,21 +1511,7 @@ export default function ClientDashboardPage() {
                   <div style={{fontSize:16,fontWeight:800,color:'#059669'}}>{formatLKR(toInt(q.advanceAmount))}</div>
                 </div>}
               </div>
-              {q.renderImage?.url&&(
-                <a href={q.renderImage.url} target="_blank" rel="noreferrer" style={{
-                  display:'block',borderRadius:14,overflow:'hidden',textDecoration:'none',
-                  border:'1px solid rgba(255,255,255,0.12)',background:'#fff',
-                }}>
-                  <img src={q.renderImage.url} alt="Quotation letterhead"
-                    style={{width:'100%',display:'block'}}/>
-                  <div style={{
-                    display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px 12px',
-                    fontSize:12,fontWeight:800,color:'#A5B4FC',background:'rgba(99,102,241,0.12)',
-                  }}>
-                    <ExternalLink size={12}/> View / download quotation image
-                  </div>
-                </a>
-              )}
+              {q.renderImage?.path && <QuotationLetterheadImage path={q.renderImage.path} />}
               {(q.items||[]).length>0&&(
                 <div>
                   <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.8px',color:'#94A3B8',marginBottom:8}}>Breakdown</div>
@@ -1551,7 +1569,7 @@ export default function ClientDashboardPage() {
                           {p.status==='Rejected'&&<span style={{fontSize:11,fontWeight:700,color:'#EF4444'}}> — Rejected</span>}
                           {p.status==='New'&&<span style={{fontSize:11,fontWeight:700,color:'#D97706'}}> — Awaiting verification</span>}
                         </div>
-                        <a href={p.fileUrl} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:700,color:'#818CF8',display:'flex',alignItems:'center',gap:4,textDecoration:'none'}}><ExternalLink size={11}/> View</a>
+                        <PrivateFileLink file={{name:'View',path:p.filePath,url:p.fileUrl}} label="View" style={{color:'#818CF8'}}/>
                       </div>
                       {p.note&&<div style={{fontSize:11.5,color:'#94A3B8',marginTop:4}}>{p.note}</div>}
                       {p.reviewNote&&p.status==='Rejected'&&<div style={{fontSize:11.5,color:'#EF4444',marginTop:4}}>Admin note: {p.reviewNote}</div>}

@@ -15,7 +15,7 @@ import { db, isFirebaseConfigured } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { company } from '../config/company';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBtn, ERPEmpty,
+  C, ERPPanel, ERPPanelHeader, ERPBtn, ERPEmpty, ERPAvatar,
 } from '../erp/components/ERPui';
 import { DEFAULT_ACCESS_RULES } from '../config/accessRules';
 import MyDashboard  from './sections/MyDashboard';
@@ -360,6 +360,15 @@ export default function StaffPortalApp() {
               {TITLES[page] || 'Dashboard'}
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setPage('profile')}
+            title="My profile"
+            style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0, display: 'flex' }}
+          >
+            <ERPAvatar name={staffProfile.name} color="#0066FF" size={30} src={staffProfile.photoURL || null} />
+          </button>
 
           <div className="sp-usermeta" style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{staffProfile.name}</div>

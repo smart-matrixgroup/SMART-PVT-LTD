@@ -21,10 +21,8 @@ import { Pencil, AlertTriangle, Download, Printer, QrCode, ExternalLink, Copy } 
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
-const DEV_ATT = [
-  { id: 'at1', staffId: 'dev-staff-001', staffName: 'Ashan Perera', date: todayKey(), checkInMs: new Date().setHours(8, 32, 0, 0), checkOutMs: new Date().setHours(17, 5, 0, 0), minutes: 513, status: 'Present' },
-  { id: 'at2', staffId: 'dev-staff-002', staffName: 'Nimali Silva', date: todayKey(), checkInMs: new Date().setHours(9, 24, 0, 0), checkOutMs: new Date().setHours(13, 0, 0, 0), minutes: 216, status: 'Half Day' },
-];
+// Dev preview shows no invented attendance rows.
+const DEV_ATT = [];
 
 const REPORT_HEADERS = ['Date', 'Staff', 'Check In', 'Check Out', 'Hours', 'Status'];
 const reportRows = records => records.map(r => [
@@ -67,7 +65,7 @@ export default function ERPStaffAttendance() {
   useEffect(() => {
     if (!live) {
       setRecords(DEV_ATT);
-      setStaff([{ id: 'dev-staff-001', name: 'Ashan Perera' }, { id: 'dev-staff-002', name: 'Nimali Silva' }]);
+      setStaff([]);
       setLoading(false);
       return;
     }

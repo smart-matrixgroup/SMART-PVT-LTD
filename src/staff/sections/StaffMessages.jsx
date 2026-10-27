@@ -16,16 +16,10 @@ import { ERPPanel, C } from '../../erp/components/ERPui';
 import { sendChatMessage, markConversationAsRead, getConversationId } from '../../erp/messagingUtils';
 import { Send, MessageSquare, ShieldCheck, Building2, Briefcase } from 'lucide-react';
 
-const DEV_STAFF_MESSAGES = [
-  { id: 'sm1', senderId: 'admin', senderRole: 'admin', senderName: 'SMART Admin', text: 'Welcome to the SMART Staff Portal! Please submit your daily updates by 5:30 PM.', createdAt: new Date(Date.now() - 86400000) },
-  { id: 'sm2', senderId: 'dev-staff-001', senderRole: 'staff', senderName: 'Ashan Perera', text: 'Understood, thank you! I am currently working on the new milestone deliverables.', createdAt: new Date(Date.now() - 43200000) },
-  { id: 'sm3', senderId: 'admin', senderRole: 'admin', senderName: 'SMART Admin', text: 'Great progress. Let me know if you require any assets or client specifications.', createdAt: new Date(Date.now() - 14400000) },
-];
+// Dev preview carries no scripted chat history or fake client assignments.
+const DEV_STAFF_MESSAGES = [];
 
-const DEV_WORKS = [
-  { id: 'dw1', clientId: 'C001', clientName: 'John Perera', clientCompany: 'Perera Holdings', serviceType: 'Corporate Website', projectTitle: 'Corporate Website Redesign' },
-  { id: 'dw2', clientId: 'C002', clientName: 'Sarah Fernando', clientCompany: 'Mehala Restaurant', serviceType: 'ERP & POS System', projectTitle: 'Restaurant POS System' },
-];
+const DEV_WORKS = [];
 
 const ADMIN_CONTACT = {
   key: 'admin', type: 'admin',

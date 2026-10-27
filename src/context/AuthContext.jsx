@@ -39,6 +39,28 @@ const DEV_ACCOUNTS = [
 
 const AuthContext = createContext(null);
 
+// ─── SESSION TIMEOUT ─────────────────────────────────────────────
+// Auto sign-out is switched OFF: a signed-in portal stays open until the
+// user signs out or closes the tab. Set SESSION_MAX_MINUTES to a positive
+// number (e.g. 30) to bring the hard cap back — the clock lives in
+// sessionStorage (per browser tab, survives refreshes) so refreshing cannot
+// buy extra time, and SessionTimeout.jsx renders the countdown + the
+// "session ended" dialog automatically whenever the cap is enabled.
+export const SESSION_MAX_MINUTES = 0;   // 0 = never cut the session
+const SESSION_MAX_MS  = SESSION_MAX_MINUTES * 60 * 1000;
+const SESSION_WARN_MS = 5 * 60 * 1000;   // banner starts at 5 minutes left
+const START_KEY       = 'smart_session_started';
+
+function readSessionStart() {
+  try { return Number(sessionStorage.getItem(START_KEY) || 0); } catch { return 0; }
+}
+function writeSessionStart(ts) {
+  try { sessionStorage.setItem(START_KEY, String(ts)); } catch { /* ignore */ }
+}
+function clearSessionStart() {
+  try { sessionStorage.removeItem(START_KEY); } catch { /* ignore */ }
+}
+
 // Shared dev-mock login state setter (Firebase not configured / dev accounts)
 function makeDevSessionSetter(setters) {
   return (devAccount) => {
@@ -46,6 +68,8 @@ function makeDevSessionSetter(setters) {
       : devAccount.role === 'staff' ? 'dev-staff-001' : 'dev-client-001';
     const session = { role: devAccount.role, profile: devAccount.profile, uid };
     sessionStorage.setItem('smart_dev_session', JSON.stringify(session));
+    writeSessionStart(Date.now());
+    setters.setSessionExpiredMsg?.('');
     setters.setCurrentUser({ uid, email: devAccount.email });
     setters.setRole(devAccount.role);
     setters.setClientProfile(devAccount.role === 'client' ? devAccount.profile : null);
@@ -60,6 +84,55 @@ export function AuthProvider({ children }) {
   const [clientProfile,  setClientProfile]  = useState(null);
   const [staffProfile,   setStaffProfile]   = useState(null);
   const [loading,        setLoading]        = useState(true);
+  // Milliseconds left in this tab's session window (null = not signed in,
+  // or the cap is switched off — see SESSION_MAX_MINUTES)
+  const [sessionRemainingMs, setSessionRemainingMs] = useState(null);
+  // Set when the timer ended the session, so the UI can explain itself
+  const [sessionExpiredMsg,  setSessionExpiredMsg]  = useState('');
+
+  // ── Absolute session timer (only runs when a cap is configured) ──
+  useEffect(() => {
+    if (!currentUser) {
+      setSessionRemainingMs(null);
+      return;
+    }
+    if (!SESSION_MAX_MINUTES) {
+      // Auto sign-out is off. Clear any clock left over from an earlier
+      // build so re-enabling the cap later measures from the next login.
+      clearSessionStart();
+      setSessionRemainingMs(null);
+      return;
+    }
+    let cancelled = false;
+
+    const endSession = () => {
+      if (cancelled) return;
+      clearSessionStart();
+      setSessionRemainingMs(null);
+      setSessionExpiredMsg(
+        `Your session automatically ended after ${SESSION_MAX_MINUTES} minutes ` +
+        'of being signed in, to keep client and staff data safe.'
+      );
+      setCurrentUser(null);
+      setRole(null);
+      setClientProfile(null);
+      setStaffProfile(null);
+      sessionStorage.removeItem('smart_dev_session');
+      if (isFirebaseConfigured) firebaseSignOut(auth).catch(err => console.error('auto sign-out failed', err));
+    };
+
+    const tick = () => {
+      const start = readSessionStart();
+      if (!start) { writeSessionStart(Date.now()); return; }
+      const left = start + SESSION_MAX_MS - Date.now();
+      if (left <= 0) { endSession(); return; }
+      setSessionRemainingMs(left);
+    };
+
+    tick();
+    const iv = setInterval(tick, 1000);   // 1s so the countdown reads smoothly
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [currentUser]);
 
   useEffect(() => {
     // ── Always check dev session first (even if Firebase is configured) ──
@@ -165,7 +238,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const trimmedEmail = email.toLowerCase().trim();
     const applyDevAccount = makeDevSessionSetter({
-      setCurrentUser, setRole, setClientProfile, setStaffProfile,
+      setCurrentUser, setRole, setClientProfile, setStaffProfile, setSessionExpiredMsg,
     });
 
     // ── Firebase login (always try first if Firebase is configured) ──
@@ -174,6 +247,9 @@ export function AuthProvider({ children }) {
         const credential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
         sessionStorage.removeItem('smart_dev_session');
         const uid = credential.user.uid;
+        // Start this tab's session clock (only used when the cap is on).
+        writeSessionStart(Date.now());
+        setSessionExpiredMsg('');
 
         const adminSnap = await getDoc(doc(db, 'admins', uid));
         if (adminSnap.exists() || credential.user.email === 'admin@smart.com') {
@@ -243,6 +319,8 @@ export function AuthProvider({ children }) {
   // ── LOGOUT ─────────────────────────────────────────────────────
   const logout = async () => {
     sessionStorage.removeItem('smart_dev_session');
+    clearSessionStart();
+    setSessionRemainingMs(null);
     setCurrentUser(null);
     setRole(null);
     setClientProfile(null);
@@ -251,6 +329,10 @@ export function AuthProvider({ children }) {
       await firebaseSignOut(auth);
     }
   };
+
+  // Called from the session-ended dialog so the message clears on the way
+  // back to a login screen.
+  const dismissSessionExpiry = () => setSessionExpiredMsg('');
 
   // Export whether current session is a dev mock session
   // Dashboard uses this to skip Firestore queries
@@ -261,6 +343,10 @@ export function AuthProvider({ children }) {
   const value = {
     currentUser, role, clientProfile, staffProfile, loading,
     login, logout, isFirebaseConfigured, isDevSession,
+    // session timeout: remaining ms, warning threshold, expiry notice
+    sessionRemainingMs, sessionWarnMs: SESSION_WARN_MS,
+    sessionMaxMinutes: SESSION_MAX_MINUTES,
+    sessionExpiredMsg, dismissSessionExpiry,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

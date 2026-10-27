@@ -5,8 +5,9 @@ import { db, isFirebaseConfigured } from '../../config/firebase';
 import { company } from '../../config/company';
 import { toInt, formatLKR } from '../money';
 import { ERPBtn, ERPInput, ERPTextarea, C } from './ERPui';
-import { Download, Printer, Copy, Image as ImageIcon, Plus, Trash2, LayoutTemplate, Sparkles, Save, ExternalLink } from 'lucide-react';
+import { Download, Printer, Copy, Image as ImageIcon, Plus, Trash2, LayoutTemplate, Sparkles, Save, ExternalLink, ArrowUp, ArrowDown } from 'lucide-react';
 import { TEMPLATE_QUOTATION, renderTemplate } from './quotationTemplateRenderer';
+import { usePrivateUrl } from '../usePrivateUrl';
 
 // ────────────────────────────────────────────────────────────────────
 // Quotation Image Studio
@@ -58,6 +59,59 @@ function wrap(ctx, text, maxWidth) {
   return out;
 }
 
+// The letterhead artwork carries a website-flavoured "DOMAIN & HOSTING
+// DETAILS" panel and website terms. Feeding it website copy on a Digital
+// Marketing / ERP / tax quote is what made old renders promise domain renewal
+// to clients who never ordered a website — so the copy is picked from the
+// service that is actually being quoted.
+const serviceFlavour = (q) => {
+  const hay = `${q.service || ''} ${q.serviceType || ''} ${q.projectTitle || ''} ${q.category || ''}`.toLowerCase();
+  if (/digital marketing|social media|seo|ad campaign|influencer|branding|content calendar/.test(hay)) return 'marketing';
+  if (/website|web site|portfolio|landing|domain|hosting|ecommerce|e-commerce/.test(hay)) return 'website';
+  return 'general';
+};
+
+// The six rows the letterhead's PAYMENT DETAILS card ships with. Anything the
+// owner renames, removes or adds on a quotation is stored on that quotation
+// (quoteRows.payRows) — settings/bankDetails stays the default for the next one.
+const BANK_ROW_LABELS = [
+  ['accountName',   'Account Name'],
+  ['bankName',      'Bank'],
+  ['branch',        'Branch'],
+  ['accountNumber', 'Account No'],
+  ['accountType',   'Account Type'],
+];
+
+function defaultPayRows(bank, q) {
+  const b = bank || {};
+  const rows = BANK_ROW_LABELS.map(([k, label]) => ({ label, value: String(b[k] || '').trim() })).filter(r => r.value);
+  const remark = String(q?.quotationNo || '').trim();
+  if (remark) rows.push({ label: 'Payment Remark', value: remark });
+  // Custom fields typed in the quotation form print here too, with their own title.
+  (q?.customFields || []).forEach(f => {
+    const label = String(f.label || '').trim();
+    if (label) rows.push({ label, value: String(f.value || '').trim() });
+  });
+  return rows;
+}
+
+// The pricing rows a quotation starts with: its own line items when it has
+// them (that is what makes a 2-part digital package print as 2 numbered rows),
+// otherwise the single subject line — plus the advance line the letterhead had.
+function defaultPriceRows(q, { priceLabel, subject, total, adv, balance }) {
+  const items = (q?.items || [])
+    .map(it => ({ text: String(it.label || '').trim(), amount: toInt(it.amount), was: 0, kind: 'item' }))
+    .filter(it => it.text && it.amount > 0);
+  const rows = items.length ? items : [{ text: priceLabel || subject || 'Scope of work', amount: total, was: 0, kind: 'item' }];
+  if (adv > 0) {
+    rows.push({
+      text: `Advance payment — balance ${money(balance)} after completion`,
+      amount: adv, was: 0, kind: 'item',
+    });
+  }
+  return rows;
+}
+
 // build the editable document model from a Firestore quotation
 export function buildDoc(q, bank) {
   const total  = toInt(q.totalAmount);
@@ -65,7 +119,54 @@ export function buildDoc(q, bank) {
   const adv    = toInt(q.advanceAmount) || Math.round(total * (toInt(q.advancePct) || 0) / 100);
   const subject = q.projectTitle || q.service || '';
   const scopeLines = String(q.scope || '').split('\n').map(s => s.trim()).filter(Boolean);
-  const balance = Math.max(0, total - paid);
+  // Balance = what is still owed AFTER the advance. paidTotal only counts
+  // money actually received, so a fresh quote used to print "Balance = total"
+  // next to "Advance 40%" — the two lines contradicted each other.
+  const balance = Math.max(0, total - (paid > 0 ? paid : adv));
+  const flavour = serviceFlavour(q);
+  const priceLabel = subject || (q.items && q.items[0] && q.items[0].label) || q.service || '';
+  const savedRows = q.quoteRows || {};
+
+  const introByFlavour = {
+    website: `We are pleased to provide this quotation for the ${subject || 'project'} with domain registration and hosting on our company server.`,
+    marketing: `We are pleased to provide this quotation for your ${subject || 'digital marketing'} engagement, managed end-to-end by the SMART marketing team.`,
+    general: `We are pleased to provide this quotation for the ${subject || 'service'} described below, delivered by the SMART team.`,
+  };
+  const domainByFlavour = {
+    website: [
+      'We will purchase and register your preferred domain name (e.g., www.yourname.com) on your behalf.',
+      'The website will be hosted on our company server for 1 year.',
+      'After 1 year, you need to renew the domain and hosting with us to continue the service.',
+      `Renewal will be provided at the same price (${money(total)} per year), which includes domain renewal, server hosting and basic support.`,
+    ],
+    marketing: [
+      'Content calendar, creatives and captions are shared for your approval before anything goes live.',
+      'Ad spend (Meta / Google) and any influencer fees are billed to you directly at actuals.',
+      'Pages, ad accounts and Google logins stay owned by you — we work with admin access only.',
+      `Reporting: weekly performance summary plus a monthly closing review (${money(adv)} advance covers month 1).`,
+    ],
+    general: [
+      'Scope, milestones and handover documents are as listed in the service details.',
+      'Client provides the content, credentials and approvals needed to keep delivery on schedule.',
+      'Post-delivery support is included for the period stated in the terms below.',
+      `Optional annual maintenance can be taken at the same rate (${money(total)} per year) after handover.`,
+    ],
+  };
+  const extraTermsByFlavour = {
+    website: [
+      'Domain and hosting are provided for 1 year. Renewal after 1 year will be at the same price.',
+      'Price includes design, development, domain registration, hosting and 1 year basic support.',
+    ],
+    marketing: [
+      'This is a monthly recurring engagement; either side may stop it at the end of a paid month.',
+      'Ad spend, influencer fees and third-party tool subscriptions are borne by the client at actuals.',
+    ],
+    general: [
+      'Price includes the scope listed above; anything outside it is quoted separately.',
+      'Client-side delays in content, approvals or access extend the delivery timeline accordingly.',
+    ],
+  };
+
   return {
     theme: 'light',
     accent: '#0A5BFF',
@@ -84,7 +185,7 @@ export function buildDoc(q, bank) {
     subtotal: total,
     advance: adv,
     paid,
-    balance: Math.max(0, total - paid),
+    balance,
     total,
     terms: q.terms || q.paymentTerms || '',
     notes: q.notes || '',
@@ -98,33 +199,71 @@ export function buildDoc(q, bank) {
     // ---- template mode (owner's letterhead) ----
     clientLine: [q.clientName, q.clientCompany].filter(Boolean).join('  ·  ') || '',
     subject,
-    intro: q.description
-      || `We are pleased to provide this quotation for the ${subject || 'project'} with domain registration and hosting on our company server.`,
+    priceLabel,
+    intro: q.description || introByFlavour[flavour],
     service: q.scope || q.description || '',
     features: scopeLines,
     listPrice: total,
     // 0 / blank = no discount → the letterhead prints only the actual cost.
     // A smaller value than the actual cost prints the red strike-through.
     offerPrice: 0,
-    domain: [
-      'We will purchase and register your preferred domain name (e.g., www.yourname.com) on your behalf.',
-      'The website will be hosted on our company server for 1 year.',
-      'After 1 year, you need to renew the domain and hosting with us to continue the service.',
-      `Renewal will be provided at the same price (${money(total)} per year), which includes domain renewal, server hosting and basic support.`,
-    ],
+    domain: domainByFlavour[flavour],
     payRemark: q.quotationNo || '',
+
+    // ── Editable letterhead rows ──────────────────────────────────
+    // Pricing rows, the total band's title and the payment label:value
+    // rows. Whatever the owner edits in the Studio is written back to the
+    // quotation as quoteRows, so the next render (auto image, resend, client
+    // portal) reproduces exactly this layout instead of the generic default.
+    totalLabel: savedRows.totalLabel || 'Total Quotation Amount',
+    totalAmount: total,
+    priceRows: (savedRows.priceRows || []).length
+      ? savedRows.priceRows
+      : defaultPriceRows(q, { priceLabel, subject, total, adv, balance }),
+    payRows: (savedRows.payRows || []).length
+      ? savedRows.payRows
+      : defaultPayRows(bank, q),
+
     termList: [
       `Advance payment of ${money(adv)} is required to start the work.`,
       `Balance payment of ${money(balance)} is to be paid after completion and final approval.`,
-      'Domain and hosting are provided for 1 year. Renewal after 1 year will be at the same price.',
-      'Price includes design, development, domain registration, hosting and 1 year basic support.',
+      ...extraTermsByFlavour[flavour],
       'Any additional custom features will be quoted separately if required.',
       `This quotation is valid until ${q.validUntil || '—'}.`,
     ],
   };
 }
 
-export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref, onShotsChange, onSaveImage }) {
+// Small square icon button used by the repeatable row editors (add / remove /
+// re-order a pricing or payment row). Kept local so the Studio stays one file.
+function MiniBtn({ children, onClick, title, danger, disabled }) {
+  return (
+    <button type="button" onClick={onClick} title={title} disabled={disabled}
+      style={{ display:'flex', alignItems:'center', justifyContent:'center', width:26, height:26, flexShrink:0,
+        borderRadius:7, cursor: disabled ? 'not-allowed' : 'pointer',
+        border:`1px solid ${danger ? 'rgba(224,66,60,0.45)' : 'rgba(32,52,93,0.8)'}`,
+        background: danger ? 'rgba(224,66,60,0.10)' : 'rgba(10,24,56,0.7)',
+        color: danger ? C.red : C.cyan, opacity: disabled ? 0.35 : 1, padding:0 }}>
+      {children}
+    </button>
+  );
+}
+
+// "Open saved image" — pulls the stored letterhead through the SDK from its
+// Storage path, so no public token URL is ever written to the quotation doc.
+function OpenSavedImage({ path }) {
+  const { url, busy } = usePrivateUrl(path, !!path);
+  if (busy || !url) return null;
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 12px', borderRadius:9, textDecoration:'none',
+        background:'rgba(24,199,122,0.12)', border:'1px solid rgba(24,199,122,0.35)', color:C.green, fontWeight:700, fontSize:12 }}>
+      <ExternalLink size={13} /> Open saved image
+    </a>
+  );
+}
+
+export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref, onDocChange, onSaveImage }) {
   const [d, setD] = useState(null);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
@@ -168,10 +307,59 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
 
   const set = useCallback((k, v) => setD(p => ({ ...p, [k]: v })), []);
 
+  // ── Row edits are written back onto the quotation ─────────────────
+  // The Studio is where a quote is laid out, so the pricing rows, the total
+  // band's title and the payment label:value rows are saved on the document as
+  // `quoteRows`. That is what makes them survive: the automatic letterhead
+  // image on the next save, a resend, and the client portal all rebuild THIS
+  // layout instead of falling back to the generic default.
+  // Debounced so typing one name does not fire a Firestore write per keypress,
+  // and flushed on close so a fast "edit → Close" never loses the work.
+  const rowsSig   = useRef('');
+  const pendingRows = useRef(null);
+  // The parent's handler is re-created on every render (this page has live
+  // Firestore listeners), so it is kept in a ref — otherwise each parent render
+  // would restart the debounce and a write could never land while typing.
+  const onDocChangeRef = useRef(onDocChange);
+  useEffect(() => { onDocChangeRef.current = onDocChange; });
+  useEffect(() => {
+    if (!isOpen || !d || !onDocChangeRef.current) return;
+    const rows = {
+      priceRows: (d.priceRows || []).map(r => ({
+        text: String(r.text || ''), amount: toInt(r.amount), was: toInt(r.was),
+        kind: r.kind === 'note' ? 'note' : 'item',
+      })),
+      payRows: (d.payRows || []).map(r => ({ label: String(r.label || ''), value: String(r.value || '') })),
+      totalLabel: String(d.totalLabel || ''),
+    };
+    const sig = JSON.stringify(rows);
+    if (sig === rowsSig.current) return;
+    pendingRows.current = rows;
+    if (!rowsSig.current) { rowsSig.current = sig; pendingRows.current = null; return; } // seed pass
+    const t = setTimeout(() => {
+      rowsSig.current = sig;
+      pendingRows.current = null;
+      onDocChangeRef.current?.({ quoteRows: rows });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, d?.priceRows, d?.payRows, d?.totalLabel]);
+
+  useEffect(() => {
+    if (isOpen || !pendingRows.current) return;
+    const rows = pendingRows.current;
+    pendingRows.current = null;
+    onDocChangeRef.current?.({ quoteRows: rows });
+  }, [isOpen]);
+
   // Load bank details (settings/bankDetails) once per open
   useEffect(() => {
     if (!isOpen || !quotation) return;
     let alive = true;
+    // New document → the row signature restarts, so the seed pass below is
+    // never mistaken for an edit and written back to the wrong quotation.
+    rowsSig.current = '';
+    pendingRows.current = null;
     const seed = buildDoc(quotation, null);
     setD(seed);
     if (!isFirebaseConfigured) return () => { alive = false; };
@@ -179,7 +367,16 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
       .then(snap => {
         if (!alive || !snap.exists()) return;
         const b = snap.data();
-        if (b.bankName || b.accountNumber) setD(p => ({ ...p, bank: b }));
+        if (!(b.bankName || b.accountNumber)) return;
+        // The bank defaults arrive after the first seed, so the payment rows
+        // are rebuilt from them — unless this quotation already carries its own
+        // edited set (quoteRows.payRows), which must not be overwritten.
+        const hasOwnRows = !!(quotation?.quoteRows?.payRows || []).length;
+        // Bank defaults land after the seed, so the row signature is cleared:
+        // this reseed is the document settling, not the admin editing it, and
+        // must not be written back as a custom quoteRows set.
+        rowsSig.current = '';
+        setD(p => ({ ...p, bank: b, payRows: hasOwnRows ? p.payRows : defaultPayRows(b, quotation) }));
       })
       .catch(() => { /* bank section is optional — never block the doc */ });
     return () => { alive = false; };
@@ -534,7 +731,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
         cx.drawImage(im, 0, 0, cv.width, cv.height);
         const data = cv.toDataURL('image/jpeg', 0.72);
         setShots(s => ({ ...s, [k]: data }));
-        onShotsChange?.({ [shotField(k)]: data });
+        onDocChange?.({ [shotField(k)]: data });
         flash(`${k === 'laptop' ? 'Laptop' : 'Phone'} screenshot added`);
       };
       im.onerror = () => flash('That image could not be read.');
@@ -545,7 +742,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   const clearShot = (k) => {
     setShots(s => ({ ...s, [k]: '' }));
     shotImgs.current[k] = null;
-    onShotsChange?.({ [shotField(k)]: '' });
+    onDocChange?.({ [shotField(k)]: '' });
     setAssetsReady(n => n + 1);
   };
 
@@ -609,6 +806,31 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   const ed = (k) => (e) => set(k, e.target.value);
   const numEd = (k) => (e) => set(k, toInt(e.target.value));
   const listEd = (k) => (e) => set(k, e.target.value.split('\n'));
+
+  // ── repeatable rows (pricing / payment) ─────────────────────────
+  // The letterhead's pricing card and payment card are laid out dynamically
+  // from these arrays, so a row can be added, retitled, re-ordered or deleted
+  // per quotation — that is the whole point of the editor below.
+  const rowsOf = (k) => Array.isArray(d[k]) ? d[k] : [];
+  const patchRow = (k, i, patch) => set(k, rowsOf(k).map((r, j) => j === i ? { ...r, ...patch } : r));
+  const dropRow  = (k, i)         => set(k, rowsOf(k).filter((_, j) => j !== i));
+  const addRow   = (k, blank)     => set(k, [...rowsOf(k), blank]);
+  const moveRow  = (k, i, dir)    => {
+    const rows = [...rowsOf(k)];
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    [rows[i], rows[j]] = [rows[j], rows[i]];
+    set(k, rows);
+  };
+  const rowIn = {
+    background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}`, borderRadius:8,
+    padding:'7px 9px', color:C.text, fontSize:11.5, outline:'none', minWidth:0, width:'100%',
+  };
+  const rowCard = {
+    display:'flex', flexDirection:'column', gap:6, padding:8, borderRadius:10,
+    border:'1px solid rgba(32,52,93,0.7)', background:'rgba(4,13,31,0.45)',
+  };
+
   const section = (label) => (
     <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:4 }}>
       <span style={{ fontSize:10.5, fontWeight:800, letterSpacing:'0.06em', color:C.cyan }}>{label.toUpperCase()}</span>
@@ -673,15 +895,53 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
                   {section('Key features')}
                   <ERPTextarea label="One feature per line (tick list)" value={d.features.join('\n')} onChange={listEd('features')} rows={8} />
 
-                  {section('Pricing table')}
-                  <div style={{ display:'flex', gap:8 }}>
-                    <ERPInput label="Actual cost" type="number" value={d.listPrice} onChange={numEd('listPrice')} style={{ flex:1 }} />
-                    <ERPInput label="Discounted price (0 = no discount)" type="number" value={d.offerPrice} onChange={numEd('offerPrice')} style={{ flex:1 }} />
+                  {section('Pricing rows')}
+                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5 }}>
+                    Add, rename, re-order or delete a row for this client. Up to 4 rows print at full
+                    size; more rows shrink to fit the card automatically. &ldquo;Was&rdquo; prints the
+                    old price struck through above the row amount.
                   </div>
-                  <div style={{ display:'flex', gap:8 }}>
-                    <ERPInput label="Advance payment" type="number" value={d.advance} onChange={numEd('advance')} style={{ flex:1 }} />
-                    <ERPInput label="Balance payment" type="number" value={d.balance} onChange={numEd('balance')} style={{ flex:1 }} />
+                  {rowsOf('priceRows').map((r, i) => (
+                    <div key={i} style={rowCard}>
+                      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                        <span style={{ width:18, textAlign:'center', fontSize:11, fontWeight:800, color:C.cyan, flexShrink:0 }}>
+                          {r.kind === 'note' ? '·' : i + 1}
+                        </span>
+                        <input value={r.text || ''} placeholder="Row description — e.g. Website + Google Business Profile + SEO"
+                          onChange={e => patchRow('priceRows', i, { text: e.target.value })} style={rowIn} />
+                        <MiniBtn title="Remove row" danger onClick={() => dropRow('priceRows', i)}><Trash2 size={12} /></MiniBtn>
+                      </div>
+                      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                        <input value={r.amount || ''} type="number" placeholder="Amount" title="Amount (LKR)"
+                          onChange={e => patchRow('priceRows', i, { amount: toInt(e.target.value) })}
+                          style={{ ...rowIn, width:86, textAlign:'right' }} />
+                        <input value={r.was || ''} type="number" placeholder="Was" title="Old price to strike through (optional)"
+                          onChange={e => patchRow('priceRows', i, { was: toInt(e.target.value) })}
+                          style={{ ...rowIn, width:74, textAlign:'right' }} />
+                        <select value={r.kind === 'note' ? 'note' : 'item'} title="Row style"
+                          onChange={e => patchRow('priceRows', i, { kind: e.target.value })}
+                          style={{ ...rowIn, width:78, flexShrink:0 }}>
+                          <option value="item">Item</option>
+                          <option value="note">Note</option>
+                        </select>
+                        <div style={{ marginLeft:'auto', display:'flex', gap:4 }}>
+                          <MiniBtn title="Move up" disabled={i === 0} onClick={() => moveRow('priceRows', i, -1)}><ArrowUp size={12} /></MiniBtn>
+                          <MiniBtn title="Move down" disabled={i === rowsOf('priceRows').length - 1} onClick={() => moveRow('priceRows', i, 1)}><ArrowDown size={12} /></MiniBtn>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display:'flex', gap:6 }}>
+                    <ERPBtn size="sm" variant="secondary" onClick={() => addRow('priceRows', { text:'', amount:0, was:0, kind:'item' })}>
+                      <Plus size={11} /> Add row
+                    </ERPBtn>
+                    <ERPBtn size="sm" variant="ghost" onClick={() => addRow('priceRows', { text:'', amount:0, was:0, kind:'note' })}>
+                      <Plus size={11} /> Note line
+                    </ERPBtn>
                   </div>
+                  <ERPInput label="Blue total row — title" value={d.totalLabel} onChange={ed('totalLabel')}
+                    placeholder="Total Quotation Amount" />
+                  <ERPInput label="Total printed in the blue row (LKR)" type="number" value={d.totalAmount} onChange={numEd('totalAmount')} />
 
                   <ERPTextarea label="Domain & hosting notes (one per line)" value={d.domain.join('\n')} onChange={listEd('domain')} rows={4} />
 
@@ -720,14 +980,31 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
                   ))}
 
 
-                  {section('Payment details')}
-                  <ERPInput label="Account name" value={d.bank?.accountName || ''} onChange={e => set('bank', { ...d.bank, accountName: e.target.value })} />
-                  <ERPInput label="Bank" value={d.bank?.bankName || ''} onChange={e => set('bank', { ...d.bank, bankName: e.target.value })} />
-                  <div style={{ display:'flex', gap:8 }}>
-                    <ERPInput label="Branch" value={d.bank?.branch || ''} onChange={e => set('bank', { ...d.bank, branch: e.target.value })} style={{ flex:1 }} />
-                    <ERPInput label="Account No" value={d.bank?.accountNumber || ''} onChange={e => set('bank', { ...d.bank, accountNumber: e.target.value })} style={{ flex:1 }} />
+                  {section('Payment / detail rows')}
+                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5 }}>
+                    These print in the PAYMENT DETAILS card as “Title : value”. The defaults come from
+                    Settings → Bank details plus the quotation&apos;s custom fields — rename any of them,
+                    delete what does not apply, or add a row for something the letterhead never had.
                   </div>
-                  <ERPInput label="Payment remark (bank reference)" value={d.payRemark} onChange={ed('payRemark')} />
+                  {rowsOf('payRows').map((r, i) => (
+                    <div key={i} style={{ ...rowCard, flexDirection:'row', alignItems:'center', flexWrap:'wrap' }}>
+                      <input value={r.label || ''} placeholder="Title" title="Row title"
+                        onChange={e => patchRow('payRows', i, { label: e.target.value })} style={{ ...rowIn, width:96, flexShrink:0 }} />
+                      <input value={r.value || ''} placeholder="Value" title="Value"
+                        onChange={e => patchRow('payRows', i, { value: e.target.value })} style={{ ...rowIn, flex:1 }} />
+                      <div style={{ display:'flex', gap:4 }}>
+                        <MiniBtn title="Move up" disabled={i === 0} onClick={() => moveRow('payRows', i, -1)}><ArrowUp size={12} /></MiniBtn>
+                        <MiniBtn title="Move down" disabled={i === rowsOf('payRows').length - 1} onClick={() => moveRow('payRows', i, 1)}><ArrowDown size={12} /></MiniBtn>
+                        <MiniBtn title="Remove row" danger onClick={() => dropRow('payRows', i)}><Trash2 size={12} /></MiniBtn>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display:'flex', gap:6 }}>
+                    <ERPBtn size="sm" variant="secondary" onClick={() => addRow('payRows', { label:'', value:'' })}>
+                      <Plus size={11} /> Add row
+                    </ERPBtn>
+                  </div>
+
 
                   {section('Terms & conditions')}
                   <ERPTextarea label="One term per line" value={d.termList.join('\n')} onChange={listEd('termList')} rows={7} />
@@ -828,13 +1105,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
           <ERPBtn variant={onSaveImage ? 'secondary' : 'primary'} onClick={downloadPNG} disabled={!!busy}><Download size={14} /> {busy === 'png' ? 'Building…' : 'Download image'}</ERPBtn>
           <ERPBtn variant="secondary" onClick={copyImage} disabled={!!busy}><Copy size={14} /> Copy image</ERPBtn>
           <ERPBtn variant="secondary" onClick={printPDF}><Printer size={14} /> Print / Save PDF</ERPBtn>
-          {quotation?.renderImage?.url && (
-            <a href={quotation.renderImage.url} target="_blank" rel="noopener noreferrer"
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 12px', borderRadius:9, textDecoration:'none',
-                background:'rgba(24,199,122,0.12)', border:'1px solid rgba(24,199,122,0.35)', color:C.green, fontWeight:700, fontSize:12 }}>
-              <ExternalLink size={13} /> Open saved image
-            </a>
-          )}
+          {quotation?.renderImage?.path && <OpenSavedImage path={quotation.renderImage.path} />}
           {waHref && (
             <a href={waHref} target="_blank" rel="noopener noreferrer"
               style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', borderRadius:9, textDecoration:'none',

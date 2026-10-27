@@ -7,7 +7,7 @@ import SEO from '../components/SEO';
 import { 
   ArrowRight, CheckCircle2, Play, Star, 
   LayoutGrid, Code2, Globe, Smartphone, 
-  Calculator, Cpu, ShieldCheck, Sparkles, 
+  Calculator, Cpu, ShieldCheck, Sparkles, Megaphone,
   ShoppingBag, Utensils, Hotel, Factory, 
   Briefcase, Stethoscope, GraduationCap, HeartHandshake,
   Award, HelpCircle, ChevronDown, MessageSquare, ExternalLink,
@@ -29,7 +29,7 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
     { title: "Mobile App Development", icon: Smartphone, slug: "mobile-app" },
     { title: "Accounting, Tax & Audit Services", icon: Calculator, slug: "accounting" },
     { title: "Business Process Automation", icon: Cpu, slug: "business-automation" },
-    { title: "IT Consulting & Support", icon: ShieldCheck, slug: "custom-software" },
+    { title: "Digital Marketing", icon: Megaphone, slug: "digital-marketing" },
     { title: "AI-Powered Solutions", icon: Sparkles, slug: "ai-automation" },
   ];
 
@@ -70,6 +70,12 @@ export default function HomePage({ onOpenQuote, onOpenClientRequest }) {
       desc: "Strategic guidance for sustainable growth.",
       slug: "business-automation",
       image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      title: "Digital Marketing",
+      desc: "Social media, SEO, campaigns & Google Business.",
+      slug: "digital-marketing",
+      image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=600&q=80"
     },
   ];
 

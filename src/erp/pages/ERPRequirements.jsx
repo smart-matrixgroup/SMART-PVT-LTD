@@ -7,6 +7,7 @@ import {
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatWhen } from '../formatWhen';
+import PrivateFileLink from '../components/PrivateFileLink';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
   ERPModal, ERPInput, ERPSelect, ERPEmpty,
@@ -1029,12 +1030,13 @@ export default function ERPRequirements() {
             : (findFormTpl(showFilled.formType)?.fields || []);
           const filled = showFilled.answers || DEV_FILLED[showFilled.id] || {};
           if (!fields.length) return <div style={{color:C.muted,fontSize:12,padding:8}}>No field definitions stored for this form.</div>;
-          // File answers may be {name,url}, an array of them, or a plain
-          // string (legacy/dev). Normalise to a displayable list.
+          // File answers may be {name,path} (private Storage path), the older
+          // {name,url}, an array, or a plain string (legacy/dev). Normalise.
           const fileList = (v) => {
             const arr = Array.isArray(v) ? v : [v];
             return arr.filter(Boolean).map(f =>
-              typeof f === 'string' ? { name:f, url:null } : { name:f?.name||'File', url:f?.url||null });
+              typeof f === 'string' ? { name:f, path:null, url:null }
+              : { name:f?.name||'File', path:f?.path||null, url:f?.url||null });
           };
           return (
             <div style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -1058,7 +1060,10 @@ export default function ERPRequirements() {
                         {fileList(val).map((f,i)=>(
                           <div key={i} style={{display:'flex',gap:8,alignItems:'center',padding:'8px 12px',borderRadius:8,background:'rgba(0,102,255,0.06)',border:`1px solid ${C.borderHi}`}}>
                             <Upload size={14} style={{color:C.cyan,flexShrink:0}}/>
-                            {f.url ? (
+                            {f.path ? (
+                              <PrivateFileLink file={f}
+                                style={{fontSize:12,color:C.cyan,fontWeight:700}}/>
+                            ) : f.url ? (
                               <a href={f.url} target="_blank" rel="noopener noreferrer"
                                 style={{fontSize:12,color:C.cyan,fontWeight:600,textDecoration:'underline'}}>
                                 {f.name}

@@ -8,6 +8,7 @@ import WhatsAppButton from './components/WhatsAppButton';
 import QuoteModal from './components/QuoteModal';
 import ClientRequestForm from './components/ClientRequestForm';
 import ErrorBoundary from './components/ErrorBoundary';
+import SessionTimeout from './components/SessionTimeout';
 
 import HomePage from './pages/HomePage';
 
@@ -170,6 +171,9 @@ export default function App() {
       <Router>
         {/* Single AuthProvider at app root — shared across ALL routes */}
         <AuthProvider>
+          {/* Session countdown + auto sign-out notice — silent while the
+              SESSION_MAX_MINUTES cap in AuthContext is switched off */}
+          <SessionTimeout />
           {/* Top-level error boundary: a crash in any route or form shows a
               friendly reload panel instead of a blank page */}
           <ErrorBoundary>

@@ -112,6 +112,36 @@ export const QUOTATION_TEMPLATE_SEEDS = [
     terms: 'Third-party platform subscription costs are borne by the client.\nQuotation valid for 30 days from date of issue.',
     paymentTerms: '50% advance, 50% on workflow handover.',
   },
+  {
+    serviceName: 'Digital Marketing — Basic',
+    serviceCode: 'DMK-B01',
+    description: 'Monthly social media management with weekly 3 posts + 3 stories, comment replies, weekly reports, basic campaigns, Google access management and basic SEO.',
+    scope: '• Monthly content calendar\n• 3 feed posts + 3 stories per week\n• Comment / inbox reply management\n• Weekly performance report\n• Basic campaign planning\n• Google account access management\n• Basic on-page SEO',
+    professionalFee: 15000,
+    otherCharges: 0,
+    terms: 'Monthly recurring engagement. Content plan approved by client each month. Ad spend (if any) is charged to the client separately.\nQuotation valid for 30 days from date of issue.',
+    paymentTerms: 'Monthly advance payment of LKR 15,000 due before the start of each month.',
+  },
+  {
+    serviceName: 'Digital Marketing — Standard',
+    serviceCode: 'DMK-S01',
+    description: 'Full digital marketing package including corporate website, Google Business profile, weekly social posts/stories, engagement replies, reports, campaigns and basic SEO.',
+    scope: '• Professional corporate business website\n• Google Business Profile setup & management\n• Search Console & Analytics integration\n• 3 feed posts + 3 stories per week\n• Comment / inbox reply management\n• Weekly performance report\n• Advanced monthly campaign management\n• Basic on-page SEO',
+    professionalFee: 45000,
+    otherCharges: 0,
+    terms: 'Package value LKR 45,000 includes website + Google Business setup and first month of social media management. Website content and brand assets to be provided by the client.\nQuotation valid for 30 days from date of issue.',
+    paymentTerms: 'LKR 30,000 initial installment on sign-up, then LKR 15,000 per month for ongoing management.',
+  },
+  {
+    serviceName: 'Digital Marketing — Premium',
+    serviceCode: 'DMK-P01',
+    description: 'Customizable premium digital marketing package with ERP/CRM integration, advanced paid ads, influencer campaigns, expanded content volume and dedicated account management.',
+    scope: '• Tailored scope based on client requirements\n• ERP / CRM marketing integration (optional)\n• Advanced paid advertising campaign management\n• Influencer / collaboration campaigns\n• Expanded posting frequency (daily options)\n• Dedicated account manager\n• Custom reporting dashboard\n• Google Business, Search Console & Analytics management',
+    professionalFee: 0,
+    otherCharges: 0,
+    terms: 'Premium scope is customized after a discovery call. Ad spend, influencer fees and third-party tool subscriptions are borne by the client.\nQuotation valid for 30 days from date of issue.',
+    paymentTerms: 'Custom milestone / monthly billing as per agreed proposal.',
+  },
 ];
 
 export const REQUIREMENT_TEMPLATE_SEEDS = [
@@ -233,6 +263,20 @@ export const REQUIREMENT_TEMPLATE_SEEDS = [
       'Approximate volume & frequency per task',
       'Integration requirements (systems to connect)',
       'Approval / escalation rules',
+    ],
+  },
+  {
+    serviceName: 'Digital Marketing',
+    serviceCode: 'DMK-01',
+    checklist: [
+      'Social media account credentials / admin access (Facebook, Instagram, LinkedIn, etc.)',
+      'Brand assets (logo, colours, fonts, brand guidelines)',
+      'Existing website / Google Business access (if any)',
+      'Target audience / customer profile',
+      'Content preferences and reference competitors / pages',
+      'Campaign / ad spend budget limits (if any)',
+      'Primary contact person for monthly approvals',
+      'High-resolution product / service images and descriptions',
     ],
   },
 ];

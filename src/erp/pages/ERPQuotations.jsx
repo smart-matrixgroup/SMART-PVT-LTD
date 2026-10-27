@@ -5,8 +5,10 @@ import {
   addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, serverTimestamp, runTransaction,
 } from 'firebase/firestore';
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
+import { usePrivateUrl } from '../usePrivateUrl';
+import PrivateFileLink from '../components/PrivateFileLink';
 import { company } from '../../config/company';
 import { QUOTATION_TEMPLATE_SEEDS, seedId } from '../data/seedTemplates';
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
@@ -157,11 +159,50 @@ const EMPTY_FORM = {
   description:'', scope:'',
   items:[{ id:buid(), label:'', amount:'' }],
   customFields:[],
+  // Pricing / payment rows the Image Studio laid out for this quotation
+  quoteRows:null,
   // Screenshots shown inside the laptop / phone mockups on the letterhead
   laptopShot:'', phoneShot:'',
   advancePct:30, validUntil:'', terms:'', paymentTerms:'', notes:'',
 };
 const EMPTY_PAY = { amount:'', date:'', method:'Bank Transfer', reference:'', notes:'' };
+
+// Saved letterhead card. The quotation doc stores only the Storage PATH; the
+// bytes are pulled through the SDK (so storage.rules decide who sees them) and
+// shown from an in-memory blob URL. A shareable ?token= link never exists.
+function SavedLetterheadCard({ info }) {
+  const { url, busy, err } = usePrivateUrl(info?.path, !!info?.path);
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, padding:9, borderRadius:10,
+      background:'rgba(24,199,122,0.07)', border:'1px solid rgba(24,199,122,0.25)' }}>
+      {url
+        ? <img src={url} alt="Saved quotation letterhead"
+            style={{ width:44, height:62, objectFit:'cover', objectPosition:'top', borderRadius:6,
+              border:`1px solid ${C.border}`, background:'#fff' }} />
+        : <div style={{ width:44, height:62, borderRadius:6, display:'flex', alignItems:'center',
+            justifyContent:'center', border:`1px solid ${C.border}`, background:'rgba(10,24,56,0.6)',
+            color:C.muted, fontSize:9, fontWeight:700 }}>{busy ? '…' : '—'}</div>}
+      <div style={{ flex:1, minWidth:120 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.green }}>
+          {info?.edited ? 'Edited letterhead saved' : 'Letterhead image saved'}
+        </div>
+        <div style={{ fontSize:10, color:err ? C.red : C.muted }}>
+          {err || (info?.edited
+            ? 'This edited copy is what gets sent to the client.'
+            : 'Private to this account — opened through Firebase, no public link.')}
+        </div>
+      </div>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer"
+          style={{ display:'flex', alignItems:'center', gap:5, textDecoration:'none', padding:'6px 10px',
+            borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
+            color:C.green, fontWeight:700, fontSize:11 }}>
+          <ImageIcon size={11}/> Open
+        </a>
+      )}
+    </div>
+  );
+}
 
 export default function ERPQuotations() {
   const { isDevSession } = useAuth();
@@ -309,7 +350,7 @@ ${lines}
 💰 Total: ${formatLKR(sel.totalAmount)}
 📌 Advance (${toInt(sel.advancePct)}%): ${formatLKR(sel.advanceAmount)}
 
-${sel.renderImage?.url ? `🖼 Quotation image: ${sel.renderImage.url}\n` : ''}🔗 View & accept in your client portal: ${window.location.origin}/client-login
+${sel.renderImage?.path ? '🖼 Your quotation letterhead is attached inside your client portal (open the link below — it is private to you).\n' : ''}🔗 View & accept in your client portal: ${window.location.origin}/client-login
 
 — ${company.fullName} Team`;
   };
@@ -360,6 +401,9 @@ We've received your payment — thank you! 🙏
     status: 'Draft',
     laptopShot: form.laptopShot || '',
     phoneShot: form.phoneShot || '',
+    quoteRows: form.quoteRows || null,
+    customFields: form.customFields.filter(f => String(f.label || '').trim())
+      .map(f => ({ label:String(f.label).trim(), value:String(f.value || '').trim() })),
     renderImage: editingQuote?.renderImage || null,
   };
 
@@ -380,6 +424,7 @@ We've received your payment — thank you! 🙏
       scope:       q.scope || '',
       items:       (q.items || []).map(b => ({ id:b.id || buid(), label:b.label, amount:String(toInt(b.amount)) })),
       customFields:(q.customFields || []).map(f => ({ id:f.id || buid(), label:f.label || '', value:f.value || '' })),
+      quoteRows:   q.quoteRows || null,
       advancePct:  toInt(q.advancePct) || 30,
       validUntil:  q.validUntil || '',
       terms:       q.terms || '',
@@ -395,10 +440,10 @@ We've received your payment — thank you! 🙏
 
   const closeForm = () => { setView('list'); setEditId(null); setForm(EMPTY_FORM); setFormError(''); };
 
-  // Screenshots uploaded in the Image Studio (laptop / phone mockups).
-  // In the form they live in form state and are saved with the quotation;
-  // for a saved quotation they are written straight to Firestore.
-  const handleShotsChange = (patch) => {
+  // Edits made inside the Image Studio (laptop / phone screenshots, pricing
+  // rows, payment rows). In the form they live in form state and are saved with
+  // the quotation; for a saved quotation they are written straight to Firestore.
+  const handleStudioChange = (patch) => {
     if (view === 'form') { setForm(p => ({ ...p, ...patch })); return; }
     if (!sel) return;
     setQuotes(rows => rows.map(q => q.id === sel.id ? { ...q, ...patch } : q));
@@ -409,45 +454,50 @@ We've received your payment — thank you! 🙏
   };
 
 
-  // Save the rendered letterhead image onto the quotation (Storage + doc URL),
+  // Save the rendered letterhead image onto the quotation (Storage PATH only),
   // so it stays available after the studio is closed — view / download later.
-  const renderPath = (id) => `quotation-renders/${id}/letterhead.jpg`;
+  //
+  // The folder is keyed by the client's own uid (quotation-renders/{clientId}/
+  // {quotationId}/…) because that is what lets storage.rules hand the file back
+  // to exactly that one client. No getDownloadURL() anywhere: a tokenised public
+  // URL survives forwarding, screenshots and chat history, and would expose one
+  // client's quotation to anyone the link reaches.
+  const renderPath = (id, clientId) => `quotation-renders/${clientId || 'unassigned'}/${id}/letterhead.jpg`;
 
   // `edited: true` = saved from the Image Studio (manually touched), so the
   // auto-renderer must not repaint over it and Send must deliver this copy.
-  const saveQuoteImage = async (id, blob, { edited = false } = {}) => {
-    const path = renderPath(id);
+  const saveQuoteImage = async (id, blob, { edited = false, clientId = '' } = {}) => {
+    const path = renderPath(id, clientId);
     const r = storageRef(storage, path);
-    // Same path is overwritten on every save — make the URL revalidate so
-    // the client never sees a cached older quotation.
-    await uploadBytes(r, blob, { contentType: 'image/jpeg', cacheControl: 'public,max-age=0' });
-    const url = await getDownloadURL(r);
+    // Same path is overwritten on every save — nothing is cached client-side
+    // beyond this tab, but keep the object itself revalidating.
+    await uploadBytes(r, blob, { contentType: 'image/jpeg', cacheControl: 'no-cache' });
     await updateDoc(doc(db, 'quotations', id), {
-      renderImage: { url, path, savedAt: serverTimestamp(), edited },
+      renderImage: { path, savedAt: serverTimestamp(), edited },
       updatedAt: serverTimestamp(),
     });
-    setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: { url, path, edited } } : q));
-    return url;
+    setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: { path, edited } } : q));
+    return path;
   };
 
   const handleSaveRender = async (blob) => {
     if (!live) throw new Error('Image save needs the live database — connect Firebase first.');
     const targetId = (view === 'form' ? editId : sel?.id) || null;
     if (!targetId) throw new Error('Save the quotation first, then save its image.');
-    await saveQuoteImage(targetId, blob, { edited: true });
+    await saveQuoteImage(targetId, blob, { edited: true, clientId: sel?.clientId || form?.clientId || '' });
     showToast('Edited image saved — this is the copy the client will receive.');
   };
 
   // ── Automatic quotation image ───────────────────────────────────
   // Every save paints the quotation onto the letterhead with the saved
-  // data, uploads it, and stores the URL on the doc. Sending updates the
-  // status — the image rides along in the client's own portal, no
-  // WhatsApp hop needed.
+  // data, uploads it, and stores the Storage PATH on the doc. Sending
+  // updates the status — the image rides along in the client's own portal,
+  // no WhatsApp hop needed.
   // Paint + upload the letterhead image. The client portal listens to the
   // quotation doc, so the moment renderImage lands it is visible there.
   const saveQuoteImageNow = async (q, id) => {
     const blob = await renderQuotationImageBlob(q, bankDetails);
-    await saveQuoteImage(id, blob);
+    await saveQuoteImage(id, blob, { clientId: q?.clientId || '' });
   };
 
   const autoQuoteImage = async (q, id, sendNow) => {
@@ -546,7 +596,7 @@ We've received your payment — thank you! 🙏
   // copy is what gets sent — an edited image is never repainted over.
   const sendQuoteWithImage = async (q, id) => {
     let imageOk = false;
-    const existing = q?.renderImage?.url || quotes.find(r => r.id === id)?.renderImage?.url || null;
+    const existing = q?.renderImage?.path || quotes.find(r => r.id === id)?.renderImage?.path || null;
     if (live) {
       if (existing) {
         imageOk = true;
@@ -606,6 +656,7 @@ We've received your payment — thank you! 🙏
       notes:        form.notes,
       laptopShot:   form.laptopShot || '',
       phoneShot:    form.phoneShot || '',
+      quoteRows:    form.quoteRows || null,
       validUntil:   form.validUntil,
       updatedAt:    serverTimestamp(),
     };
@@ -616,7 +667,7 @@ We've received your payment — thank you! 🙏
     // A manually edited letterhead (Image Studio) is never auto-repainted on
     // a plain save — the admin's edited image is the one that goes out.
     const currentQuote = editId ? quotes.find(q => q.id === editId) : null;
-    const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.url);
+    const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.path);
 
     try {
       let savedId = editId || null;
@@ -726,6 +777,7 @@ We've received your payment — thank you! 🙏
       projectTitle:q.projectTitle, description:q.description || '', scope:q.scope || '',
       items:(q.items || []).map(b => ({ id:buid(), label:b.label, amount:toInt(b.amount) })),
       customFields:(q.customFields || []).map(f => ({ id:buid(), label:f.label || '', value:f.value || '' })),
+      quoteRows:q.quoteRows || null,
       totalAmount:toInt(q.totalAmount), advancePct:toInt(q.advancePct),
       advanceAmount:toInt(q.advanceAmount),
       terms:q.terms || '', paymentTerms:q.paymentTerms || '', notes:q.notes || '',
@@ -1386,10 +1438,10 @@ We've received your payment — thank you! 🙏
                                 {p.status==='Verified'&& <span style={{ color:C.green,  fontSize:9, fontWeight:800, marginLeft:6 }}>• VERIFIED ✓</span>}
                                 {p.status==='Rejected'&& <span style={{ color:C.red,    fontSize:9, fontWeight:800, marginLeft:6 }}>• REJECTED</span>}
                               </div>
-                              {p.fileUrl && (
-                                <a href={p.fileUrl} target="_blank" rel="noreferrer" style={{ fontSize:10, fontWeight:700, color:C.cyan, textDecoration:'none', display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-                                  <Eye size={11}/> Photo
-                                </a>
+                              {(p.filePath || p.fileUrl) && (
+                                <PrivateFileLink file={{ name: p.fileName, path: p.filePath, url: p.fileUrl }}
+                                  label="Photo" iconSize={11}
+                                  style={{ color: C.cyan, flexShrink: 0 }}/>
                               )}
                             </div>
                             <div style={{ fontSize:9, color:C.muted, marginTop:2 }}>
@@ -1441,30 +1493,11 @@ We've received your payment — thank you! 🙏
                     {sel.terms &&       <div style={{ fontSize:10, color:C.muted }}>📑 {sel.terms}</div>}
                     {sel.notes &&       <div style={{ fontSize:10, color:C.muted }}>📝 {sel.notes}</div>}
 
-                    {/* Saved letterhead image (from the Image Studio) */}
-                    {sel.renderImage?.url && (
-                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:9, borderRadius:10,
-                        background:'rgba(24,199,122,0.07)', border:'1px solid rgba(24,199,122,0.25)' }}>
-                        <img src={sel.renderImage.url} alt="Saved quotation letterhead"
-                          style={{ width:44, height:62, objectFit:'cover', objectPosition:'top', borderRadius:6,
-                            border:`1px solid ${C.border}`, background:'#fff' }} />
-                        <div style={{ flex:1, minWidth:120 }}>
-                          <div style={{ fontSize:11, fontWeight:700, color:C.green }}>
-                            {sel.renderImage.edited ? 'Edited letterhead saved' : 'Letterhead image saved'}
-                          </div>
-                          <div style={{ fontSize:10, color:C.muted }}>
-                            {sel.renderImage.edited
-                              ? 'This edited copy is what gets sent to the client.'
-                              : 'Open or send it anytime — no need to rebuild.'}
-                          </div>
-                        </div>
-                        <a href={sel.renderImage.url} target="_blank" rel="noopener noreferrer"
-                          style={{ display:'flex', alignItems:'center', gap:5, textDecoration:'none', padding:'6px 10px',
-                            borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
-                            color:C.green, fontWeight:700, fontSize:11 }}>
-                          <ImageIcon size={11}/> Open
-                        </a>
-                      </div>
+                    {/* Saved letterhead image (from the Image Studio).
+                        Read through the SDK from its Storage path — the
+                        quotation doc never carries a shareable public URL. */}
+                    {sel.renderImage?.path && (
+                      <SavedLetterheadCard info={sel.renderImage} edited={sel.renderImage.edited} />
                     )}
 
                     {/* Actions */}
@@ -1494,7 +1527,7 @@ We've received your payment — thank you! 🙏
                         <ERPBtn size="sm" variant="secondary" onClick={() => setStudioOpen(true)} title="Build an editable image / PDF of this quotation">
                           <ImageIcon size={12}/> Image / PDF
                         </ERPBtn>
-                        {sel.renderImage?.url && ['Sent','Accepted','Advance Paid','In Progress'].includes(sel.status) && (
+                        {sel.renderImage?.path && ['Sent','Accepted','Advance Paid','In Progress'].includes(sel.status) && (
                           <ERPBtn size="sm" variant="secondary" onClick={() => handleResendImage(sel.id)}
                             title="Push the saved / edited letterhead to the client portal again">
                             <Send size={12}/> Re-send to Client
@@ -1722,7 +1755,7 @@ We've received your payment — thank you! 🙏
         onClose={() => { setStudioOpen(false); setDemoQuote(null); }}
         quotation={sel || demoQuote || (view === 'form' ? formPreview : null)}
         waHref={selClient?.phone ? waLink(selClient.phone, quotationWhatsApp()) : ''}
-        onShotsChange={handleShotsChange}
+        onDocChange={handleStudioChange}
         onSaveImage={handleSaveRender}
       />
     </div>

@@ -11,6 +11,7 @@ import {
   ERPModal, ERPInput, ERPEmpty, ERPAvatar, C
 } from '../components/ERPui';
 import { formatWhen, toMillis } from '../formatWhen';
+import { passwordError, generateStrongPassword, PASSWORD_HINT } from '../passwordPolicy';
 import { CheckCircle2, XCircle, Trash2, MessageSquare, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ── Dev mock leads ────────────────────────────────────────────────
@@ -93,12 +94,12 @@ export default function ERPLeads() {
     return unsub;
   }, [isDevSession, refreshTick]);
 
-  // Pre-fill accept form when lead selected (stable one-time password)
+  // Pre-fill accept form when lead selected (fresh strong one-time password)
   useEffect(() => {
     if (selected) {
       setAccForm({
         email:    selected.email    || '',
-        password: 'Smart@1234',
+        password: generateStrongPassword(),
         name:     selected.name     || '',
         company:  selected.company  || '',
       });
@@ -135,6 +136,8 @@ export default function ERPLeads() {
     if (!accForm.email || !accForm.password || !accForm.name) {
       setAccError('Name, email and password are required.'); return;
     }
+    const pwErr = passwordError(accForm.password, accForm.email);
+    if (pwErr) { setAccError(pwErr); return; }
     setAccLoading(true); setAccError('');
     try {
       let uid = `dev-${Date.now()}`;
@@ -147,7 +150,8 @@ export default function ERPLeads() {
         // Client doc: id = uid (role resolution in AuthContext depends on it)
         await setDoc(doc(db, 'clients', uid), {
           uid, name: accForm.name, company: accForm.company,
-          email: accForm.email, phone: selected.whatsapp || '',
+          email: accForm.email, phone: selected.whatsapp || selected.phone || '',
+          address: selected.address || '',
           clientSince: new Date().toLocaleDateString('en-US', { month:'long', year:'numeric' }),
           projects:[], invoices:[], tickets:[],
           createdAt: serverTimestamp(),
@@ -412,7 +416,7 @@ Your request — ${svc} — has been added as a project in your dashboard. You c
                         }}>📌 {sourceLabel(lead)}</span>
                       </div>
                       <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
-                        {lead.company} · {lead.email}
+                        {lead.company} · {lead.email || lead.whatsapp || lead.phone || '—'}
                       </div>
                       <div style={{ fontSize:11, color:C.subtle, marginTop:4, display:'flex', gap:16 }}>
                         <span>🎯 {lead.service}</span>
@@ -480,7 +484,8 @@ Your request — ${svc} — has been added as a project in your dashboard. You c
               {/* Info rows */}
               {[
                 { label:'Email',    val:selected.email },
-                { label:'WhatsApp', val:selected.whatsapp },
+                { label:'WhatsApp', val:selected.whatsapp || selected.phone },
+                { label:'Address',  val:selected.address },
                 { label:'Service',  val:selected.service },
                 { label:'Budget',   val:selected.budget },
                 { label:'Source',   val:sourceLabel(selected) },
@@ -560,11 +565,19 @@ Your request — ${svc} — has been added as a project in your dashboard. You c
               <div style={{ display:'flex', gap:8 }}>
                 <input value={accForm.password}
                   onChange={e=>setAccForm(p=>({...p,password:e.target.value}))}
-                  placeholder="Enter one-time password (min 6 characters)"
+                  placeholder="Min 8, caps + small + number + symbol"
                   style={{
                     flex:1, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}`,
                     borderRadius:10, padding:'9px 14px', color:C.text, fontSize:12, outline:'none',
                   }} />
+                <button onClick={() => setAccForm(p => ({ ...p, password: generateStrongPassword() }))}
+                  title="Generate a new strong password"
+                  type="button"
+                  style={{
+                    padding:'9px 12px', borderRadius:10, background:'rgba(0,102,255,0.14)',
+                    border:`1px solid ${C.borderHi}`, color:C.cyan, cursor:'pointer',
+                    fontSize:11, fontWeight:700, display:'flex', alignItems:'center', gap:4
+                  }}>↻ New</button>
                 <button onClick={() => { navigator.clipboard.writeText(accForm.password); }}
                   title="Copy password"
                   type="button"
@@ -575,7 +588,8 @@ Your request — ${svc} — has been added as a project in your dashboard. You c
                   }}>📋 Copy</button>
               </div>
               <div style={{ fontSize:10, color:C.muted, marginTop:4 }}>
-                This is a one-time created password for this client. They will use this password to sign into the Client Portal.
+                This is a one-time password for this client — they use it to sign into the Client Portal.
+                {` Policy: ${PASSWORD_HINT}`}
               </div>
             </div>
 

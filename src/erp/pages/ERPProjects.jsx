@@ -73,12 +73,8 @@ const DEV_PROJECTS = [
   },
 ];
 
-// Phase 3 C — dev fixtures for the real work-assignment integration.
-const DEV_ASSIGNMENTS = [
-  { id:'w1', projectId:'P001', title:'Frontend build',       staffId:'dev-staff-001', staffName:'Ashan Perera',     status:'In Progress', progress:65, deadline:'2026-10-12' },
-  { id:'w2', projectId:'P001', title:'API integration',      staffId:'dev-staff-002', staffName:'Nimali Silva',     status:'Assigned',    progress:20, deadline:'2026-10-20' },
-  { id:'w3', projectId:'P002', title:'POS module hardening', staffId:'dev-staff-003', staffName:'Ruwan Jayasuriya', status:'In Progress', progress:40, deadline:'2026-10-30' },
-];
+// Phase 3 C — the old dev fixtures (DEV_ASSIGNMENTS) were deleted: invented
+// staff names on fake projects only looked like real work assignments.
 
 export default function ERPProjects() {
   const { isDevSession } = useAuth();

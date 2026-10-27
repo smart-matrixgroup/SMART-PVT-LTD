@@ -47,6 +47,9 @@ export default function ERPTemplates() {
   const [delTarget,  setDelTarget]  = useState(null); // { type:'quotation'|'requirement', row }
   const [delBusy,    setDelBusy]    = useState(false);
   const seeded = useRef(false);
+  // One flag per collection — sharing a single flag meant whichever listener
+  // fired first silently cancelled the other collection's backfill.
+  const seededR = useRef(false);
 
   // ── Load (live listeners, or seed data in dev mode) ─────────────
   useEffect(() => {
@@ -60,11 +63,17 @@ export default function ERPTemplates() {
       setQRows(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byName));
       setLoading(false);
       setLoadError('');
-      // Auto-seed once, with deterministic ids so repeats never duplicate.
-      if (snap.empty && !seeded.current) {
+      // Backfill: push any seed whose deterministic id is missing. Seeding
+      // only "when the collection is empty" meant services added later
+      // (Digital Marketing) never reached a project that already had rows,
+      // while a full re-seed would wipe the admin's own template edits.
+      if (!seeded.current) {
         seeded.current = true;
+        const have = new Set(snap.docs.map(d => d.id));
         QUOTATION_TEMPLATE_SEEDS.forEach(s => {
-          setDoc(doc(db, 'quotationTemplates', seedId(s.serviceCode)),
+          const id = seedId(s.serviceCode);
+          if (have.has(id)) return;
+          setDoc(doc(db, 'quotationTemplates', id),
             { ...s, createdAt: serverTimestamp() }).catch(e => console.error('seed q-template', e));
         });
       }
@@ -72,10 +81,13 @@ export default function ERPTemplates() {
 
     const un2 = onSnapshot(collection(db, 'requirementTemplates'), snap => {
       setRRows(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byName));
-      if (snap.empty && !seeded.current) {
-        seeded.current = true;
+      if (!seededR.current) {
+        seededR.current = true;
+        const have = new Set(snap.docs.map(d => d.id));
         REQUIREMENT_TEMPLATE_SEEDS.forEach(s => {
-          setDoc(doc(db, 'requirementTemplates', seedId(s.serviceCode)),
+          const id = seedId(s.serviceCode);
+          if (have.has(id)) return;
+          setDoc(doc(db, 'requirementTemplates', id),
             { ...s, createdAt: serverTimestamp() }).catch(e => console.error('seed r-template', e));
         });
       }

@@ -12,6 +12,7 @@ export default function ServicesPage({ onOpenQuote, onOpenClientRequest }) {
     'Software & Cloud',
     'Web & Mobile',
     'Automation & AI',
+    'Digital Marketing',
     'Finance & Compliance'
   ];
 
@@ -23,7 +24,7 @@ export default function ServicesPage({ onOpenQuote, onOpenClientRequest }) {
     <div className="pt-28 pb-20 space-y-16">
       <SEO 
         title="Services & Solutions" 
-        description="Explore SMART Pvt Ltd's full suite of 10 core services: ERP & POS, custom software, websites, mobile apps, automation, AI, accounting, tax, and audit."
+        description="Explore SMART Pvt Ltd's full suite of services: ERP & POS, custom software, websites, mobile apps, automation, AI, digital marketing, accounting, tax, and audit."
       />
 
       {/* Hero Header */}

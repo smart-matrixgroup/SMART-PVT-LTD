@@ -185,7 +185,7 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (request.auth != null && request.auth.uid == uid &&
          request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['phone', 'address', 'docs', 'updatedAt']));
+           .hasOnly(['phone', 'address', 'docs', 'photoURL', 'avatar', 'updatedAt']));
     }
 
     // Work assignments. Staff read their own (authUid field) and may ONLY
