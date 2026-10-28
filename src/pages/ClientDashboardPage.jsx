@@ -12,7 +12,7 @@ import SEO from '../components/SEO';
 import { company } from '../config/company';
 import { toMillis, formatWhen } from '../erp/formatWhen';
 import { toInt, formatLKR } from '../erp/money';
-import { usePrivateUrl } from '../erp/usePrivateUrl';
+import { usePrivateUrl, revOf } from '../erp/usePrivateUrl';
 import PrivateFileLink from '../erp/components/PrivateFileLink';
 import { getConversationId, sendChatMessage, markConversationAsRead } from '../erp/messagingUtils';
 import NotificationAlert from '../components/NotificationAlert';
@@ -192,8 +192,8 @@ const REQ_BUDGETS   = ['Below LKR 25,000','LKR 25,000–50,000','LKR 50,000–10
 // client's own signed-in session (quotation-renders/{their uid}/{quote id}/…),
 // so storage.rules decide access on every view. Nothing here is a public
 // ?token= link that could be forwarded to someone else.
-function QuotationLetterheadImage({ path }) {
-  const { url, busy, err } = usePrivateUrl(path, !!path);
+function QuotationLetterheadImage({ path, rev }) {
+  const { url, busy, err } = usePrivateUrl(path, !!path, revOf(rev));
   if (err) return (
     <div style={{ padding:'10px 12px', borderRadius:12, fontSize:12, fontWeight:700,
       color:'#FCA5A5', background:'rgba(239,68,68,0.10)', border:'1px solid rgba(239,68,68,0.3)' }}>{err}</div>
@@ -478,7 +478,15 @@ export default function ClientDashboardPage() {
     return payments.reduce((acc, p) => acc + (toInt(p.amount) || 0), 0);
   }, [payments]);
 
-  const balanceDue = Math.max(0, totalQuoted - totalPaid);
+  // Per quotation, so an admin-pinned balance (discount / outside payment)
+  // is what the client sees, and one over-paid job cannot mask another.
+  const balanceDue = Math.max(0, quotes.reduce((acc, q) => {
+    const pinned = q.balanceManual && q.balanceOverride != null && q.balanceOverride !== '';
+    const due = pinned
+      ? Math.max(0, toInt(q.balanceOverride))
+      : Math.max(0, (toInt(q.totalAmount) || 0) - (toInt(q.paidTotal) || 0));
+    return acc + due;
+  }, 0));
 
   const handleSendPhase4Chat = async (e) => {
     if (e) e.preventDefault();
@@ -1511,7 +1519,7 @@ export default function ClientDashboardPage() {
                   <div style={{fontSize:16,fontWeight:800,color:'#059669'}}>{formatLKR(toInt(q.advanceAmount))}</div>
                 </div>}
               </div>
-              {q.renderImage?.path && <QuotationLetterheadImage path={q.renderImage.path} />}
+              {q.renderImage?.path && <QuotationLetterheadImage path={q.renderImage.path} rev={q.renderImage.savedAt} />}
               {(q.items||[]).length>0&&(
                 <div>
                   <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.8px',color:'#94A3B8',marginBottom:8}}>Breakdown</div>

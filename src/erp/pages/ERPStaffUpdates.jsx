@@ -248,6 +248,13 @@ const xlsxToRows = ws => {
 
 const DEV_UPDATES = [];
 
+// Demo roster for the offline dev session so “Send Today's Auto Sheet” and
+// the staff picker can be exercised without the live backend.
+const DEV_STAFF = [
+  { id: 'dev-staff-001', authUid: 'dev-staff-001', name: 'Ashan Perera', role: 'Software Associate', location: 'SMART Trincomalee', status: 'active' },
+  { id: 'dev-staff-002', authUid: 'dev-staff-002', name: 'Kavitha Raj', role: 'UI/UX Designer', location: 'SMART Trincomalee', status: 'active' },
+];
+
 export default function ERPStaffUpdates() {
   const { isFirebaseConfigured, isDevSession } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
@@ -263,9 +270,9 @@ export default function ERPStaffUpdates() {
   const [statusF, setStatusF] = useState('All');
   const [search,  setSearch]  = useState('');
 
-  // Weekly/Monthly view + Excel import
+  // Today / Weekly / Monthly view + Excel import
   const [viewMode,   setViewMode]   = useState('daily');           // 'daily' | 'range'
-  const [rangeMode,  setRangeMode]  = useState('week');            // 'week' | 'month'
+  const [rangeMode,  setRangeMode]  = useState('week');            // 'day' | 'week' | 'month'
   const [weekStart,  setWeekStart]  = useState(() => mondayOf(todayKey()));
   const [monthStart, setMonthStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [importing,  setImporting]  = useState(false);
@@ -276,6 +283,7 @@ export default function ERPStaffUpdates() {
   const [requests,   setRequests]   = useState([]);
   const [sendingReq, setSendingReq] = useState(false);
   const [reqMsg,     setReqMsg]     = useState(null);
+  const [openMarksId, setOpenMarksId] = useState(null);   // request whose marks are expanded
 
   // Pick which staff the weekly/monthly sheet goes to (instead of always all)
   const [pickerOpen,       setPickerOpen]       = useState(false);
@@ -303,7 +311,7 @@ export default function ERPStaffUpdates() {
   useEffect(() => {
     if (!live) {
       setUpdates(DEV_UPDATES);
-      setStaff([]);
+      setStaff(DEV_STAFF);
       setLoading(false);
       return;
     }
@@ -588,9 +596,9 @@ export default function ERPStaffUpdates() {
   const completedCount = updates.filter(u => (u.status || 'Completed') === 'Completed').length;
   const pendingCount = updates.filter(u => u.status === 'Pending').length;
 
-  // ── Range aggregation (Weekly Mon–Sun, or Monthly) ──
-  const rangeStart = rangeMode === 'week' ? weekStart : monthStart;
-  const rangeEnd = rangeMode === 'week' ? isoAdd(weekStart, 6) : endOfMonth(monthStart);
+  // ── Range aggregation (Today, Weekly Mon–Sun, or Monthly) ──
+  const rangeStart = rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? weekStart : monthStart;
+  const rangeEnd = rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? isoAdd(weekStart, 6) : endOfMonth(monthStart);
   const rangeReports = updates
     .filter(u => u.date >= rangeStart && u.date <= rangeEnd)
     .sort((a, b) => String(a.name || a.staffName).localeCompare(String(b.name || b.staffName)) || String(a.date).localeCompare(String(b.date)));
@@ -600,9 +608,14 @@ export default function ERPStaffUpdates() {
     (rangeGroups[k] = rangeGroups[k] || []).push(u);
   });
   const rangeStaff = Object.entries(rangeGroups);
-  const rangeLabel = rangeMode === 'week'
-    ? `${fmtShort(rangeStart)} – ${fmtShort(rangeEnd)}, ${rangeEnd.slice(0, 4)}`
-    : monthLabel(monthStart);
+  const rangeLabel = rangeMode === 'day'
+    ? `${fmtShort(todayKey())}, ${todayKey().slice(0, 4)} · ${getDayName(todayKey())}`
+    : rangeMode === 'week'
+      ? `${fmtShort(rangeStart)} – ${fmtShort(rangeEnd)}, ${rangeEnd.slice(0, 4)}`
+      : monthLabel(monthStart);
+  const rangeTitle = rangeMode === 'day' ? 'Daily' : rangeMode === 'week' ? 'Weekly' : 'Monthly';
+  const rangeUnit  = rangeMode === 'day' ? 'day' : rangeMode;
+  const rangeAdj   = rangeMode === 'day' ? 'daily' : rangeMode === 'week' ? 'weekly' : 'monthly';
 
   // Sent work-sheet requests (newest first) + status colour
   const sortedRequests = [...requests].sort((a, b) => toMs(b.requestedAt || b.createdAt) - toMs(a.requestedAt || a.createdAt));
@@ -637,7 +650,7 @@ export default function ERPStaffUpdates() {
   };
   const exportExcel = () => downloadCsv(filtered, `STAFF-PERFORMANCE-REPORT-${todayKey()}.csv`);
   const exportRange = () => downloadCsv(rangeReports,
-    `STAFF-${rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY'}-REPORT-${rangeStart}.csv`);
+    `STAFF-${rangeMode === 'day' ? 'DAILY' : rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY'}-REPORT-${rangeStart}.csv`);
 
   // ── Import template A — flat one-row-per-day CSV ──
   const downloadTemplate = () => {
@@ -665,7 +678,7 @@ export default function ERPStaffUpdates() {
   // ──
   const downloadSheetTemplate = (forStaff) => downloadWorkLogSheet(forStaff || {}, {
     period: rangeMode,
-    rangeStart: rangeMode === 'week' ? weekStart : monthStart,
+    rangeStart: rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? weekStart : monthStart,
   });
 
   // ── Core import routine — shared by file upload AND returned sheets ──
@@ -795,13 +808,16 @@ export default function ERPStaffUpdates() {
   };
 
   // ── Send a pre-filled work-log sheet to staff (one request per person) ──
-  const sendSheet = async (targets) => {
+  //  opts.auto = "auto daily sheet" — the staff portal generates the rows
+  //  from their assigned work + attendance, so there is nothing to type.
+  const sendSheet = async (targets, opts = {}) => {
     const list = (targets || []).filter(s => s && (s.authUid || s.id) && s.name);
     if (!list.length) { setReqMsg({ kind: 'err', text: 'No staff to send to.' }); return; }
-    const period = rangeMode;
-    const rangeStart = rangeMode === 'week' ? weekStart : monthStart;
-    const end = rangeEnd;
-    const label = rangeLabel;
+    const auto = opts.auto !== undefined ? opts.auto : rangeMode === 'day';
+    const period = auto ? 'day' : rangeMode;
+    const start = auto ? todayKey() : rangeMode === 'week' ? weekStart : monthStart;
+    const end = auto ? todayKey() : rangeEnd;
+    const label = auto ? `Today · ${fmtShort(todayKey())} (${getDayName(todayKey())})` : rangeLabel;
     setSendingReq(true);
     setReqMsg(null);
     try {
@@ -813,7 +829,8 @@ export default function ERPStaffUpdates() {
             staffName: s.name,
             position: s.role || s.position || '',
             location: s.location || '',
-            period, rangeStart, rangeEnd: end, rangeLabel: label,
+            period, rangeStart: start, rangeEnd: end, rangeLabel: label,
+            auto,
             status: 'Requested',
             requestedAt: serverTimestamp(),
             createdAt: serverTimestamp(),
@@ -825,13 +842,18 @@ export default function ERPStaffUpdates() {
           ...list.map((s, i) => ({
             id: `req-dev-${Date.now()}-${i}`, staffUid: s.authUid || s.id, staffName: s.name,
             position: s.role || '', location: s.location || '',
-            period, rangeStart, rangeEnd: end, rangeLabel: label, status: 'Requested',
+            period, rangeStart: start, rangeEnd: end, rangeLabel: label, auto, status: 'Requested',
             requestedAt: Date.now(),
           })),
           ...prev,
         ]);
       }
-      setReqMsg({ kind: 'ok', text: `Sheet sent to ${list.length} staff member${list.length > 1 ? 's' : ''} for ${label}. They'll see it in their portal under “Work Sheets”.` });
+      setReqMsg({
+        kind: 'ok',
+        text: auto
+          ? `Auto daily sheet sent to ${list.length} staff member${list.length > 1 ? 's' : ''} — rows are filled from their assigned work, they only mark Done / Pending.`
+          : `Sheet sent to ${list.length} staff member${list.length > 1 ? 's' : ''} for ${label}. They'll see it in their portal under “Work Sheets”.`,
+      });
     } catch (err) {
       console.error(err);
       setReqMsg({ kind: 'err', text: `Could not send — ${err.message || err}` });
@@ -840,6 +862,12 @@ export default function ERPStaffUpdates() {
     }
   };
   const sendToAll = () => sendSheet(staff);
+  const sendAutoToAll = () => {
+    // Jump to the sent-sheet card so the result message is visible.
+    setViewMode('range');
+    setRangeMode('day');
+    return sendSheet(staff, { auto: true });
+  };
 
   // ── Staff picker for "Send Sheet" ──────────────────────────────
   const staffKey = s => s.authUid || s.id;
@@ -900,24 +928,42 @@ export default function ERPStaffUpdates() {
     } catch (err) { alert('Delete failed: ' + (err.message || err)); }
   };
 
+  // Marks a returned sheet approved. For an auto daily sheet the "Done"
+  // rows are pushed into the staff member's assignments, so the project
+  // side (and the client portal) shows the work as finished too.
   const markApproved = async (req) => {
+    const marks = updates.find(u => u.sheetId === req.id) || null;
     try {
       if (live) await updateDoc(doc(db, 'reportRequests', req.id), { status: 'Approved', updatedAt: serverTimestamp() });
       else setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'Approved' } : r));
+
+      if (live && req.auto && marks) {
+        const done = (marks.tasks || []).filter(t => t.assignmentId && t.status === 'Completed');
+        for (const t of done) {
+          try {
+            await updateDoc(doc(db, 'workAssignments', t.assignmentId), {
+              status: 'Completed', progress: 100, updatedAt: serverTimestamp(),
+            });
+          } catch (e) {
+            // Assignment may have been deleted — the approval still stands.
+            console.error('assignment sync skipped', t.assignmentId, e);
+          }
+        }
+      }
     } catch (err) { alert('Could not update: ' + (err.message || err)); }
   };
 
 
   // ── Print range sheet (all staff, selected week or month) ──
   const handlePrintWeek = () => {
-    const rangeNoun = rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY';
+    const rangeNoun = rangeMode === 'day' ? 'DAILY' : rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY';
     const win = window.open('', '_blank');
     if (!win) return;
     win.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>SMART Pvt Ltd — ${rangeMode === 'week' ? 'Weekly' : 'Monthly'} Work Report (${rangeLabel})</title>
+          <title>SMART Pvt Ltd — ${rangeTitle} Work Report (${rangeLabel})</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 24px; color: #040D1F; }
             .sheet { border: 2px solid #0E3A73; border-radius: 8px; overflow: hidden; max-width: 960px; margin: 0 auto 20px; }
@@ -951,7 +997,7 @@ export default function ERPStaffUpdates() {
                       <td>${r.remarks || r.notes || '—'}</td>
                     </tr>
                   `).join('')}
-                  <tr class="total-row"><td colspan="4" style="text-align:right;">${rangeMode === 'week' ? 'WEEK' : 'MONTH'} TOTAL</td><td class="center">${hrs.toFixed(1)} hrs</td><td colspan="2"></td></tr>
+                  <tr class="total-row"><td colspan="4" style="text-align:right;">${rangeMode === 'day' ? 'DAY' : rangeMode === 'week' ? 'WEEK' : 'MONTH'} TOTAL</td><td class="center">${hrs.toFixed(1)} hrs</td><td colspan="2"></td></tr>
                 </table>
               `;
             }).join('')}
@@ -1036,9 +1082,23 @@ export default function ERPStaffUpdates() {
               color: viewMode === 'range' ? C.violet : C.muted,
             }}
           >
-            <Calendar size={12} /> Weekly / Monthly Report
+            <Calendar size={12} /> Today / Week / Month
           </button>
         </div>
+
+        <button
+          onClick={sendAutoToAll}
+          disabled={sendingReq || staff.length === 0}
+          title="Auto-generate today's work sheet from each staff member's assigned work + check-in time and send it to everyone — they only tap Done / In progress / Pending"
+          style={{
+            padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+            background: 'rgba(139,92,246,0.16)', color: C.violet, border: '1px solid rgba(139,92,246,0.4)',
+            display: 'flex', alignItems: 'center', gap: 6,
+            opacity: (sendingReq || staff.length === 0) ? 0.6 : 1,
+          }}
+        >
+          <Send size={12} /> {sendingReq ? 'Sending…' : "Send Today's Auto Sheet to All"}
+        </button>
 
         <button
           onClick={downloadTemplate}
@@ -1080,7 +1140,7 @@ export default function ERPStaffUpdates() {
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportFile} style={{ display: 'none' }} />
 
         <span style={{ fontSize: 10.5, color: C.muted }}>
-          Blank Template = anyone can fill. To send a sheet, open the Weekly/Monthly view and use “Send Sheet ▼” to pick specific staff (or “Send to All Staff”, or the per-person “Send Sheet” button) — it lands in their portal under “Work Sheets”, they fill it and send it back, then you download or import it here. Both .xlsx and .csv can be imported.
+          <strong style={{ color: C.violet }}>Today's Auto Sheet</strong> = nothing for staff to type. “Send Today's Auto Sheet to All” builds each member's day from their assigned work + check-in time; they only tap Done / In progress / Pending and submit, and you approve it here. “Send Sheet ▼” / “Send to All Staff” in the Week / Month view sends the Excel work log instead — staff fill it and upload it back. Blank Template = anyone can fill.
         </span>
       </div>
 
@@ -1190,7 +1250,7 @@ export default function ERPStaffUpdates() {
       {viewMode === 'range' && (
         <ERPPanel>
           <ERPPanelHeader
-            title={`${rangeMode === 'week' ? 'Weekly' : 'Monthly'} Work Report — ${rangeLabel}`}
+            title={`${rangeTitle} Work Report — ${rangeLabel}`}
             icon="📅"
             action={
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1209,7 +1269,7 @@ export default function ERPStaffUpdates() {
                 <button
                   onClick={sendToAll}
                   disabled={sendingReq || staff.length === 0}
-                  title={`Send this ${rangeMode === 'week' ? 'week' : 'month'}'s pre-filled sheet to ALL staff via their portal`}
+                  title={`Send this ${rangeUnit}'s pre-filled sheet to ALL staff via their portal`}
                   style={{
                     padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
                     background: 'rgba(139,92,246,0.14)', color: C.violet, border: '1px solid rgba(139,92,246,0.35)',
@@ -1227,7 +1287,7 @@ export default function ERPStaffUpdates() {
                     display: 'flex', alignItems: 'center', gap: 5, opacity: rangeReports.length === 0 ? 0.5 : 1,
                   }}
                 >
-                  <Download size={12} /> {rangeMode === 'week' ? 'Week' : 'Month'} CSV
+                  <Download size={12} /> {rangeTitle} CSV
                 </button>
                 <button
                   onClick={handlePrintWeek}
@@ -1238,7 +1298,7 @@ export default function ERPStaffUpdates() {
                     display: 'flex', alignItems: 'center', gap: 5, opacity: rangeReports.length === 0 ? 0.5 : 1,
                   }}
                 >
-                  <Printer size={12} /> Print {rangeMode === 'week' ? 'Week' : 'Month'}
+                  <Printer size={12} /> Print {rangeTitle}
                 </button>
               </div>
             }
@@ -1311,10 +1371,10 @@ export default function ERPStaffUpdates() {
             </div>
           )}
 
-          {/* Week / Month mode + range navigator */}
+          {/* Today / Week / Month mode + range navigator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px', borderBottom: `1px solid ${C.border}30`, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-              {['week', 'month'].map(m => (
+              {['day', 'week', 'month'].map(m => (
                 <button
                   key={m}
                   onClick={() => setRangeMode(m)}
@@ -1324,46 +1384,51 @@ export default function ERPStaffUpdates() {
                     color: rangeMode === m ? C.violet : C.muted,
                   }}
                 >
-                  {m === 'week' ? 'Week' : 'Month'}
+                  {m === 'day' ? 'Today' : m === 'week' ? 'Week' : 'Month'}
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => rangeMode === 'week'
-                ? setWeekStart(w => isoAdd(w, -7))
-                : setMonthStart(m => addMonths(m, -1))}
-              style={{ padding: 6, borderRadius: 8, cursor: 'pointer', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.cyan, display: 'flex' }}
-            >
-              <ChevronLeft size={14} />
-            </button>
+            {rangeMode !== 'day' && (
+              <button
+                onClick={() => rangeMode === 'week'
+                  ? setWeekStart(w => isoAdd(w, -7))
+                  : setMonthStart(m => addMonths(m, -1))}
+                style={{ padding: 6, borderRadius: 8, cursor: 'pointer', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.cyan, display: 'flex' }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+            )}
             <div style={{ fontSize: 13, fontWeight: 900, color: C.text }}>{rangeLabel}</div>
+            {rangeMode !== 'day' && (
+              <button
+                onClick={() => rangeMode === 'week'
+                  ? setWeekStart(w => isoAdd(w, 7))
+                  : setMonthStart(m => addMonths(m, 1))}
+                style={{ padding: 6, borderRadius: 8, cursor: 'pointer', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.cyan, display: 'flex' }}
+              >
+                <ChevronRight size={14} />
+              </button>
+            )}
             <button
-              onClick={() => rangeMode === 'week'
-                ? setWeekStart(w => isoAdd(w, 7))
-                : setMonthStart(m => addMonths(m, 1))}
-              style={{ padding: 6, borderRadius: 8, cursor: 'pointer', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, color: C.cyan, display: 'flex' }}
-            >
-              <ChevronRight size={14} />
-            </button>
-            <button
-              onClick={() => rangeMode === 'week'
-                ? setWeekStart(mondayOf(todayKey()))
-                : setMonthStart(`${todayKey().slice(0, 7)}-01`)}
+              onClick={() => {
+                if (rangeMode === 'week') setWeekStart(mondayOf(todayKey()));
+                else if (rangeMode === 'month') setMonthStart(`${todayKey().slice(0, 7)}-01`);
+              }}
               style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, background: 'rgba(0,102,255,0.12)', border: `1px solid ${C.borderHi}`, color: C.cyan }}
             >
-              {rangeMode === 'week' ? 'This Week' : 'This Month'}
+              {rangeMode === 'day' ? 'Today' : rangeMode === 'week' ? 'This Week' : 'This Month'}
             </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: 11, color: C.muted }}>
-              <strong style={{ color: C.violet }}>{rangeStaff.length}</strong> staff • <strong style={{ color: C.cyan }}>{rangeReports.length}</strong> daily reports this {rangeMode}
+              <strong style={{ color: C.violet }}>{rangeStaff.length}</strong> staff • <strong style={{ color: C.cyan }}>{rangeReports.length}</strong> daily reports this {rangeUnit}
             </span>
           </div>
 
           {rangeStaff.length === 0 ? (
             <ERPEmpty
               icon="📅"
-              title={`No reports this ${rangeMode}`}
-              sub={`Staff daily work reports for the selected ${rangeMode} appear here grouped per person as a ${rangeMode === 'week' ? 'weekly' : 'monthly'} summary.`}
+              title={`No reports this ${rangeUnit}`}
+              sub={`Staff daily work reports for the selected ${rangeUnit} appear here grouped per person as a ${rangeTitle.toLowerCase()} summary.`}
             />
           ) : rangeStaff.map(([name, reps], gi) => {
             const hrs = reps.reduce((t, u) => t + (parseFloat(u.totalWorkHours || u.totalHours) || 0), 0);
@@ -1376,7 +1441,7 @@ export default function ERPStaffUpdates() {
                   <div style={{ flex: 1 }} />
                   <button
                     onClick={() => downloadSheetTemplate({ name, position: (reps[0] && reps[0].position) || '', location: (reps[0] && reps[0].location) || '' })}
-                    title={`Download a pre-filled ${rangeMode === 'week' ? 'weekly' : 'monthly'} sheet for ${name} to fill and send back`}
+                    title={`Download a pre-filled ${rangeAdj} sheet for ${name} to fill and send back`}
                     style={{
                       padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: 'pointer',
                       background: 'rgba(0,217,255,0.1)', color: C.cyan, border: `1px solid ${C.borderHi}`,
@@ -1387,7 +1452,7 @@ export default function ERPStaffUpdates() {
                   </button>
                   <button
                     onClick={() => sendSheet([{ name, authUid: reps[0] && (reps[0].authUid || reps[0].staffId), id: reps[0] && reps[0].staffId, position: reps[0] && reps[0].position, location: reps[0] && reps[0].location }])}
-                    title={`Send the ${rangeMode === 'week' ? 'weekly' : 'monthly'} sheet to ${name} through their portal`}
+                    title={`Send the ${rangeAdj} sheet to ${name} through their portal`}
                     style={{
                       padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: 'pointer',
                       background: 'rgba(139,92,246,0.12)', color: C.violet, border: '1px solid rgba(139,92,246,0.35)',
@@ -1455,7 +1520,24 @@ export default function ERPStaffUpdates() {
           <ERPPanelHeader
             title="Work Sheets Sent to Staff"
             icon="📤"
-            action={<span style={{ fontSize: 11, color: C.muted }}>{sortedRequests.length} request{sortedRequests.length === 1 ? '' : 's'}</span>}
+            action={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: C.muted }}>{sortedRequests.length} request{sortedRequests.length === 1 ? '' : 's'}</span>
+                <button
+                  onClick={sendAutoToAll}
+                  disabled={sendingReq || staff.length === 0}
+                  title="Generate today's sheet from each staff member's assigned work and send it — they only mark Done / Pending, nothing to type"
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                    background: 'rgba(139,92,246,0.16)', color: C.violet, border: '1px solid rgba(139,92,246,0.4)',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    opacity: (sendingReq || staff.length === 0) ? 0.6 : 1,
+                  }}
+                >
+                  <Send size={12} /> {sendingReq ? 'Sending…' : "Send Today's Auto Sheet to All"}
+                </button>
+              </div>
+            }
           />
 
           {reqMsg && (
@@ -1473,11 +1555,17 @@ export default function ERPStaffUpdates() {
             <ERPEmpty
               icon="📤"
               title="No sheets sent yet"
-              sub="Pick a Week/Month above, then use “Send Sheet ▼” to choose specific staff (or “Send to All Staff” / the per-person “Send Sheet” button) — the sheet appears in each staff member's portal under “Work Sheets”, they fill it and send it back here."
+              sub="Use “Send Today's Auto Sheet to All” above for the zero-typing daily sheet — it is generated from each member's assigned work and they only mark Done / Pending. Weekly/monthly Excel sheets still go out from the Week / Month view."
             />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {sortedRequests.map((req, i) => (
+              {sortedRequests.map((req, i) => {
+                const marks  = updates.find(u => u.sheetId === req.id) || null;
+                const mTasks = marks?.tasks || [];
+                const mDone  = mTasks.filter(t => t.status === 'Completed').length;
+                const mHours = mTasks.reduce((t, x) => t + (parseFloat(x.hours) || 0), 0);
+                const mOpen  = openMarksId === req.id;
+                return (
                 <div
                   key={req.id}
                   style={{
@@ -1487,9 +1575,17 @@ export default function ERPStaffUpdates() {
                 >
                   <ERPAvatar name={req.staffName || 'Staff'} size={30} />
                   <div style={{ minWidth: 180 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{req.staffName || 'Staff'}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {req.staffName || 'Staff'}
+                      {req.auto && (
+                        <span style={{
+                          fontSize: 8.5, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
+                          background: 'rgba(139,92,246,0.14)', color: C.violet, border: '1px solid rgba(139,92,246,0.35)',
+                        }}>auto</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 10.5, color: C.muted }}>
-                      {req.period === 'week' ? 'Weekly' : 'Monthly'} • {req.rangeLabel || `${req.rangeStart} → ${req.rangeEnd}`}
+                      {req.period === 'day' ? 'Daily auto sheet' : req.period === 'week' ? 'Weekly' : 'Monthly'} • {req.rangeLabel || `${req.rangeStart} → ${req.rangeEnd}`}
                     </div>
                   </div>
 
@@ -1501,10 +1597,33 @@ export default function ERPStaffUpdates() {
                     {req.status || 'Requested'}
                   </span>
 
+                  {mTasks.length > 0 && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+                      background: 'rgba(24,199,122,0.10)', color: C.green, border: '1px solid rgba(24,199,122,0.3)',
+                    }}>
+                      {mDone}/{mTasks.length} done{mHours > 0 ? ` • ${mHours.toFixed(1)} hrs` : ''}
+                    </span>
+                  )}
+
                   <div style={{ flex: 1 }} />
 
-                  {req.status === 'Requested' && (
-                    <span style={{ fontSize: 10.5, color: C.muted }}>Waiting for staff to return the sheet…</span>
+                  {req.status === 'Requested' && !marks && (
+                    <span style={{ fontSize: 10.5, color: C.muted }}>Waiting for staff to mark the sheet…</span>
+                  )}
+
+                  {mTasks.length > 0 && (
+                    <button
+                      onClick={() => setOpenMarksId(mOpen ? null : req.id)}
+                      title="See what the staff member marked"
+                      style={{
+                        padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                        background: 'rgba(139,92,246,0.12)', color: C.violet, border: '1px solid rgba(139,92,246,0.35)',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}
+                    >
+                      {mOpen ? 'Hide marks ▲' : 'View marks ▼'}
+                    </button>
                   )}
 
                   {req.returnedPath && (
@@ -1532,20 +1651,22 @@ export default function ERPStaffUpdates() {
                       >
                         <Upload size={12} /> Import to Reports
                       </button>
-                      {req.status !== 'Approved' && (
-                        <button
-                          onClick={() => markApproved(req)}
-                          title="Mark this return as approved"
-                          style={{
-                            padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                            background: 'rgba(0,102,255,0.12)', color: C.cyan, border: `1px solid ${C.borderHi}`,
-                            display: 'flex', alignItems: 'center', gap: 5,
-                          }}
-                        >
-                          <Check size={12} /> Approve
-                        </button>
-                      )}
                     </>
+                  )}
+                  {(req.returnedPath || marks) && req.status !== 'Approved' && (
+                    <button
+                      onClick={() => markApproved(req)}
+                      title={req.auto && marks
+                        ? 'Approve the marks and close the finished work items on the assigned projects'
+                        : 'Mark this return as approved'}
+                      style={{
+                        padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                        background: 'rgba(0,102,255,0.12)', color: C.cyan, border: `1px solid ${C.borderHi}`,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}
+                    >
+                      <Check size={12} /> Approve
+                    </button>
                   )}
 
                   <button
@@ -1559,8 +1680,46 @@ export default function ERPStaffUpdates() {
                   >
                     <Trash2 size={12} />
                   </button>
+
+                  {mOpen && mTasks.length > 0 && (
+                    <div style={{
+                      flexBasis: '100%', marginTop: 4, padding: '10px 12px', borderRadius: 10,
+                      background: 'rgba(10,24,56,0.55)', border: `1px solid ${C.border}`,
+                      display: 'flex', flexDirection: 'column', gap: 6,
+                    }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: C.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        What {req.staffName || 'staff'} marked
+                        {marks?.arrival ? ` · ${marks.arrival} → ${marks.departure || '—'}` : ''}
+                      </div>
+                      {mTasks.map((t, k) => {
+                        const tone = t.status === 'Completed'
+                          ? { bg: 'rgba(24,199,122,0.12)', fg: C.green }
+                          : t.status === 'On Hold'
+                            ? { bg: 'rgba(240,90,103,0.12)', fg: C.red }
+                            : { bg: 'rgba(245,185,66,0.12)', fg: C.amber };
+                        return (
+                          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5 }}>
+                            <span style={{ color: C.cyan, fontWeight: 700, width: 92, flexShrink: 0 }}>
+                              {t.start || '—'}{t.end ? `–${t.end}` : ''}
+                            </span>
+                            <span style={{ flex: '1 1 220px', color: C.subtle }}>{t.description || '—'}</span>
+                            <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: tone.bg, color: tone.fg }}>
+                              {t.status || '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {marks?.remarks && (
+                        <div style={{ fontSize: 11, color: C.amber }}>Remarks: {marks.remarks}</div>
+                      )}
+                      {marks?.planTomorrow && (
+                        <div style={{ fontSize: 11, color: C.violet }}>Plan for tomorrow: {marks.planTomorrow}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </ERPPanel>

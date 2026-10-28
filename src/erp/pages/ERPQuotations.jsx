@@ -7,7 +7,7 @@ import {
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
-import { usePrivateUrl } from '../usePrivateUrl';
+import { usePrivateUrl, revOf } from '../usePrivateUrl';
 import PrivateFileLink from '../components/PrivateFileLink';
 import { company } from '../../config/company';
 import { QUOTATION_TEMPLATE_SEEDS, seedId } from '../data/seedTemplates';
@@ -20,7 +20,7 @@ import {
 import {
   Plus, Send, Trash2, Edit2, CheckCircle2, Eye, Copy, Info,
   Printer, CreditCard, Play, AlertTriangle, Receipt as ReceiptIcon, XCircle,
-  MessageSquare, Image as ImageIcon
+  MessageSquare, Image as ImageIcon, RotateCcw
 } from 'lucide-react';
 import QuotationDocStudio from '../components/QuotationDocStudio';
 import QuotationLetterheadPreview from '../components/QuotationLetterheadPreview';
@@ -41,6 +41,14 @@ const toMs = (t) => {
 const fmtAny = (t) => {
   const ms = toMs(t);
   return ms ? new Date(ms).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+};
+// Money-history rows need the time too — two payments on one day must be
+// distinguishable, and "who changed the balance when" is the audit trail.
+const fmtStamp = (t) => {
+  const ms = toMs(t);
+  return ms
+    ? new Date(ms).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })
+    : '—';
 };
 
 // Auto-incrementing document numbers via counters/{name} transaction.
@@ -68,7 +76,41 @@ const FILTERS = ['All', 'Draft', 'Sent', 'Accepted', 'Advance Paid', 'In Progres
 // Longer display wording for lifecycle statuses (per spec)
 const STATUS_LABEL = { 'In Progress': 'In Progress / Balance Due', 'Completed': 'Fully Paid / Completed' };
 
-const balanceOf = (q) => Math.max(0, toInt(q.totalAmount) - toInt(q.paidTotal));
+// Balance = total − paid, UNLESS the admin has pinned it by hand (discount,
+// cash paid outside the system, carry-forward, …). The manual value wins until
+// the admin clears it; every change is appended to the quotation's moneyLog.
+const autoBalanceOf   = (q) => Math.max(0, toInt(q.totalAmount) - toInt(q.paidTotal));
+const isManualBalance = (q) => !!(q && q.balanceManual && q.balanceOverride != null && q.balanceOverride !== '');
+const balanceOf       = (q) => (isManualBalance(q) ? Math.max(0, toInt(q.balanceOverride)) : autoBalanceOf(q));
+
+// Payment kinds — derived from where the payment sits in the money timeline.
+// A first payment that clears the whole due is a final payment, not an advance.
+const paymentKindOf = (q, amt) => {
+  const bal = balanceOf(q);
+  if (bal > 0 && toInt(amt) >= bal) return 'Final';
+  return toInt(q.paidTotal) <= 0 ? 'Advance' : 'Part';
+};
+const KIND_LABEL = { Advance:'Advance payment', Part:'Part payment', Final:'Final / balance payment' };
+
+// Linked invoices use the same INV-<year>-<n> running number as the Invoices
+// module (it scans the collection rather than a shared counter, so the two
+// pages can never hand out the same number twice).
+async function nextInvoiceNumber() {
+  const year = new Date().getFullYear();
+  try {
+    const snap = await getDocs(collection(db, 'invoices'));
+    const nums = snap.docs
+      .map(d => String(d.data().invoiceNo || '').match(/^INV-(\d{4})-(\d+)$/))
+      .filter(Boolean)
+      .filter(m => Number(m[1]) === year)
+      .map(m => Number(m[2]));
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    return `INV-${year}-${String(next).padStart(3, '0')}`;
+  } catch (e) {
+    console.error('invoice number scan failed', e);
+    return `INV-${year}-${Date.now().toString().slice(-4)}`;
+  }
+}
 
 // Quotation status → linked project status. Keeps the client's project
 // (created when the lead was accepted) in step with the quotation pipeline.
@@ -110,6 +152,10 @@ const DEV_QUOTES = [
     terms:'50% advance, 50% on delivery.',
     paymentTerms:'50% advance, 50% on delivery.',
     createdAt:'Oct 1, 2026',
+    moneyLog:[
+      { at:'2026-10-02T10:30:00.000Z', by:'Admin', kind:'payment',
+        text:'Advance payment of LKR 30,000 recorded — R-2026-0001 · balance LKR 85,000 → LKR 55,000' },
+    ],
   },
   {
     id:'QT002', quotationNo:'Q-2026-0002', clientId:'C002', clientName:'Sarah Fernando', clientCompany:'Mehala Restaurant',
@@ -151,7 +197,8 @@ const DEV_PAYMENTS = [
   { id:'pay1', quotationId:'QT001', quotationNo:'Q-2026-0001',
     clientId:'C001', clientName:'John Perera', clientCompany:'Perera Holdings',
     amount:30000, date:'2026-10-02', method:'Bank Transfer', reference:'FT-88213',
-    notes:'Advance payment (35%)', receiptNo:'R-2026-0001', createdAt:'Oct 2, 2026' },
+    notes:'Advance payment (35%)', receiptNo:'R-2026-0001', createdAt:'Oct 2, 2026',
+    kind:'Advance', recordedBy:'Admin', balanceBefore:85000, balanceAfter:55000, invoiceNo:'INV-2026-003' },
 ];
 
 const EMPTY_FORM = {
@@ -171,7 +218,7 @@ const EMPTY_PAY = { amount:'', date:'', method:'Bank Transfer', reference:'', no
 // bytes are pulled through the SDK (so storage.rules decide who sees them) and
 // shown from an in-memory blob URL. A shareable ?token= link never exists.
 function SavedLetterheadCard({ info }) {
-  const { url, busy, err } = usePrivateUrl(info?.path, !!info?.path);
+  const { url, busy, err } = usePrivateUrl(info?.path, !!info?.path, revOf(info?.savedAt));
   return (
     <div style={{ display:'flex', alignItems:'center', gap:10, padding:9, borderRadius:10,
       background:'rgba(24,199,122,0.07)', border:'1px solid rgba(24,199,122,0.25)' }}>
@@ -205,15 +252,16 @@ function SavedLetterheadCard({ info }) {
 }
 
 export default function ERPQuotations() {
-  const { isDevSession } = useAuth();
+  const { isDevSession, profile } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
+  const adminName = profile?.name || profile?.email || 'Admin';
   const navigate = useNavigate();
 
-  const [quotes,     setQuotes]     = useState([]);
-  const [clients,    setClients]    = useState([]);
+  const [quotes,     setQuotes]     = useState(live ? [] : DEV_QUOTES);
+  const [clients,    setClients]    = useState(live ? [] : DEV_CLIENTS);
   const [templates,  setTemplates]  = useState(live ? [] : QUOTATION_TEMPLATE_SEEDS.map(t => ({ id: seedId(t.serviceCode), ...t })));
   const [payments,   setPayments]   = useState([]);
-  const [devPayments,setDevPayments]= useState([]);
+  const [devPayments,setDevPayments]= useState(live ? [] : DEV_PAYMENTS);
   const [proofs,     setProofs]     = useState([]);     // advance-payment receipt photos from client
 
   const [filter,     setFilter]     = useState('All');
@@ -231,6 +279,14 @@ export default function ERPQuotations() {
   const [payForm,  setPayForm]  = useState(EMPTY_PAY);
   const [payError, setPayError] = useState('');
   const [payBusy,  setPayBusy]  = useState(false);
+
+  // Manual balance override (admin sets what is still owed by hand)
+  const [balOpen,   setBalOpen]   = useState(false);
+  const [balValue,  setBalValue]  = useState('');
+  const [balReason, setBalReason] = useState('');
+  const [balError,  setBalError]  = useState('');
+  const [balBusy,   setBalBusy]   = useState(false);
+  const [logOpen,   setLogOpen]   = useState(true);
 
   // Auto quotation image — bank details feed the letterhead, and the
   // template is preloaded so "Save & Send" can paint instantly.
@@ -331,6 +387,9 @@ export default function ERPQuotations() {
     [f, f === 'All' ? quotes.length : quotes.filter(q => q.status === f).length]));
 
   const sel        = quotes.find(q => q.id === selected) || null;
+  // Latest copy of the open quotation for timers that fire after this render.
+  const selRef     = useRef(null);
+  useEffect(() => { selRef.current = sel; }, [sel]);
   const selBalance = sel ? balanceOf(sel) : 0;
   const selPaid    = sel ? toInt(sel.paidTotal) : 0;
   const selClient  = sel ? clients.find(c => c.id === sel.clientId) : null;
@@ -442,15 +501,22 @@ We've received your payment — thank you! 🙏
 
   // Edits made inside the Image Studio (laptop / phone screenshots, pricing
   // rows, payment rows). In the form they live in form state and are saved with
-  // the quotation; for a saved quotation they are written straight to Firestore.
+  // the quotation; for a saved quotation they are written straight to Firestore
+  // AND the stored letterhead is re-painted — see queueImageRefresh below.
   const handleStudioChange = (patch) => {
     if (view === 'form') { setForm(p => ({ ...p, ...patch })); return; }
     if (!sel) return;
+    const patched = { ...sel, ...patch };
     setQuotes(rows => rows.map(q => q.id === sel.id ? { ...q, ...patch } : q));
-    if (live) {
-      updateDoc(doc(db, 'quotations', sel.id), { ...patch, updatedAt: serverTimestamp() })
-        .catch(e => console.error('quotation screenshot save failed', e));
-    }
+    if (!live) return;                       // local demo: nothing to persist
+    updateDoc(doc(db, 'quotations', sel.id), { ...patch, updatedAt: serverTimestamp() })
+      .then(() => queueImageRefresh(patched, sel.id))
+      .catch(e => {
+        // A silent console error is how "it did not save" starts: the studio
+        // still shows the edit, so the only clue the client gets must be this.
+        console.error('quotation studio edit save failed', e);
+        showToast('Could not save that edit to the quotation — check the connection and try again.');
+      });
   };
 
 
@@ -476,7 +542,11 @@ We've received your payment — thank you! 🙏
       renderImage: { path, savedAt: serverTimestamp(), edited },
       updatedAt: serverTimestamp(),
     });
-    setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: { path, edited } } : q));
+    // Local copy carries its own savedAt so the on-screen letterhead refreshes
+    // the moment the upload lands (the path never changes, so nothing else
+    // would tell the viewer the bytes behind it are new).
+    const local = { path, edited, savedAt: Date.now() };
+    setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: local } : q));
     return path;
   };
 
@@ -484,6 +554,9 @@ We've received your payment — thank you! 🙏
     if (!live) throw new Error('Image save needs the live database — connect Firebase first.');
     const targetId = (view === 'form' ? editId : sel?.id) || null;
     if (!targetId) throw new Error('Save the quotation first, then save its image.');
+    // This IS the repaint — drop any queued automatic one so it cannot upload a
+    // second copy over the picture the owner just approved.
+    if (imgTimer.current) { clearTimeout(imgTimer.current); imgTimer.current = null; }
     await saveQuoteImage(targetId, blob, { edited: true, clientId: sel?.clientId || form?.clientId || '' });
     showToast('Edited image saved — this is the copy the client will receive.');
   };
@@ -495,9 +568,9 @@ We've received your payment — thank you! 🙏
   // no WhatsApp hop needed.
   // Paint + upload the letterhead image. The client portal listens to the
   // quotation doc, so the moment renderImage lands it is visible there.
-  const saveQuoteImageNow = async (q, id) => {
+  const saveQuoteImageNow = async (q, id, opts = {}) => {
     const blob = await renderQuotationImageBlob(q, bankDetails);
-    await saveQuoteImage(id, blob, { clientId: q?.clientId || '' });
+    await saveQuoteImage(id, blob, { clientId: q?.clientId || '', ...opts });
   };
 
   const autoQuoteImage = async (q, id, sendNow) => {
@@ -512,6 +585,31 @@ We've received your payment — thank you! 🙏
       showToast('Quotation saved, but its image could not be built.');
     }
   };
+
+  // ── Re-paint the stored letterhead after a studio edit ────────────
+  // The picture the client portal, the preview and "Send" all show is the
+  // STORED bytes, not a live render. So an edit that only updates the document
+  // leaves the old picture everywhere — which is exactly what "oru vali
+  // ellama eruku" (the same image every time) looked like from the owner's
+  // side. Every studio change queues a repaint; debounced so typing one row
+  // does not upload a new copy per keystroke.
+  const imgTimer = useRef(null);
+  const queueImageRefresh = (q, id) => {
+    if (!live || !id || view === 'form') return;   // the form paints on save
+    if (imgTimer.current) clearTimeout(imgTimer.current);
+    imgTimer.current = setTimeout(() => {
+      imgTimer.current = null;
+      const target = selRef.current && selRef.current.id === id ? selRef.current : q;
+      // Keep the owner's "edited in studio" flag — a repaint must not quietly
+      // downgrade the copy that Send is supposed to deliver.
+      saveQuoteImageNow(target, id, { edited: !!target?.renderImage?.edited })
+        .catch(e => {
+          console.error('letterhead repaint failed', e);
+          showToast('The edit saved, but the quotation image could not be rebuilt.');
+        });
+    }, 1400);
+  };
+  useEffect(() => () => { if (imgTimer.current) clearTimeout(imgTimer.current); }, []);
 
   // ── Template copy-on-create ──────────────────────────────────────
   const applyTemplate = (tpl) => {
@@ -593,15 +691,19 @@ We've received your payment — thank you! 🙏
   // quotations, so the client always opens a copy that already carries
   // its letterhead image — no WhatsApp step involved.
   // If an image is already saved (auto or edited in the studio), that exact
-  // copy is what gets sent — an edited image is never repainted over.
-  const sendQuoteWithImage = async (q, id) => {
+  // copy is what gets sent — an edited image is never repainted over. An
+  // automatic one is always re-painted first, because the numbers on the
+  // quotation may have moved on since it was last drawn.
+  const sendQuoteWithImage = async (q, id, { forceRepaint = false } = {}) => {
     let imageOk = false;
-    const existing = q?.renderImage?.path || quotes.find(r => r.id === id)?.renderImage?.path || null;
+    const inList = quotes.find(r => r.id === id)?.renderImage || null;
+    const stored = q?.renderImage || inList || null;
+    const ownerPicture = !!(stored?.path && stored?.edited) && !forceRepaint;
     if (live) {
-      if (existing) {
+      if (ownerPicture) {
         imageOk = true;
       } else {
-        try { await saveQuoteImageNow(q, id); imageOk = true; }
+        try { await saveQuoteImageNow({ ...q, id }, id); imageOk = true; }
         catch (e) { console.error('quotation image before send failed', e); }
       }
       try {
@@ -664,10 +766,15 @@ We've received your payment — thank you! 🙏
     setSaving(true);
     setFormError('');
 
-    // A manually edited letterhead (Image Studio) is never auto-repainted on
-    // a plain save — the admin's edited image is the one that goes out.
+    // A manually edited letterhead (Image Studio) is never auto-repainted on a
+    // plain save — the admin's edited image is the one that goes out. BUT that
+    // only holds while the save does not change what the letterhead prints:
+    // keeping an edited picture across a row/screenshot edit is precisely how a
+    // quotation went on showing the same old image after every change.
     const currentQuote = editId ? quotes.find(q => q.id === editId) : null;
-    const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.path);
+    const printedSig = (o) => JSON.stringify([o?.quoteRows ?? null, o?.laptopShot ?? '', o?.phoneShot ?? '']);
+    const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.path)
+      && printedSig(currentQuote) === printedSig(form);
 
     try {
       let savedId = editId || null;
@@ -705,7 +812,7 @@ We've received your payment — thank you! 🙏
       if (savedId) setSelected(savedId);
       // Automatic image (paint → upload → renderImage) and send when asked.
       if (live && savedQuote) {
-        if (sendNow) await sendQuoteWithImage(savedQuote, savedId);
+        if (sendNow) await sendQuoteWithImage(savedQuote, savedId, { forceRepaint: !keepEditedImage });
         else if (keepEditedImage) showToast('Saved — your edited letterhead image is kept.');
         else await autoQuoteImage(savedQuote, savedId, false);
       }
@@ -819,6 +926,43 @@ We've received your payment — thank you! 🙏
     setPayOpen(true);
   };
 
+  // Mirror a recorded payment into the Invoices module as a paid invoice, so
+  // the advance does not live only inside the quotation. Best-effort: a failed
+  // invoice never rolls back a payment the client already made.
+  const createPaymentInvoice = async (q, pay, kind, amt, paymentId) => {
+    if (!live) return null;
+    try {
+      const invoiceNo = await nextInvoiceNumber();
+      const client = clients.find(c => c.id === q.clientId) || null;
+      const ref = await addDoc(collection(db, 'invoices'), {
+        invoiceNo,
+        clientId: q.clientId || '',
+        clientName: q.clientName || client?.name || 'Client',
+        clientCompany: q.clientCompany || client?.company || '',
+        clientEmail: client?.loginEmail || client?.email || '',
+        description: `${KIND_LABEL[kind]} received — ${q.projectTitle || q.quotationNo || 'Quotation'}`,
+        milestone: kind === 'Advance' ? 'Advance Payment' : kind === 'Final' ? 'Final Delivery' : 'Development Milestone',
+        amountValue: amt,
+        amount: `LKR ${amt.toLocaleString('en-US')}`,
+        status: 'paid',
+        issuedAt: pay.date,
+        paidAt: pay.date,
+        quotationId: q.id,
+        quotationNo: q.quotationNo || '',
+        paymentId: paymentId || '',
+        receiptNo: pay.receiptNo || '',
+        paymentKind: kind,
+        recordedBy: adminName,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return { id: ref.id, invoiceNo };
+    } catch (e) {
+      console.error('linked invoice failed', e);
+      return null;
+    }
+  };
+
   const handlePaySave = async () => {
     if (!sel) return;
     const amt = toInt(payForm.amount);
@@ -829,6 +973,8 @@ We've received your payment — thank you! 🙏
     setPayError('');
 
     const receiptNo = live ? await nextNumber('receipts', 'R') : `R-${Date.now().toString().slice(-6)}`;
+    const kind = paymentKindOf(sel, amt);
+    const date = payForm.date || todayISO();
     const pay = {
       quotationId: sel.id,
       quotationNo: sel.quotationNo || '',
@@ -836,45 +982,175 @@ We've received your payment — thank you! 🙏
       clientName:  sel.clientName || '',
       clientCompany: sel.clientCompany || '',
       amount:      amt,
-      date:        payForm.date || todayISO(),
+      date,
       method:      payForm.method,
       reference:   payForm.reference || '',
       notes:       payForm.notes || '',
       receiptNo,
+      kind,
+      recordedBy:  adminName,
+      recordedByEmail: profile?.email || '',
+      balanceBefore: selBalance,
+      balanceAfter: Math.max(0, selBalance - amt),
       createdAt:   serverTimestamp(),
     };
 
     // Auto status: Accepted → Advance Paid → In Progress → Completed (balance 0)
     const paidTotal = selPaid + amt;
-    const nextSt = paidTotal >= toInt(sel.totalAmount) ? 'Completed'
+    const nextSt = paidTotal >= toInt(sel.totalAmount) || selBalance - amt <= 0 ? 'Completed'
       : (sel.status === 'In Progress' ? 'In Progress' : 'Advance Paid');
 
+    const nowIso = new Date().toISOString();
+    const prevLog = Array.isArray(sel.moneyLog) ? sel.moneyLog : [];
+
     try {
+      let invoiceNo = '';
+      let paymentId = '';
       if (live) {
         const ref = await addDoc(collection(db, 'payments'), pay);
-        await updateDoc(doc(db, 'quotations', sel.id), {
+        paymentId = ref.id;
+        // Park the payment in the Invoices module (the advance included).
+        const inv = await createPaymentInvoice(sel, { ...pay, date }, kind, amt, paymentId);
+        if (inv) {
+          invoiceNo = inv.invoiceNo;
+          try { await updateDoc(doc(db, 'payments', ref.id), { invoiceNo, invoiceId: inv.id }); }
+          catch (e) { console.error('payment → invoice link failed', e); }
+        }
+
+        const quotePatch = {
           paidTotal,
           paymentsCount: toInt(sel.paymentsCount) + 1,
           status: nextSt,
+          moneyLog: [...prevLog, {
+            at: nowIso, by: adminName, kind:'payment',
+            text: `${KIND_LABEL[kind]} of ${formatLKR(amt)} recorded — ${receiptNo}`
+              + ` · balance ${formatLKR(selBalance)} → ${formatLKR(Math.max(0, selBalance - amt))}`
+              + (invoiceNo ? ` · invoice ${invoiceNo}` : ''),
+          }],
           updatedAt: serverTimestamp(),
-        });
-        setReceipt({ ...pay, id: ref.id, createdAt: new Date() });
+        };
+        // A manual balance follows the money: reduce it by what was just paid.
+        if (isManualBalance(sel)) quotePatch.balanceOverride = Math.max(0, toInt(sel.balanceOverride) - amt);
+
+        await updateDoc(doc(db, 'quotations', sel.id), quotePatch);
+        setReceipt({ ...pay, id: paymentId, invoiceNo, createdAt: new Date() });
         // Advance paid / fully paid → move the linked project forward too
         await syncProjectStatus({ ...sel }, nextSt);
       } else {
         const pid = `pay${Date.now()}`;
-        setDevPayments(p => [{ ...pay, id:pid, createdAt: new Date().toISOString() }, ...p]);
+        setDevPayments(p => [{ ...pay, id:pid, createdAt: nowIso }, ...p]);
         setQuotes(p => p.map(q => q.id === sel.id
-          ? { ...q, paidTotal, paymentsCount:toInt(sel.paymentsCount)+1, status:nextSt } : q));
+          ? {
+              ...q, paidTotal, paymentsCount:toInt(sel.paymentsCount)+1, status:nextSt,
+              ...(isManualBalance(sel) ? { balanceOverride: Math.max(0, toInt(sel.balanceOverride) - amt) } : {}),
+              moneyLog: [...prevLog, {
+                at: nowIso, by: adminName, kind:'payment',
+                text: `${KIND_LABEL[kind]} of ${formatLKR(amt)} recorded — ${receiptNo}`
+                  + ` · balance ${formatLKR(selBalance)} → ${formatLKR(Math.max(0, selBalance - amt))}`,
+              }],
+            }
+          : q));
         setReceipt({ ...pay, id: pid, createdAt: new Date() });
       }
       setPayOpen(false);
       setPayForm(EMPTY_PAY);
+      if (invoiceNo) showToast(`Payment recorded — invoice ${invoiceNo} was added to the Invoices module.`);
     } catch (e) {
       console.error(e);
       setPayError('Could not record the payment. Please try again.');
     }
     setPayBusy(false);
+  };
+
+  // ── Manual balance override ──────────────────────────────────────
+  const openBalance = () => {
+    if (!sel) return;
+    setBalValue(String(balanceOf(sel)));
+    setBalReason('');
+    setBalError('');
+    setBalOpen(true);
+  };
+
+  const handleBalanceSave = async () => {
+    if (!sel) return;
+    if (String(balValue).trim() === '') { setBalError('Enter the balance — 0 means fully settled.'); return; }
+    const val = toInt(balValue);
+    if (val < 0) { setBalError('Balance cannot be negative.'); return; }
+
+    const now = new Date().toISOString();
+    const before = balanceOf(sel);
+    const reason = balReason.trim() || 'Adjusted by admin';
+    const prevLog = Array.isArray(sel.moneyLog) ? sel.moneyLog : [];
+
+    // Keep the lifecycle honest when the balance lands on zero (or leaves it).
+    let nextSt = sel.status;
+    if (val === 0 && sel.status !== 'Completed') nextSt = 'Completed';
+    if (val > 0 && sel.status === 'Completed') nextSt = 'In Progress';
+
+    const patch = {
+      balanceManual: true,
+      balanceOverride: val,
+      balanceSetAt: now,
+      balanceSetBy: adminName,
+      moneyLog: [...prevLog, {
+        at: now, by: adminName, kind:'balance',
+        text: `Balance set manually: ${formatLKR(before)} → ${formatLKR(val)} — ${reason}`,
+      }],
+      ...(nextSt !== sel.status ? { status: nextSt } : {}),
+      updatedAt: serverTimestamp(),
+    };
+    const localPatch = { ...patch };
+    delete localPatch.updatedAt;
+
+    setBalBusy(true);
+    setBalError('');
+    try {
+      if (live) {
+        await updateDoc(doc(db, 'quotations', sel.id), patch);
+        if (nextSt !== sel.status) await syncProjectStatus({ ...sel }, nextSt);
+      }
+      setQuotes(rows => rows.map(q => q.id === sel.id ? { ...q, ...localPatch } : q));
+      setBalOpen(false);
+      showToast(`Balance for ${sel.quotationNo || sel.id} is now ${formatLKR(val)}.`);
+    } catch (e) {
+      console.error(e);
+      setBalError('Could not save the balance. Please try again.');
+    } finally {
+      setBalBusy(false);
+    }
+  };
+
+  const handleBalanceReset = async () => {
+    if (!sel) return;
+    const now = new Date().toISOString();
+    const prevLog = Array.isArray(sel.moneyLog) ? sel.moneyLog : [];
+    const patch = {
+      balanceManual: false,
+      balanceOverride: null,
+      balanceSetAt: now,
+      balanceSetBy: adminName,
+      moneyLog: [...prevLog, {
+        at: now, by: adminName, kind:'balance',
+        text: `Manual balance cleared — back to automatic (${formatLKR(autoBalanceOf(sel))})`,
+      }],
+      updatedAt: serverTimestamp(),
+    };
+    const localPatch = { ...patch };
+    delete localPatch.updatedAt;
+
+    setBalBusy(true);
+    setBalError('');
+    try {
+      if (live) await updateDoc(doc(db, 'quotations', sel.id), patch);
+      setQuotes(rows => rows.map(q => q.id === sel.id ? { ...q, ...localPatch } : q));
+      setBalOpen(false);
+      showToast(`Balance is automatic again — ${formatLKR(autoBalanceOf(sel))} due.`);
+    } catch (e) {
+      console.error(e);
+      setBalError('Could not reset the balance. Please try again.');
+    } finally {
+      setBalBusy(false);
+    }
   };
 
   // ── Action guards ────────────────────────────────────────────────
@@ -1378,11 +1654,30 @@ We've received your payment — thank you! 🙏
                         { label:'Paid',                           value:selPaid,                  color:C.green },
                         { label:'Balance',                        value:selBalance,               color:selBalance === 0 ? C.green : C.amber },
                       ].map(b => (
-                        <div key={b.label} style={{ padding:'8px 10px', borderRadius:10, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}` }}>
-                          <div style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:'0.5px' }}>{b.label}</div>
+                        <div key={b.label} style={{
+                          padding:'8px 10px', borderRadius:10, background:'rgba(10,24,56,0.8)',
+                          border:`1px solid ${b.label === 'Balance' && isManualBalance(sel) ? 'rgba(245,185,66,0.5)' : C.border}`,
+                        }}>
+                          <div style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:'0.5px' }}>
+                            {b.label}{b.label === 'Balance' && isManualBalance(sel) ? ' · manual' : ''}
+                          </div>
                           <div style={{ fontSize:12, fontWeight:900, color:b.color, marginTop:2 }}>{b.value.toLocaleString('en-US')}</div>
                         </div>
                       ))}
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginTop:-6 }}>
+                      <span style={{ fontSize:9.5, color:C.muted, lineHeight:1.4 }}>
+                        {isManualBalance(sel)
+                          ? `Set by hand${sel.balanceSetBy ? ` (${sel.balanceSetBy})` : ''} · total ${formatLKR(sel.totalAmount)} · paid ${formatLKR(selPaid)}`
+                          : `Automatic · total ${formatLKR(sel.totalAmount)} − paid ${formatLKR(selPaid)}`}
+                      </span>
+                      <button onClick={openBalance} style={{
+                        display:'flex', alignItems:'center', gap:4, cursor:'pointer', flexShrink:0,
+                        background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.3)',
+                        color:C.amber, borderRadius:7, padding:'3px 8px', fontSize:10, fontWeight:700,
+                      }}>
+                        <Edit2 size={10}/> Adjust balance
+                      </button>
                     </div>
 
                     {/* Description & scope */}
@@ -1474,11 +1769,24 @@ We've received your payment — thank you! 🙏
                         <div key={p.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
                           padding:'7px 10px', borderRadius:9, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}`, marginBottom:6 }}>
                           <div style={{ minWidth:0 }}>
-                            <div style={{ fontSize:11, fontWeight:700, color:C.text }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:C.text, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                               {formatLKR(p.amount)} <span style={{ color:C.muted, fontWeight:600 }}>· {p.method}</span>
+                              {p.kind && (
+                                <span style={{
+                                  fontSize:8.5, fontWeight:800, padding:'1px 5px', borderRadius:4,
+                                  background: p.kind === 'Advance' ? 'rgba(0,217,255,0.12)' : p.kind === 'Final' ? 'rgba(24,199,122,0.12)' : 'rgba(139,92,246,0.14)',
+                                  color: p.kind === 'Advance' ? C.cyan : p.kind === 'Final' ? C.green : C.violet,
+                                  border: `1px solid ${p.kind === 'Advance' ? 'rgba(0,217,255,0.3)' : p.kind === 'Final' ? 'rgba(24,199,122,0.3)' : 'rgba(139,92,246,0.3)'}`,
+                                }}>{p.kind === 'Final' ? 'Final' : p.kind}</span>
+                              )}
                             </div>
                             <div style={{ fontSize:9, color:C.muted }}>
                               {fmtDate(p.date)}{p.receiptNo ? ` · ${p.receiptNo}` : ''}{p.reference ? ` · ${p.reference}` : ''}
+                            </div>
+                            <div style={{ fontSize:9, color:C.muted }}>
+                              {p.recordedBy ? `Recorded by ${p.recordedBy}` : ''}
+                              {p.balanceAfter != null && p.balanceAfter !== '' ? ` · balance left ${formatLKR(p.balanceAfter)}` : ''}
+                              {p.invoiceNo ? ` · invoice ${p.invoiceNo}` : ''}
                             </div>
                           </div>
                           <ERPBtn size="sm" variant="secondary" onClick={() => setReceipt(p)}>
@@ -1486,6 +1794,34 @@ We've received your payment — thank you! 🙏
                           </ERPBtn>
                         </div>
                       ))}
+                    </div>
+
+                    {/* Money history — every payment + every manual balance change */}
+                    <div>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px' }}>
+                          Money History ({(sel.moneyLog || []).length})
+                        </div>
+                        {(sel.moneyLog || []).length > 0 && (
+                          <button onClick={() => setLogOpen(v => !v)} style={{ background:'none', border:'none', color:C.cyan, fontSize:10, cursor:'pointer', fontWeight:700 }}>
+                            {logOpen ? 'Hide' : 'Show'}
+                          </button>
+                        )}
+                      </div>
+                      {(sel.moneyLog || []).length === 0 ? (
+                        <div style={{ fontSize:11, color:C.muted, padding:'4px 0' }}>No money movements logged yet.</div>
+                      ) : logOpen && (
+                        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                          {[...(sel.moneyLog || [])].reverse().map((h, i) => (
+                            <div key={i} style={{ display:'flex', gap:8, fontSize:9.5, lineHeight:1.45,
+                              padding:'5px 8px', borderRadius:7, background:'rgba(10,24,56,0.6)', border:`1px solid ${C.border}30` }}>
+                              <span style={{ color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{fmtStamp(h.at)}</span>
+                              <span style={{ color:C.subtle, flex:1 }}>{h.text}</span>
+                              {h.by && <span style={{ color:C.muted, flexShrink:0 }}>{h.by}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Terms & notes */}
@@ -1579,6 +1915,13 @@ We've received your payment — thank you! 🙏
               ))}
             </div>
 
+            <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', fontSize:10.5, color:C.muted,
+              padding:'7px 10px', borderRadius:9, background:'rgba(0,102,255,0.06)', border:'1px solid rgba(0,102,255,0.2)' }}>
+              <span>Recorded as</span>
+              <strong style={{ color:C.cyan }}>{KIND_LABEL[paymentKindOf(sel, toInt(payForm.amount))]}</strong>
+              <span>· by {adminName}</span>
+            </div>
+
             {payError && (
               <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 12px', borderRadius:9,
                 background:'rgba(240,90,103,0.1)', border:'1px solid rgba(240,90,103,0.35)', color:C.red, fontSize:11 }}>
@@ -1601,13 +1944,82 @@ We've received your payment — thank you! 🙏
             <ERPTextarea label="Notes" value={payForm.notes} rows={2}
               onChange={e => setPayForm(p => ({ ...p, notes:e.target.value }))}
               placeholder="Optional note..."/>
-            <div style={{ fontSize:10, color:C.muted }}>
+            <div style={{ fontSize:10, color:C.muted, lineHeight:1.5 }}>
               A receipt with a unique number is generated automatically for every payment.
+              The payment is also parked in the Invoices module as a paid invoice, so the
+              advance shows up there without a second entry.
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <ERPBtn variant="secondary" onClick={() => setPayOpen(false)} disabled={payBusy} style={{ flex:1, justifyContent:'center' }}>Cancel</ERPBtn>
               <ERPBtn variant="primary" onClick={handlePaySave} disabled={payBusy} style={{ flex:1, justifyContent:'center' }}>
                 {payBusy ? 'Saving...' : 'Save Payment & Receipt'}
+              </ERPBtn>
+            </div>
+          </div>
+        )}
+      </ERPModal>
+
+      {/* ═══════════════ BALANCE (MANUAL) MODAL ═══════════════ */}
+      <ERPModal isOpen={balOpen} onClose={() => !balBusy && setBalOpen(false)} title={`Balance Due — ${sel?.quotationNo || ''}`} width={480}>
+        {sel && (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
+              {[
+                { label:'Total',     value:toInt(sel.totalAmount), color:C.text },
+                { label:'Paid',      value:selPaid,                color:C.green },
+                { label:'Auto',      value:autoBalanceOf(sel),     color:C.cyan },
+              ].map(b => (
+                <div key={b.label} style={{ padding:'8px 10px', borderRadius:10, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:'0.5px' }}>{b.label}</div>
+                  <div style={{ fontSize:13, fontWeight:900, color:b.color }}>{b.value.toLocaleString('en-US')}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize:11, color:C.muted, lineHeight:1.55 }}>
+              Set what the client still owes by hand — for a discount, cash paid outside
+              the system, or an amount carried forward. The quotation keeps this value
+              until you clear it. Every change is appended to Money History.
+            </div>
+
+            <ERPInput
+              label="Balance due (LKR)"
+              type="number"
+              value={balValue}
+              onChange={e => setBalValue(e.target.value)}
+              placeholder="0"
+              required
+            />
+            <ERPInput
+              label="Reason (kept in history)"
+              value={balReason}
+              onChange={e => setBalReason(e.target.value)}
+              placeholder="e.g. LKR 5,000 goodwill discount approved by owner"
+            />
+
+            {isManualBalance(sel) && (
+              <div style={{ fontSize:10, color:C.amber, lineHeight:1.5 }}>
+                Currently pinned at {formatLKR(balanceOf(sel))}{sel.balanceSetBy ? ` by ${sel.balanceSetBy}` : ''} —
+                the automatic figure would be {formatLKR(autoBalanceOf(sel))}.
+              </div>
+            )}
+
+            {balError && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 12px', borderRadius:9,
+                background:'rgba(240,90,103,0.1)', border:'1px solid rgba(240,90,103,0.35)', color:C.red, fontSize:11 }}>
+                <AlertTriangle size={13}/> {balError}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <ERPBtn variant="secondary" onClick={() => setBalOpen(false)} disabled={balBusy} style={{ flex:1, justifyContent:'center' }}>Cancel</ERPBtn>
+              {isManualBalance(sel) && (
+                <ERPBtn variant="secondary" onClick={handleBalanceReset} disabled={balBusy} style={{ flex:1, justifyContent:'center' }}>
+                  <RotateCcw size={12}/> Automatic
+                </ERPBtn>
+              )}
+              <ERPBtn variant="primary" onClick={handleBalanceSave} disabled={balBusy} style={{ flex:1, justifyContent:'center' }}>
+                {balBusy ? 'Saving...' : 'Save Balance'}
               </ERPBtn>
             </div>
           </div>
@@ -1688,6 +2100,24 @@ We've received your payment — thank you! 🙏
                 <div style={{ fontWeight:700 }}>{fmtDate(receipt.date)}</div>
                 <div><span style={{ color:'#6b7280' }}>Payment method:</span></div>
                 <div style={{ fontWeight:700 }}>{receipt.method}</div>
+                {receipt.kind && (
+                  <>
+                    <div><span style={{ color:'#6b7280' }}>Payment type:</span></div>
+                    <div style={{ fontWeight:700 }}>{KIND_LABEL[receipt.kind] || receipt.kind}</div>
+                  </>
+                )}
+                {receipt.invoiceNo && (
+                  <>
+                    <div><span style={{ color:'#6b7280' }}>Invoice No:</span></div>
+                    <div style={{ fontWeight:700 }}>{receipt.invoiceNo}</div>
+                  </>
+                )}
+                {receipt.recordedBy && (
+                  <>
+                    <div><span style={{ color:'#6b7280' }}>Recorded by:</span></div>
+                    <div style={{ fontWeight:700 }}>{receipt.recordedBy}</div>
+                  </>
+                )}
                 {receipt.reference && (
                   <>
                     <div><span style={{ color:'#6b7280' }}>Reference:</span></div>

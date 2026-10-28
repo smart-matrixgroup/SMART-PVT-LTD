@@ -184,7 +184,7 @@ export function ERPStatCard({ icon, value, label, change, changeUp, color = C.bl
 }
 
 // ── Button ─────────────────────────────────────────────────────────
-export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', disabled, style = {} }) {
+export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', disabled, title, style = {} }) {
   const [hovered, setHovered] = React.useState(false);
   const variants = {
     primary: {
@@ -219,6 +219,7 @@ export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', di
       className="erp-btn"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{

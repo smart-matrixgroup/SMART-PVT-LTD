@@ -7,7 +7,7 @@ import { toInt, formatLKR } from '../money';
 import { ERPBtn, ERPInput, ERPTextarea, C } from './ERPui';
 import { Download, Printer, Copy, Image as ImageIcon, Plus, Trash2, LayoutTemplate, Sparkles, Save, ExternalLink, ArrowUp, ArrowDown } from 'lucide-react';
 import { TEMPLATE_QUOTATION, renderTemplate } from './quotationTemplateRenderer';
-import { usePrivateUrl } from '../usePrivateUrl';
+import { usePrivateUrl, revOf } from '../usePrivateUrl';
 
 // ────────────────────────────────────────────────────────────────────
 // Quotation Image Studio
@@ -211,16 +211,24 @@ export function buildDoc(q, bank) {
     payRemark: q.quotationNo || '',
 
     // ── Editable letterhead rows ──────────────────────────────────
-    // Pricing rows, the total band's title and the payment label:value
+    // Pricing rows, the total band's title/amount and the payment label:value
     // rows. Whatever the owner edits in the Studio is written back to the
     // quotation as quoteRows, so the next render (auto image, resend, client
     // portal) reproduces exactly this layout instead of the generic default.
-    totalLabel: savedRows.totalLabel || 'Total Quotation Amount',
-    totalAmount: total,
-    priceRows: (savedRows.priceRows || []).length
+    //
+    // An edited set is honoured even when it is EMPTY: a quotation whose owner
+    // deleted every payment row must print none — falling back to the defaults
+    // whenever the list came back empty is what made an edited quote look
+    // "the same as before" the moment it was reopened.
+    totalLabel: typeof savedRows.totalLabel === 'string' ? savedRows.totalLabel : 'Total Quotation Amount',
+    // 0 = "not overridden" → the renderer uses the quotation's own total.
+    totalAmount: toInt(savedRows.totalAmount) || total,
+    priceRows: Array.isArray(savedRows.priceRows) && savedRows.priceRows.length
       ? savedRows.priceRows
-      : defaultPriceRows(q, { priceLabel, subject, total, adv, balance }),
-    payRows: (savedRows.payRows || []).length
+      : Array.isArray(savedRows.priceRows)
+        ? []
+        : defaultPriceRows(q, { priceLabel, subject, total, adv, balance }),
+    payRows: Array.isArray(savedRows.payRows)
       ? savedRows.payRows
       : defaultPayRows(bank, q),
 
@@ -251,8 +259,8 @@ function MiniBtn({ children, onClick, title, danger, disabled }) {
 
 // "Open saved image" — pulls the stored letterhead through the SDK from its
 // Storage path, so no public token URL is ever written to the quotation doc.
-function OpenSavedImage({ path }) {
-  const { url, busy } = usePrivateUrl(path, !!path);
+function OpenSavedImage({ path, rev }) {
+  const { url, busy } = usePrivateUrl(path, !!path, revOf(rev));
   if (busy || !url) return null;
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
@@ -309,19 +317,34 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
 
   // ── Row edits are written back onto the quotation ─────────────────
   // The Studio is where a quote is laid out, so the pricing rows, the total
-  // band's title and the payment label:value rows are saved on the document as
-  // `quoteRows`. That is what makes them survive: the automatic letterhead
-  // image on the next save, a resend, and the client portal all rebuild THIS
-  // layout instead of falling back to the generic default.
-  // Debounced so typing one name does not fire a Firestore write per keypress,
-  // and flushed on close so a fast "edit → Close" never loses the work.
+  // band's title/amount and the payment label:value rows are saved on the
+  // document as `quoteRows`. That is what makes them survive: the automatic
+  // letterhead image on the next save, a resend, and the client portal all
+  // rebuild THIS layout instead of falling back to the generic default.
+  //
+  // Typing is debounced (one write per pause, not per keypress); adding,
+  // deleting and re-ordering commit immediately, and anything still pending is
+  // flushed when the Studio closes OR unmounts — losing the last edit because
+  // the panel vanished mid-debounce is exactly the "it did not save" report.
   const rowsSig   = useRef('');
   const pendingRows = useRef(null);
+  const rowsTimer = useRef(null);
+  const structuralRef = useRef(false);
   // The parent's handler is re-created on every render (this page has live
   // Firestore listeners), so it is kept in a ref — otherwise each parent render
   // would restart the debounce and a write could never land while typing.
   const onDocChangeRef = useRef(onDocChange);
   useEffect(() => { onDocChangeRef.current = onDocChange; });
+
+  const commitRows = useCallback(() => {
+    if (rowsTimer.current) { clearTimeout(rowsTimer.current); rowsTimer.current = null; }
+    const rows = pendingRows.current;
+    if (!rows) return;
+    pendingRows.current = null;
+    rowsSig.current = JSON.stringify(rows);
+    onDocChangeRef.current?.({ quoteRows: rows });
+  }, []);
+
   useEffect(() => {
     if (!isOpen || !d || !onDocChangeRef.current) return;
     const rows = {
@@ -330,27 +353,25 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
         kind: r.kind === 'note' ? 'note' : 'item',
       })),
       payRows: (d.payRows || []).map(r => ({ label: String(r.label || ''), value: String(r.value || '') })),
-      totalLabel: String(d.totalLabel || ''),
+      totalLabel: String(d.totalLabel ?? ''),
+      // 0 = "print the quotation's own total"; only a real override is stored.
+      totalAmount: toInt(d.totalAmount) === toInt(d.total) ? 0 : toInt(d.totalAmount),
     };
     const sig = JSON.stringify(rows);
     if (sig === rowsSig.current) return;
     pendingRows.current = rows;
     if (!rowsSig.current) { rowsSig.current = sig; pendingRows.current = null; return; } // seed pass
-    const t = setTimeout(() => {
-      rowsSig.current = sig;
-      pendingRows.current = null;
-      onDocChangeRef.current?.({ quoteRows: rows });
-    }, 900);
-    return () => clearTimeout(t);
+    if (structuralRef.current) { structuralRef.current = false; commitRows(); return; }
+    rowsTimer.current = setTimeout(commitRows, 500);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, d?.priceRows, d?.payRows, d?.totalLabel]);
+  }, [isOpen, d?.priceRows, d?.payRows, d?.totalLabel, d?.totalAmount]);
 
+  // Closing the Studio (and unmounting the page) must never drop a pending edit.
   useEffect(() => {
-    if (isOpen || !pendingRows.current) return;
-    const rows = pendingRows.current;
-    pendingRows.current = null;
-    onDocChangeRef.current?.({ quoteRows: rows });
-  }, [isOpen]);
+    if (isOpen) return;
+    commitRows();
+  }, [isOpen, commitRows]);
+  useEffect(() => () => commitRows(), [commitRows]);
 
   // Load bank details (settings/bankDetails) once per open
   useEffect(() => {
@@ -370,8 +391,9 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
         if (!(b.bankName || b.accountNumber)) return;
         // The bank defaults arrive after the first seed, so the payment rows
         // are rebuilt from them — unless this quotation already carries its own
-        // edited set (quoteRows.payRows), which must not be overwritten.
-        const hasOwnRows = !!(quotation?.quoteRows?.payRows || []).length;
+        // edited set (quoteRows.payRows), which must not be overwritten. An
+        // edited EMPTY set counts too: that quotation has no payment rows.
+        const hasOwnRows = Array.isArray(quotation?.quoteRows?.payRows);
         // Bank defaults land after the seed, so the row signature is cleared:
         // this reseed is the document settling, not the admin editing it, and
         // must not be written back as a custom quoteRows set.
@@ -422,7 +444,11 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
 
   // ── The renderer ────────────────────────────────────────────────
   const draw = useCallback(() => {
-    const ctx = canvasRef.current?.getContext('2d');
+    // willReadFrequently has to be on the FIRST getContext() call for this
+    // canvas: the letterhead renderer reads back several blocks of pixels to
+    // erase its sample text, and on a GPU-backed canvas each of those reads
+    // costs more than all the drawing.
+    const ctx = canvasRef.current?.getContext('2d', { willReadFrequently: true });
     if (!ctx || !d) return;
 
     const dark = d.theme === 'dark';
@@ -813,13 +839,17 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   // per quotation — that is the whole point of the editor below.
   const rowsOf = (k) => Array.isArray(d[k]) ? d[k] : [];
   const patchRow = (k, i, patch) => set(k, rowsOf(k).map((r, j) => j === i ? { ...r, ...patch } : r));
-  const dropRow  = (k, i)         => set(k, rowsOf(k).filter((_, j) => j !== i));
-  const addRow   = (k, blank)     => set(k, [...rowsOf(k), blank]);
+  // Adding / deleting / re-ordering is a click, not typing — flag it so the
+  // write below commits at once instead of waiting out the typing debounce.
+  const structural = () => { structuralRef.current = true; };
+  const dropRow  = (k, i)         => { structural(); set(k, rowsOf(k).filter((_, j) => j !== i)); };
+  const addRow   = (k, blank)     => { structural(); set(k, [...rowsOf(k), blank]); };
   const moveRow  = (k, i, dir)    => {
     const rows = [...rowsOf(k)];
     const j = i + dir;
     if (j < 0 || j >= rows.length) return;
     [rows[i], rows[j]] = [rows[j], rows[i]];
+    structural();
     set(k, rows);
   };
   const rowIn = {
@@ -1105,7 +1135,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
           <ERPBtn variant={onSaveImage ? 'secondary' : 'primary'} onClick={downloadPNG} disabled={!!busy}><Download size={14} /> {busy === 'png' ? 'Building…' : 'Download image'}</ERPBtn>
           <ERPBtn variant="secondary" onClick={copyImage} disabled={!!busy}><Copy size={14} /> Copy image</ERPBtn>
           <ERPBtn variant="secondary" onClick={printPDF}><Printer size={14} /> Print / Save PDF</ERPBtn>
-          {quotation?.renderImage?.path && <OpenSavedImage path={quotation.renderImage.path} />}
+          {quotation?.renderImage?.path && <OpenSavedImage path={quotation.renderImage.path} rev={quotation.renderImage.savedAt} />}
           {waHref && (
             <a href={waHref} target="_blank" rel="noopener noreferrer"
               style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 14px', borderRadius:9, textDecoration:'none',

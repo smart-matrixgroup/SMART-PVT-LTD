@@ -147,7 +147,7 @@ export default function MyDashboard({ onNavigate = () => {} }) {
     pendingSheets > 0 && {
       id: 'sheets', icon: '📄', accent: '#00D9FF', count: pendingSheets,
       title: 'Work sheet waiting for you',
-      body: 'Download, fill and send it back to admin',
+      body: 'Open it, mark your work and send it back to admin',
       actionLabel: 'Open sheets', onAction: () => onNavigate('sheets'),
     },
     !todayRec && {

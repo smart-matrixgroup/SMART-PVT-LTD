@@ -247,6 +247,223 @@ export function renderTemplate(canvas, img, d, scale) {
     ctx.drawImage(patchBuf, x, y, w, h);
   };
 
+  // ── Ink removal that keeps the artwork's own shading ──────────────
+  // The cards on this letterhead are printed on a panel that shades in BOTH
+  // axes, and an interpolated rectangle laid over it never lines up with the
+  // printed card — the client could see a paler "box" floating inside
+  // PRICING / PAYMENT DETAILS (the ghost the owner reported).
+  //
+  // Nothing is painted over the panel any more: only the pixels that carry
+  // ink are touched, and they take the panel's OWN colour back. So all the
+  // work is estimating "this patch as it would look without the sample text".
+  //
+  // The estimate is a coarse percentile grid. The rectangle is cut into
+  // cells, each cell reports the ~82nd percentile of its red/green/blue, and
+  // the grid is bilinearly sampled back to full resolution. Two measured
+  // properties of this letterhead make that the right tool:
+  //   • the panel is FLAT, not noisy — 244.5 luminance with sd 2.6 across the
+  //     payment card. So reading high in the cell costs about 2 levels of
+  //     bias (a morphological closing, which is what this replaced, reads the
+  //     brightest neighbour instead and came out ~18 levels too light — the
+  //     same ghost box, just softer; a plain median looked unbiased until it
+  //     met a busy cell).
+  //   • the ink is DARK on that panel, so it always sits at the BOTTOM of a
+  //     cell's histogram: the 82nd percentile cannot be dragged by printed
+  //     strokes covering up to ~80% of the cell. A median can be, and did —
+  //     on a 6-row pricing card the dark cells fed their own estimate back
+  //     into the ink mask and 42% of the card came out 10 levels too dark.
+  // On the blue total band the ink is white instead, so that call asks for
+  // the low end of the histogram (pct: 0.18) and everything else holds.
+  //
+  // A second pass re-reads each cell with the pixels the first pass called
+  // ink left out, which tightens the estimate wherever the strokes are
+  // dense. The mask then grows well past the stroke itself: every printed
+  // letter on this artwork carries a pale square aura (the JPEG blocks the
+  // original compression left around it) that is only ~6 levels lighter than
+  // the panel yet reads clearly as a ghost of the sample text. Painting that
+  // away is safe only because the estimate above is accurate — with a biased
+  // estimate, erasing generously is what produces the box in the first place.
+  //
+  // ⚠ The estimate is local: a cell cannot tell a letter from a printed rule,
+  // so every call is inset clear of the card borders and the printed column
+  // divider (measured off the artwork: pricing card x 541/995 with the rule at
+  // 856, payment card x 542/993 and its bottom rule at y 1166).
+  const cleanInk = (x, y, w, h, opts = {}) => {
+    if (!img) return;
+    const pct    = opts.pct ?? 0.82;      // where in the cell's histogram the panel sits
+    const thr    = opts.threshold ?? 6;   // luminance away from the panel = ink
+    const grow   = opts.grow ?? 14;       // device px of halo around the ink
+    const CELL   = Math.max(8, Math.round(opts.cell ?? 24));  // device px
+    const passes = Math.max(1, opts.passes ?? 2);
+    const x0 = Math.round(x * S), y0 = Math.round(y * S);
+    const cw = Math.round(w * S), ch = Math.round(h * S);
+    if (cw < 8 || ch < 8) return;
+    let block;
+    try { block = ctx.getImageData(x0, y0, cw, ch); } catch { return; }
+    const data = block.data;
+    const n = cw * ch;
+
+    const lum = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const k = i * 4;
+      lum[i] = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+    }
+
+    const gx = Math.ceil(cw / CELL), gy = Math.ceil(ch / CELL), gn = gx * gy;
+    const gR = new Float32Array(gn).fill(255), gG = new Float32Array(gn).fill(255), gB = new Float32Array(gn).fill(255);
+    const hR = new Int32Array(256), hG = new Int32Array(256), hB = new Int32Array(256);
+    const qOf = (hist, cnt) => {
+      const want = Math.max(1, Math.ceil(cnt * pct));
+      let a = 0;
+      for (let v = 0; v < 256; v++) { a += hist[v]; if (a >= want) return v; }
+      return 255;
+    };
+    // Rebuild the coarse grid. `skip` (pass 2) leaves out the pixels the
+    // previous pass called ink; a cell that loses almost all of them keeps
+    // its previous value rather than collapsing onto a stroke.
+    const skip = new Uint8Array(n);
+    const grid = (useSkip) => {
+      for (let cy = 0; cy < gy; cy++) {
+        const ys = cy * CELL, ye = Math.min(ch, ys + CELL);
+        for (let cx = 0; cx < gx; cx++) {
+          const xs = cx * CELL, xe = Math.min(cw, xs + CELL);
+          hR.fill(0); hG.fill(0); hB.fill(0);
+          let cnt = 0;
+          for (let i = ys; i < ye; i++) {
+            const row = i * cw;
+            for (let j = xs; j < xe; j++) {
+              const p = row + j;
+              if (useSkip && skip[p]) continue;
+              const k = p * 4;
+              hR[data[k]]++; hG[data[k + 1]]++; hB[data[k + 2]]++;
+              cnt++;
+            }
+          }
+          const id = cy * gx + cx;
+          if (cnt < 6) continue;
+          gR[id] = qOf(hR, cnt); gG[id] = qOf(hG, cnt); gB[id] = qOf(hB, cnt);
+        }
+      }
+    };
+
+    // bilinear sample of the coarse grid at a pixel centre
+    const at = (g, j, i) => {
+      const fx = (j + 0.5) / CELL - 0.5, fy = (i + 0.5) / CELL - 0.5;
+      const x1 = fx < 0 ? 0 : fx > gx - 1 ? gx - 1 : fx;
+      const y1 = fy < 0 ? 0 : fy > gy - 1 ? gy - 1 : fy;
+      const a = Math.floor(x1), b = Math.floor(y1);
+      const c = a + 1 > gx - 1 ? gx - 1 : a + 1, d = b + 1 > gy - 1 ? gy - 1 : b + 1;
+      const tx = x1 - a, ty = y1 - b;
+      const g00 = g[b * gx + a], g10 = g[b * gx + c];
+      const g01 = g[d * gx + a], g11 = g[d * gx + c];
+      return (g00 + (g10 - g00) * tx) * (1 - ty) + (g01 + (g11 - g01) * tx) * ty;
+    };
+
+    const dilate = (from, to, r) => {
+      for (let i = 0; i < ch; i++) {
+        let run = 0;
+        for (let j = 0; j < cw; j++) { if (from[i * cw + j]) run = r; if (run) { to[i * cw + j] = 1; run--; } }
+        run = 0;
+        for (let j = cw - 1; j >= 0; j--) { if (from[i * cw + j]) run = r; if (run) { to[i * cw + j] = 1; run--; } }
+      }
+      const tmp = new Uint8Array(n);
+      tmp.set(to);
+      for (let j = 0; j < cw; j++) {
+        let run = 0;
+        for (let i = 0; i < ch; i++) { if (tmp[i * cw + j]) run = r; if (run) { to[i * cw + j] = 1; run--; } }
+        run = 0;
+        for (let i = ch - 1; i >= 0; i--) { if (tmp[i * cw + j]) run = r; if (run) { to[i * cw + j] = 1; run--; } }
+      }
+    };
+
+    const mask = new Uint8Array(n);
+    const grown = new Uint8Array(n);
+    const bgc = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+    const sampleGrid = () => {
+      for (let i = 0; i < ch; i++) {
+        const row = i * cw;
+        for (let j = 0; j < cw; j++) {
+          const p = row + j;
+          bgc[0][p] = at(gR, j, i); bgc[1][p] = at(gG, j, i); bgc[2][p] = at(gB, j, i);
+        }
+      }
+    };
+    for (let pass = 0; pass < passes; pass++) {
+      grid(pass > 0);
+      sampleGrid();
+      for (let i = 0; i < n; i++) {
+        const bk = 0.299 * bgc[0][i] + 0.587 * bgc[1][i] + 0.114 * bgc[2][i];
+        const d = lum[i] - bk;
+        mask[i] = (d > thr || d < -thr) ? 1 : 0;
+      }
+      grown.fill(0);
+      dilate(mask, grown, 2);
+      skip.set(grown);
+    }
+
+    // The panel is not one flat colour: the print carries a slow mottling a
+    // few levels deep that a 24px grid averages away, so filling a hole with
+    // the grid alone still reads as a wiped patch. Whatever the TRUSTED
+    // pixels around a hole deviate from the grid, averaged over a small
+    // window, is added back — the patch inherits the panel's local tone and
+    // the boundary between erased and untouched stops existing.
+    const BR = Math.max(0, Math.round(opts.detail ?? 14));
+    let det = null;
+    if (BR) {
+      const wgt = new Float32Array(n);
+      for (let i = 0; i < n; i++) wgt[i] = mask[i] ? 0 : 1;
+      const tmp = new Float32Array(n), tmpw = new Float32Array(n);
+      const pre = new Float32Array(Math.max(cw, ch) + 1), prew = new Float32Array(Math.max(cw, ch) + 1);
+      const norm = (srcA) => {
+        for (let i = 0; i < ch; i++) {                       // horizontal
+          const row = i * cw;
+          pre[0] = 0; prew[0] = 0;
+          for (let j = 0; j < cw; j++) { pre[j + 1] = pre[j] + srcA[row + j]; prew[j + 1] = prew[j] + wgt[row + j]; }
+          for (let j = 0; j < cw; j++) {
+            const u = j - BR < 0 ? 0 : j - BR, v = j + BR > cw - 1 ? cw - 1 : j + BR;
+            tmp[row + j] = pre[v + 1] - pre[u]; tmpw[row + j] = prew[v + 1] - prew[u];
+          }
+        }
+        const outA = new Float32Array(n), outW = new Float32Array(n);
+        for (let j = 0; j < cw; j++) {                       // vertical
+          pre[0] = 0; prew[0] = 0;
+          for (let i = 0; i < ch; i++) { pre[i + 1] = pre[i] + tmp[i * cw + j]; prew[i + 1] = prew[i] + tmpw[i * cw + j]; }
+          for (let i = 0; i < ch; i++) {
+            const u = i - BR < 0 ? 0 : i - BR, v = i + BR > ch - 1 ? ch - 1 : i + BR;
+            outA[i * cw + j] = pre[v + 1] - pre[u]; outW[i * cw + j] = prew[v + 1] - prew[u];
+          }
+        }
+        return [outA, outW];
+      };
+      // One field, applied to all three channels: the mottling is a brightness
+      // effect and the panel's tint is constant, so blurring per channel would
+      // cost 3× the time for no visible difference.
+      det = new Float32Array(n);
+      const srcA = new Float32Array(n);
+      for (let i = 0; i < n; i++) srcA[i] = mask[i] ? 0 : lum[i] - (0.299 * bgc[0][i] + 0.587 * bgc[1][i] + 0.114 * bgc[2][i]);
+      const [A, W] = norm(srcA);
+      for (let i = 0; i < n; i++) {
+        const d = W[i] > 12 ? A[i] / W[i] : 0;               // too few neighbours → trust the grid
+        det[i] = d < -14 ? -14 : d > 14 ? 14 : d;
+      }
+    }
+
+    // The strokes are gone from the estimate, so the last mask is the one that
+    // gets painted — grown properly this time, for the pale aura the JPEG
+    // compression left ringing around each printed letter.
+    dilate(mask, mask, grow);
+
+    for (let i = 0; i < n; i++) {
+      if (!mask[i]) continue;
+      const k = i * 4, d = det ? det[i] : 0;
+      data[k]     = bgc[0][i] + d;
+      data[k + 1] = bgc[1][i] + d;
+      data[k + 2] = bgc[2][i] + d;
+      data[k + 3] = 255;
+    }
+    ctx.putImageData(block, x0, y0);
+  };
+
   const line = (str, x, base, o = {}) => {
     const s = String(str ?? '');
     if (!s) return;
@@ -359,23 +576,28 @@ export function renderTemplate(canvas, img, d, scale) {
   // ── 7. Pricing table — rows the admin adds, removes and retitles ──
   // Every client prices differently (a digital-marketing package is not a
   // website renewal), so the card is no longer hard-wired to the letterhead's
-  // two sample rows. Geometry measured off the artwork:
-  //   • description column  x 546→848, amount column x 856→990
-  //     (the printed divider between them at ~853 is left standing — the two
-  //      patches simply stop either side of it),
-  //   • row area              y 857→949  (the sample's two rows, extended to
-  //     the last pixel above the blue band so no strip of the old row tint is
-  //     left between the erased block and the band),
-  //   • blue total band       y 946→985, its label re-drawn from d.totalLabel.
+  // two sample rows. Geometry measured off the artwork, in its own pixels:
+  //   • printed card border   x 541 (left) and x 994 (right) → interior 543→993
+  //   • printed column rule   the single line at x 856, kept standing
+  //   • header row rule       y 864 (its "Description / Amount (LKR)" labels
+  //     are the artwork's own and are never touched)
+  //   • the two sample rows   y 867 → 949  ← the only strip that is cleaned
+  //   • blue total band       y 951 → 984, its text re-printed from d.totalLabel
   // Rows are weighted (a note line costs less than a full item) and shrink to
   // fit, so 1 row looks like the artwork and up to ~4 still stay readable.
   //
   // Row shape: { text, amount, was, kind }
   //   kind 'item' → numbered blue line, 'note' → smaller plain line.
   //   'was' > amount prints the grey strike-through over the real price.
-  const PRICE_TOP = 857, PRICE_BOT = 949;
+  const PRICE_TOP = 868, PRICE_BOT = 946;
   const PRICE_H = PRICE_BOT - PRICE_TOP;
-  const DESC_X = 558, DESC_MAXW = 286, AMT_X = 980, AMT_MAXW = 126;
+  const CARD_L = 546, CARD_R = 990, DIV_X = 856;
+  const DESC_X = 560, DESC_TEXT_X = 584, DESC_MAXW = 288, AMT_MAXW = 118;
+  const AMT_X = 981;
+  // The printed column divider at x 856 is a thin line, and the ink eraser
+  // flattens any thin line it covers — so the body is cleaned in the two
+  // panels either side of it and the 853→859 strip is left alone.
+  const DIV_GAP_L = 852, DIV_GAP_R = 860;
 
   const legacyRows = () => {
     const listPrice = toInt(d.listPrice);
@@ -393,13 +615,15 @@ export function renderTemplate(canvas, img, d, scale) {
     .map(r => ({ text: String(r?.text ?? '').trim(), amount: toInt(r?.amount), was: toInt(r?.was), kind: r?.kind === 'note' ? 'note' : 'item' }))
     .filter(r => r.text || r.amount > 0);
 
-  fillPatch(546, PRICE_TOP, 302, PRICE_H, '#F4FBFE');
-  fillPatch(856, PRICE_TOP, 134, PRICE_H, '#F4FBFE');
+  // Only the printed sample text goes away — the panel keeps its own tint,
+  // its border and the column rule, so no erased box can ever be visible.
+  cleanInk(CARD_L, PRICE_TOP, DIV_GAP_L - CARD_L + 1, PRICE_H);
+  cleanInk(DIV_GAP_R, PRICE_TOP, CARD_R - DIV_GAP_R + 1, PRICE_H);
 
   {
     const weight = r => (r.kind === 'note' ? 0.6 : 1);
     const sumW = priceRows.reduce((s, r) => s + weight(r), 0) || 1;
-    const unit = Math.min(44, PRICE_H / sumW);
+    const unit = Math.min(41, PRICE_H / sumW);
     const blockH = unit * sumW;
     let ry = PRICE_TOP + (PRICE_H - blockH) / 2;
     let itemNo = 0;
@@ -410,9 +634,9 @@ export function renderTemplate(canvas, img, d, scale) {
       const note = r.kind === 'note';
       const fSize = note
         ? Math.max(9, Math.min(11.4, rh * 0.5))
-        : (rh >= 40 ? 13.4 : rh >= 32 ? 12.4 : rh >= 26 ? 11.6 : rh >= 22 ? 10.9 : 10.2);
+        : (rh >= 38 ? 13.4 : rh >= 31 ? 12.4 : rh >= 25 ? 11.6 : rh >= 21 ? 10.9 : 10.2);
       const lh = fSize * 1.42;
-      const maxLines = !note && rh >= 40 ? 2 : 1;
+      const maxLines = !note && rh >= 38 ? 2 : 1;
 
       let tx = DESC_X;
       let maxW = DESC_MAXW;
@@ -420,13 +644,14 @@ export function renderTemplate(canvas, img, d, scale) {
         itemNo += 1;
         const showBadge = rh >= 21;
         if (showBadge) {
-          ctx.beginPath(); ctx.arc(566, cy, 7.6, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(568, cy, 7.6, 0, Math.PI * 2);
           ctx.fillStyle = '#2E7DF0'; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 0.8; ctx.stroke();
           ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center';
           setFont(ctx, 9.6, 700);
-          ctx.fillText(String(itemNo), 566, cy + 3.4);
+          ctx.fillText(String(itemNo), 568, cy + 3.4);
           ctx.textAlign = 'left';
-          tx = 580; maxW = DESC_MAXW - 22;
+          tx = DESC_TEXT_X; maxW = DIV_X - 8 - DESC_TEXT_X;
         }
       }
 
@@ -446,7 +671,10 @@ export function renderTemplate(canvas, img, d, scale) {
 
       // amount column
       if (r.amount > 0 || r.was > 0) {
-        const struck = r.was > 0 && r.amount > 0 && r.was > r.amount;
+        // The struck price is printed ABOVE the real one, which needs two
+        // lines of room — with 5-6 rows a row is only ~13px tall, so the
+        // discount line is dropped rather than colliding with the next row.
+        const struck = r.was > 0 && r.amount > 0 && r.was > r.amount && rh >= 26;
         if (struck) {
           ctx.fillStyle = '#7A8794'; ctx.textAlign = 'right';
           setFont(ctx, Math.max(9, fSize * 0.82), 600);
@@ -463,27 +691,31 @@ export function renderTemplate(canvas, img, d, scale) {
         }
       }
 
-      // faint rule between rows, in both columns (the artwork has one too)
+      // rule between rows, across the whole card like the printed one
       if (idx < priceRows.length - 1) {
-        ctx.strokeStyle = 'rgba(11,60,140,0.13)'; ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(11,60,140,0.16)'; ctx.lineWidth = 1;
         const gy = Math.round(ry + rh) + 0.5;
-        ctx.beginPath(); ctx.moveTo(548, gy); ctx.lineTo(846, gy); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(858, gy); ctx.lineTo(988, gy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(CARD_L, gy); ctx.lineTo(CARD_R, gy); ctx.stroke();
       }
       ry += rh;
     });
   }
 
   // Total band: label + value are both editable ("Total First Month Fee" …).
-  // The band is a blue→cyan horizontal gradient, so each patch is sampled from
-  // inside the band and kept flat top→bottom.
+  // The band's own gradient is left untouched — only its sample text is
+  // removed — so the blue→cyan sweep and the rounded ends stay the artwork's.
   {
     const total = toInt(d.totalAmount) || toInt(d.total) || priceRows.reduce((s, r) => s + (r.kind === 'note' ? 0 : r.amount), 0);
-    fillPatch(546, 952, 300, 30, '#4FB4FB', { lrOnly: true, inside: true });
-    fillPatch(856, 951, 128, 30, '#4FB4FB', { lrOnly: true, inside: true });
-    line(String(d.totalLabel || 'Total Quotation Amount').trim(), 558, 972,
-      { maxW: 278, size: 14.5, weight: 700, color: '#FFFFFF' });
-    line(num(total), 980, 976, { maxW: 132, size: 18, weight: 700, color: '#FFFFFF', align: 'right' });
+    // The band runs the other way round: white ink on deep blue, so the panel
+    // is the LOW end of each cell's histogram. It also gets a finer grid (the
+    // blue→cyan sweep has less room to be smoothed away) and a wider halo
+    // (the JPEG ringing around a thick stroke reaches further than the one
+    // around the small navy print).
+    cleanInk(546, 954, DIV_GAP_L - 546 + 1, 28, { pct: 0.18, cell: 20, grow: 12 });
+    cleanInk(DIV_GAP_R, 954, 991 - DIV_GAP_R + 1, 28, { pct: 0.18, cell: 20, grow: 12 });
+    line(String(d.totalLabel ?? 'Total Quotation Amount').trim(), DESC_X, 972,
+      { maxW: 288, size: 14.5, weight: 700, color: '#FFFFFF' });
+    line(num(total), AMT_X, 976, { maxW: 122, size: 18, weight: 700, color: '#FFFFFF', align: 'right' });
   }
 
   // No discount → the actual cost is the quotation total. With a discount,
@@ -509,13 +741,17 @@ export function renderTemplate(canvas, img, d, scale) {
   });
 
   // ── 9. Payment / detail rows — every label is editable ──────────
-  // The card is x 538→994, y 992→1168 with its blue title bar at 995-1028 and
-  // the printed rows at 1036-1160 (label column starts x 564, the colons sit at
-  // x 726, values at x 750). The letterhead ships with six fixed labels, but
+  // The card is x 541→994, y 992→1168 with its blue title bar at 995-1028 and
+  // the printed rows at 1031-1162 (label column starts x 564, the colons sit at
+  // x 726, values at x 751). The letterhead ships with six fixed labels, but
   // the artwork also promised an "Account Type" the form never had — so the
-  // whole body is redrawn from d.payRows: the admin renames, removes and adds
+  // body text is redrawn from d.payRows: the admin renames, removes and adds
   // "Title : value" lines freely (Warranty, Delivery time, Payment remark …).
-  const PAY_TOP = 1036, PAY_BOT = 1160, PAY_H = PAY_BOT - PAY_TOP;
+  //
+  // Geometry measured off the artwork, and only the printed ink is removed
+  // (cleanInk) — the card's own border, tint and rounded corners stay exactly
+  // where the designer put them, so nothing we draw has to line up with them.
+  const PAY_TOP = 1032, PAY_BOT = 1162, PAY_H = PAY_BOT - PAY_TOP;
   const b = d.bank || {};
   const legacyPayRows = () => ([
     ['Account Name',   b.accountName],
@@ -530,12 +766,14 @@ export function renderTemplate(canvas, img, d, scale) {
     .map(r => ({ label: String(r?.label ?? '').trim(), value: String(r?.value ?? '').trim() }))
     .filter(r => r.label || r.value);
 
-  fillPatch(546, PAY_TOP, 438, PAY_H, '#EDF8FD');
+  cleanInk(546, PAY_TOP, 445, PAY_H);
   {
-    const pitch = Math.min(20.6, PAY_H / Math.max(1, payRows.length));
+    // 4px of breathing room so a long list never touches the printed border.
+    const L_TOP = PAY_TOP + 4, L_H = PAY_H - 8;
+    const pitch = Math.min(20.8, L_H / Math.max(1, payRows.length));
     const blockH = pitch * payRows.length;
-    let py = PAY_TOP + (PAY_H - blockH) / 2 + pitch / 2;
-    const fSize = pitch >= 19 ? 13.2 : pitch >= 16 ? 11.8 : 10.6;
+    let py = L_TOP + (L_H - blockH) / 2 + pitch / 2;
+    const fSize = pitch >= 19 ? 13.2 : pitch >= 16 ? 11.8 : pitch >= 13.5 ? 10.6 : 9.6;
     payRows.forEach((r) => {
       // label — dark navy bold, right up to the printed colon column
       setFont(ctx, fSize, 700);
@@ -544,7 +782,7 @@ export function renderTemplate(canvas, img, d, scale) {
       ctx.fillStyle = '#0A2158';
       ctx.fillText(r.label, 564, py + ls * 0.36);
       ctx.fillText(':', 726, py + ls * 0.36);
-      line(r.value, 750, py + fSize * 0.36, { maxW: 232, size: fSize, weight: 700, color: '#0C369A' });
+      line(r.value, 751, py + fSize * 0.36, { maxW: 234, size: fSize, weight: 700, color: '#0C369A' });
       py += pitch;
     });
   }

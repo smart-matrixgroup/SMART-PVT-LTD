@@ -35,19 +35,27 @@ const fmtShort = dStr => {
 
 /** 'yyyy-mm-dd' range end for a period starting at rangeStart. */
 export const rangeEndFor = (period, rangeStart) =>
-  period === 'week' ? isoAdd(rangeStart, 6) : endOfMonth(rangeStart);
+  period === 'day' ? rangeStart
+    : period === 'week' ? isoAdd(rangeStart, 6)
+      : endOfMonth(rangeStart);
 
-/** Human label, e.g. "13 Oct – 19 Oct, 2026" or "October 2026". */
+/** Human label, e.g. "13 Oct – 19 Oct, 2026", "October 2026" or "27 Oct 2026". */
 export const rangeLabelFor = (period, rangeStart) => {
   const end = rangeEndFor(period, rangeStart);
+  if (period === 'day') {
+    return new Date(`${rangeStart}T12:00:00`)
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
   return period === 'week'
     ? `${fmtShort(rangeStart)} – ${fmtShort(end)}, ${end.slice(0, 4)}`
     : monthLabel(rangeStart);
 };
 
 /** Build the workbook AND trigger a browser download. `staff` may be
- *  { name, position, location } (pre-filled) or {} for a blank template. */
-export async function downloadWorkLogSheet(staff, { period = 'week', rangeStart }) {
+ *  { name, position, location } (pre-filled) or {} for a blank template.
+ *  `rows` / `times` pre-fill the first day block (used by the auto daily
+ *  sheet so the member only has to confirm the STATUS column). */
+export async function downloadWorkLogSheet(staff, { period = 'week', rangeStart, rows = [], times = null }) {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SMART ERP';
@@ -89,7 +97,7 @@ export async function downloadWorkLogSheet(staff, { period = 'week', rangeStart 
   ws.getRow(r).height = 26; r++;
   mergePut(r, 1, 6, 'Staff Profile — enter your details once here, they appear on every day automatically', { italic: true, align: 'center', color: 'FF595959', border: false }); r++;
 
-  label(r, 1, 'NAME :');        boxValue(r, 2, s.name || '');     label(r, 4, 'MONTH :');      boxValue(r, 5, monthName); r++;
+  label(r, 1, 'NAME :');        boxValue(r, 2, s.name || '');     label(r, 4, period === 'day' ? 'DATE :' : 'MONTH :'); boxValue(r, 5, period === 'day' ? rangeLabel : monthName); r++;
   label(r, 1, 'POSITION :');    boxValue(r, 2, s.position || ''); label(r, 4, 'DEPARTMENT :'); boxValue(r, 5, ''); r++;
   label(r, 1, 'JOB LOCATION :');boxValue(r, 2, s.location || ''); label(r, 4, 'TOTAL HOURS :');boxValue(r, 5, ''); r++;
   r++;
@@ -104,19 +112,25 @@ export async function downloadWorkLogSheet(staff, { period = 'week', rangeStart 
     ['ARRIVAL', 'LUNCH START', 'LUNCH END', 'LUNCH DURATION', 'DEPARTURE', 'TOTAL WORK HRS']
       .forEach((h, i) => put(r, i + 1, h, { fill: BLUE, color: 'FFFFFFFF', bold: true, size: 10, align: 'center', wrap: true }));
     r++;
-    for (let c = 1; c <= 6; c++) put(r, c, '', { fill: c === 4 ? LGREY : undefined, align: 'center' });
+    const preTimes = times && isFirst
+      ? [times.arrival, times.lunchStart, times.lunchEnd, times.lunchDuration, times.departure, times.totalWorkHours]
+      : null;
+    for (let c = 1; c <= 6; c++) put(r, c, preTimes ? (preTimes[c - 1] || '') : '', { fill: c === 4 ? LGREY : undefined, align: 'center' });
     r++;
     ['NO', 'START', 'END', 'HOURS', 'WORK / DESCRIPTION', 'STATUS']
       .forEach((h, i) => put(r, i + 1, h, { fill: BLUE, color: 'FFFFFFFF', bold: true, size: 10, align: i === 4 ? 'left' : 'center' }));
     r++;
-    for (let n = 1; n <= 6; n++) {
-      const ex = !isPersonal && isFirst && n === 1;
+    const preRows = isFirst && Array.isArray(rows) && rows.length ? rows : null;
+    const rowCount = preRows ? Math.max(6, preRows.length) : 6;
+    for (let n = 1; n <= rowCount; n++) {
+      const pre = preRows ? preRows[n - 1] : null;
       put(r, 1, String(n), { align: 'center' });
-      put(r, 2, '', { align: 'center' });
-      put(r, 3, '', { align: 'center' });
-      put(r, 4, '', { align: 'center' });
-      put(r, 5, ex ? 'Example task — delete this row' : '', ex ? { color: 'FF808080', italic: true } : {});
-      const st = put(r, 6, '', { align: 'center' });
+      put(r, 2, (pre && pre.start) || '', { align: 'center' });
+      put(r, 3, (pre && pre.end) || '', { align: 'center' });
+      put(r, 4, (pre && pre.hours) || '', { align: 'center' });
+      const ex = !preRows && !isPersonal && isFirst && n === 1;
+      put(r, 5, (pre && pre.description) || (ex ? 'Example task — delete this row' : ''), ex ? { color: 'FF808080', italic: true } : {});
+      const st = put(r, 6, (pre && pre.status) || '', { align: 'center' });
       st.dataValidation = { type: 'list', allowBlank: true, formulae: ['"Completed,In Progress,Pending,On Hold"'] };
       r++;
     }
@@ -125,7 +139,9 @@ export async function downloadWorkLogSheet(staff, { period = 'week', rangeStart 
   };
 
   const days = [];
-  if (period === 'week') {
+  if (period === 'day') {
+    days.push(rangeStart);
+  } else if (period === 'week') {
     for (let i = 0; i < 7; i++) days.push(isoAdd(rangeStart, i));
   } else {
     const last = endOfMonth(rangeStart);

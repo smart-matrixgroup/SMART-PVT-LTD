@@ -14,7 +14,7 @@ import {
 import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
 import {
   Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText, Pencil, Trash2,
-  Key, Shield, CheckCircle2, RotateCcw, MapPin
+  Key, Shield, CheckCircle2, RotateCcw, MapPin, ListChecks, History
 } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
@@ -44,6 +44,32 @@ const DEV_PROJECTS = {
   ],
 };
 
+const DEV_WORK = {
+  C001: [
+    { id:'W101', title:'Home page design — desktop + mobile', project:'Corporate Website Redesign', note:'Hero, services and about sections signed off', status:'done',
+      createdAt:'2026-10-02T09:15:00.000Z', createdBy:'Admin', updatedAt:'2026-10-12T11:40:00.000Z', updatedBy:'Admin',
+      history:[
+        { at:'2026-10-02T09:15:00.000Z', by:'Admin', text:'Added as pending' },
+        { at:'2026-10-06T15:05:00.000Z', by:'Admin', text:'Draft layout shared with client' },
+        { at:'2026-10-12T11:40:00.000Z', by:'Admin', text:'Marked as done' },
+      ] },
+    { id:'W102', title:'Contact form + email notification', project:'Corporate Website Redesign', note:'', status:'pending',
+      createdAt:'2026-10-13T08:20:00.000Z', createdBy:'Admin', updatedAt:'2026-10-13T08:20:00.000Z', updatedBy:'Admin',
+      history:[{ at:'2026-10-13T08:20:00.000Z', by:'Admin', text:'Added as pending' }] },
+    { id:'W103', title:'ERP staff module walkthrough', project:'SMART ERP Setup', note:'', status:'done',
+      createdAt:'2026-09-20T10:00:00.000Z', createdBy:'Admin', updatedAt:'2026-09-27T16:30:00.000Z', updatedBy:'Admin',
+      history:[
+        { at:'2026-09-20T10:00:00.000Z', by:'Admin', text:'Added as pending' },
+        { at:'2026-09-27T16:30:00.000Z', by:'Admin', text:'Marked as done' },
+      ] },
+  ],
+  C003: [
+    { id:'W201', title:'Login + OTP screens', project:'Mobile App Development', note:'', status:'pending',
+      createdAt:'2026-10-20T07:45:00.000Z', createdBy:'Admin', updatedAt:'2026-10-20T07:45:00.000Z', updatedBy:'Admin',
+      history:[{ at:'2026-10-20T07:45:00.000Z', by:'Admin', text:'Added as pending' }] },
+  ],
+};
+
 const EMPTY_FORM = { name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'' };
 
 async function countWhere(col, field, value) {
@@ -51,10 +77,44 @@ async function countWhere(col, field, value) {
   return snap.size;
 }
 
+// History stamps are stored as ISO strings so the trail survives regardless of
+// which device wrote it; keep the display short and readable.
+function fmtWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-GB', {
+    day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit',
+  });
+}
+
+// Firestore rejects `undefined`; build every work entry with all keys present.
+function cleanWork(list) {
+  return (Array.isArray(list) ? list : []).map(w => ({
+    id: w.id || `w${Date.now()}`,
+    title: w.title || '',
+    project: w.project || '',
+    note: w.note || '',
+    status: w.status === 'done' ? 'done' : 'pending',
+    removed: !!w.removed,
+    createdAt: w.createdAt || '',
+    createdBy: w.createdBy || '',
+    updatedAt: w.updatedAt || '',
+    updatedBy: w.updatedBy || '',
+    history: (Array.isArray(w.history) ? w.history : []).map(h => ({
+      at: h.at || '', by: h.by || '', text: h.text || '',
+    })),
+  }));
+}
+
 export default function ERPClients() {
-  const { isDevSession } = useAuth();
+  const { isDevSession, profile } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
-  const [clients,   setClients]   = useState([]);
+  const adminName = profile?.name || profile?.email || 'Admin';
+  // Sample work items only feed the offline demo — a live client doc either
+  // carries its own workLog or has none.
+  const workOf = (c) => (Array.isArray(c?.workLog) ? c.workLog : (live ? [] : (DEV_WORK[c?.id] || [])));
+  const [clients,   setClients]   = useState(live ? [] : DEV_CLIENTS);
   const [projects,  setProjects]  = useState([]);
   const [search,    setSearch]    = useState('');
   const [selected,  setSelected]  = useState(null);
@@ -68,11 +128,25 @@ export default function ERPClients() {
   const [saveError, setSaveError] = useState('');
   const [notice,    setNotice]    = useState(null); // { kind:'ok'|'error', msg }
   const [pwModal,   setPwModal]   = useState(null); // { client, password, busy, error }
+  // Work tracker: a manual done / pending list per client, with who-marked-what history
+  const [workFor,   setWorkFor]   = useState(null); // client whose tracker is open
+  const [workForm,  setWorkForm]  = useState({ title:'', project:'', note:'' });
+  const [workErr,   setWorkErr]   = useState('');
+  const [workBusy,  setWorkBusy]  = useState(false);
+  const [workFilter,setWorkFilter]= useState('all');
+  const [workOpen,  setWorkOpen]  = useState({});   // itemId -> history expanded
+  const [workDraft, setWorkDraft] = useState({});   // itemId -> progress note being typed
 
   useEffect(() => {
     if (!live) return;
     const unsubC = onSnapshot(collection(db, 'clients'), snap => {
-      setClients(snap.docs.map(d => ({ id:d.id, ...d.data() })).filter(c => c.status !== 'deleted'));
+      const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .filter(c => c.status !== 'deleted');
+      setClients(rows);
+      // Keep the open profile / work tracker on the freshest copy of the doc
+      // (another tab may have ticked an item).
+      setSelected(s => (s ? (rows.find(c => c.id === s.id) || s) : s));
+      setWorkFor(w => (w ? (rows.find(c => c.id === w.id) || w) : w));
     }, err => console.error('Clients listener error', err));
     const unsubP = onSnapshot(collection(db, 'projects'), snap => {
       setProjects(snap.docs.map(d => ({ id:d.id, ...d.data() })));
@@ -318,6 +392,128 @@ export default function ERPClients() {
     }
   };
 
+  // ── Work tracker ───────────────────────────────────────────────
+  const openWork = (c) => {
+    setWorkForm({ title:'', project:'', note:'' });
+    setWorkErr('');
+    setWorkFilter('all');
+    setWorkOpen({});
+    setWorkDraft({});
+    setWorkFor(c);
+  };
+
+  // Keep the card grid, the profile panel and the open modal in sync before
+  // the write resolves, so a slow network never shows a stale tick.
+  const applyWorkLog = (clientId, next) => {
+    setClients(p => p.map(c => c.id === clientId ? { ...c, workLog: next } : c));
+    setSelected(s => (s && s.id === clientId ? { ...s, workLog: next } : s));
+    setWorkFor(w => (w && w.id === clientId ? { ...w, workLog: next } : w));
+  };
+
+  const persistWorkLog = async (clientId, next) => {
+    applyWorkLog(clientId, next);
+    if (live) {
+      await updateDoc(doc(db, 'clients', clientId), { workLog: next, updatedAt: serverTimestamp() });
+    }
+  };
+
+  const addWorkItem = async () => {
+    if (!workFor || workBusy) return;
+    const title = workForm.title.trim();
+    if (!title) { setWorkErr('Type the work that needs to be done.'); return; }
+    setWorkErr('');
+    setWorkBusy(true);
+    const now = new Date().toISOString();
+    const note = workForm.note.trim();
+    const item = {
+      id: `w${Date.now()}`,
+      title,
+      project: workForm.project,
+      note,
+      status: 'pending',
+      removed: false,
+      createdAt: now, createdBy: adminName,
+      updatedAt: now, updatedBy: adminName,
+      history: [{ at: now, by: adminName, text: `Added as pending${note ? ` — ${note}` : ''}` }],
+    };
+    try {
+      await persistWorkLog(workFor.id, cleanWork([item, ...workOf(workFor)]));
+      setWorkForm({ title:'', project:'', note:'' });
+      setNotice({ kind:'ok', msg:`Work item added to ${workFor.name}.` });
+    } catch (err) {
+      console.error(err);
+      setWorkErr(err.message || 'Could not save that work item.');
+    } finally {
+      setWorkBusy(false);
+    }
+  };
+
+  const setWorkStatus = async (item, status) => {
+    if (!workFor || item.status === status) return;
+    const now = new Date().toISOString();
+    const next = cleanWork(workOf(workFor).map(w => w.id === item.id ? {
+      ...w, status, updatedAt: now, updatedBy: adminName,
+      history: [...(w.history || []), {
+        at: now, by: adminName,
+        text: status === 'done' ? 'Marked as done' : 'Re-opened — back to pending',
+      }],
+    } : w));
+    try { await persistWorkLog(workFor.id, next); }
+    catch (err) { console.error(err); setWorkErr(err.message || 'Could not update that item.'); }
+  };
+
+  const addWorkNote = async (item) => {
+    if (!workFor) return;
+    const text = (workDraft[item.id] || '').trim();
+    if (!text) return;
+    const now = new Date().toISOString();
+    const next = cleanWork(workOf(workFor).map(w => w.id === item.id ? {
+      ...w, updatedAt: now, updatedBy: adminName,
+      history: [...(w.history || []), { at: now, by: adminName, text }],
+    } : w));
+    try {
+      await persistWorkLog(workFor.id, next);
+      setWorkDraft(p => ({ ...p, [item.id]: '' }));
+    } catch (err) {
+      console.error(err);
+      setWorkErr(err.message || 'Could not add that note.');
+    }
+  };
+
+  // Soft delete: the item leaves the list but its trail stays in Firestore, so
+  // "what was removed and by whom" is never lost.
+  const removeWorkItem = async (item) => {
+    if (!workFor) return;
+    const now = new Date().toISOString();
+    const next = cleanWork(workOf(workFor).map(w => w.id === item.id ? {
+      ...w, removed: true, updatedAt: now, updatedBy: adminName,
+      history: [...(w.history || []), { at: now, by: adminName, text: 'Removed from the tracker' }],
+    } : w));
+    try {
+      await persistWorkLog(workFor.id, next);
+      setNotice({ kind:'ok', msg:`"${item.title}" removed from ${workFor.name}'s tracker.` });
+    } catch (err) {
+      console.error(err);
+      setWorkErr(err.message || 'Could not remove that item.');
+    }
+  };
+
+  // Derived values for the profile summary + the tracker modal.
+  const selWork       = workOf(selected).filter(w => !w.removed);
+  const selWorkDone   = selWork.filter(w => w.status === 'done').length;
+  const selWorkNext   = selWork.find(w => w.status !== 'done');
+  const selWorkPct    = selWork.length ? Math.round((selWorkDone / selWork.length) * 100) : 0;
+  const modalWork     = workOf(workFor).filter(w => !w.removed);
+  const modalDone     = modalWork.filter(w => w.status === 'done').length;
+  const modalPending  = modalWork.length - modalDone;
+  const modalShown    = modalWork
+    .filter(w => workFilter === 'all' ? true : workFilter === 'done' ? w.status === 'done' : w.status !== 'done')
+    .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0)
+      || String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  const workProjects  = workFor
+    ? (live ? projects.filter(p => p.clientId === workFor.id) : (DEV_PROJECTS[workFor.id] || []))
+    : [];
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
 
@@ -530,6 +726,34 @@ export default function ERPClients() {
                 </div>
               )}
 
+              {/* Work tracker — what has been done vs what is still pending,
+                  marked by the admin. History lives on the client doc. */}
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                  <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.8px' }}>Work Tracker</div>
+                  <span style={{ fontSize:10, fontWeight:800, color: selWorkDone === selWork.length && selWork.length > 0 ? C.green : C.muted }}>
+                    {selWorkDone}/{selWork.length} done
+                  </span>
+                </div>
+                <div style={{
+                  padding:'12px 14px', borderRadius:12,
+                  background:'rgba(139,92,246,0.06)', border:`1px solid ${C.violet}30`,
+                  display:'flex', flexDirection:'column', gap:8,
+                }}>
+                  <ERPProgress value={selWorkPct} color={C.violet} />
+                  <div style={{ fontSize:11, color:C.muted, lineHeight:1.5 }}>
+                    {selWork.length === 0
+                      ? 'No work items yet — add what is done and what is still to be done.'
+                      : selWorkNext
+                        ? <>Next up: <strong style={{ color:C.text }}>{selWorkNext.title}</strong></>
+                        : <span style={{ color:C.green, fontWeight:700 }}>All work items are marked done.</span>}
+                  </div>
+                  <ERPBtn size="sm" variant="primary" onClick={()=>openWork(selected)} style={{ justifyContent:'center' }}>
+                    <ListChecks size={12} /> Open Work Tracker
+                  </ERPBtn>
+                </div>
+              </div>
+
               {/* Portal Login Account Card */}
               <div style={{
                 padding: '12px 14px', borderRadius: 12,
@@ -709,6 +933,179 @@ export default function ERPClients() {
             <ERPBtn variant="primary" onClick={handleCreateAccountForClient} disabled={pwModal?.busy} style={{flex:1,justifyContent:'center'}}>
               {pwModal?.busy ? 'Creating...' : 'Activate Portal Account'}
             </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* ── Work tracker ──────────────────────────────────────────── */}
+      <ERPModal isOpen={!!workFor} onClose={()=>setWorkFor(null)} title={`Work Tracker — ${workFor?.name || ''}`} width={760}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
+          <div style={{ fontSize:11.5, color:C.muted, lineHeight:1.55 }}>
+            Tick a work item when it is finished. Every tick, re-open, progress note and
+            removal is saved in that item's history with the admin name and the exact time.
+          </div>
+
+          {/* Add a work item */}
+          <div style={{
+            padding:'12px 14px', borderRadius:12,
+            background:'rgba(0,102,255,0.06)', border:`1px solid ${C.blue}30`,
+            display:'flex', flexDirection:'column', gap:10,
+          }}>
+            <ERPInput
+              label="Work to be done"
+              value={workForm.title}
+              onChange={e=>setWorkForm(p=>({ ...p, title:e.target.value }))}
+              placeholder="e.g. Home page design — desktop + mobile"
+            />
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                <span style={{ fontSize:10.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px' }}>Project</span>
+                <select
+                  value={workForm.project}
+                  onChange={e=>setWorkForm(p=>({ ...p, project:e.target.value }))}
+                  style={{
+                    background:'rgba(10,24,56,0.9)', border:`1px solid ${C.border}`,
+                    borderRadius:10, padding:'9px 10px', color:C.text, fontSize:12,
+                    outline:'none', width:'100%',
+                  }}>
+                  <option value="">General / no project</option>
+                  {workProjects.map(p => <option key={p.id} value={p.title}>{p.title}</option>)}
+                </select>
+              </div>
+              <ERPInput
+                label="Note (optional)"
+                value={workForm.note}
+                onChange={e=>setWorkForm(p=>({ ...p, note:e.target.value }))}
+                placeholder="Anything worth remembering"
+              />
+            </div>
+
+            {workErr && (
+              <div style={{ padding:'9px 11px', borderRadius:9, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+                {workErr}
+              </div>
+            )}
+
+            <ERPBtn variant="primary" onClick={addWorkItem} disabled={workBusy} style={{ justifyContent:'center' }}>
+              <Plus size={12} /> {workBusy ? 'Saving…' : 'Add Work Item'}
+            </ERPBtn>
+          </div>
+
+          {/* Counts + filter */}
+          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+            {[
+              { key:'all',     label:`All ${modalWork.length}`,  color:C.blue   },
+              { key:'pending', label:`Pending ${modalPending}`,  color:C.amber  },
+              { key:'done',    label:`Done ${modalDone}`,        color:C.green  },
+            ].map(f => (
+              <button key={f.key} onClick={()=>setWorkFilter(f.key)} style={{
+                cursor:'pointer', padding:'5px 11px', borderRadius:20, fontSize:10.5, fontWeight:800,
+                background: workFilter === f.key ? `${f.color}26` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${workFilter === f.key ? `${f.color}66` : C.border}`,
+                color: workFilter === f.key ? f.color : C.muted,
+              }}>{f.label}</button>
+            ))}
+            <span style={{ marginLeft:'auto', fontSize:10, color:C.muted }}>
+              Marking as <strong style={{ color:C.subtle }}>{adminName}</strong>
+            </span>
+          </div>
+
+          {/* Items */}
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {modalShown.length === 0 && (
+              <div style={{ padding:'18px 14px', borderRadius:12, textAlign:'center', background:'rgba(10,24,56,0.5)', border:`1px dashed ${C.border}`, fontSize:11.5, color:C.muted }}>
+                {modalWork.length === 0 ? 'No work items yet — add the first one above.' : 'Nothing in this filter.'}
+              </div>
+            )}
+
+            {modalShown.map(item => {
+              const open = !!workOpen[item.id];
+              const isDone = item.status === 'done';
+              const hist = item.history || [];
+              return (
+                <div key={item.id} style={{
+                  borderRadius:12, padding:'11px 12px',
+                  background:'rgba(10,24,56,0.75)',
+                  border:`1px solid ${isDone ? 'rgba(24,199,122,0.3)' : C.border}`,
+                  display:'flex', flexDirection:'column', gap:8,
+                }}>
+                  <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                    <button
+                      onClick={()=>setWorkStatus(item, isDone ? 'pending' : 'done')}
+                      title={isDone ? 'Re-open — back to pending' : 'Mark as done'}
+                      style={{
+                        width:21, height:21, borderRadius:6, flexShrink:0, marginTop:1, cursor:'pointer',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        background: isDone ? 'rgba(24,199,122,0.18)' : 'rgba(255,255,255,0.04)',
+                        border:`1px solid ${isDone ? 'rgba(24,199,122,0.55)' : C.border}`,
+                        color: C.green,
+                      }}>
+                      {isDone && <CheckCircle2 size={13} />}
+                    </button>
+
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{
+                        fontSize:12, fontWeight:700,
+                        color: isDone ? C.muted : C.text,
+                        textDecoration: isDone ? 'line-through' : 'none',
+                      }}>{item.title}</div>
+                      <div style={{ fontSize:9.5, color:C.muted, marginTop:2 }}>
+                        {(item.project ? `${item.project} · ` : '')}
+                        <span style={{ color: isDone ? C.green : C.amber, fontWeight:700 }}>
+                          {isDone ? 'Done' : 'Pending'}
+                        </span>
+                        {item.updatedBy ? ` · ${item.updatedBy}` : ''}
+                        {item.updatedAt ? ` · ${fmtWhen(item.updatedAt)}` : ''}
+                      </div>
+                      {item.note && <div style={{ fontSize:10, color:C.subtle, marginTop:3 }}>{item.note}</div>}
+                    </div>
+
+                    <ERPBtn size="sm" variant="secondary" onClick={()=>setWorkOpen(p=>({ ...p, [item.id]:!p[item.id] }))}>
+                      <History size={11} /> {open ? 'Hide' : `History ${hist.length}`}
+                    </ERPBtn>
+                    <ERPBtn size="sm" variant="danger" onClick={()=>removeWorkItem(item)} title="Remove item (history is kept)">
+                      <Trash2 size={11} />
+                    </ERPBtn>
+                  </div>
+
+                  {open && (
+                    <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:8, display:'flex', flexDirection:'column', gap:6 }}>
+                      {hist.length === 0 && <div style={{ fontSize:10, color:C.muted }}>No history yet.</div>}
+                      {hist.map((h, i) => (
+                        <div key={i} style={{ display:'flex', gap:8, fontSize:10, lineHeight:1.45 }}>
+                          <span style={{ color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{fmtWhen(h.at)}</span>
+                          <span style={{ color:C.subtle, flex:1 }}>{h.text}</span>
+                          {h.by && <span style={{ color:C.muted, flexShrink:0 }}>{h.by}</span>}
+                        </div>
+                      ))}
+                      <div style={{ display:'flex', gap:6, marginTop:2 }}>
+                        <input
+                          value={workDraft[item.id] || ''}
+                          onChange={e=>setWorkDraft(p=>({ ...p, [item.id]:e.target.value }))}
+                          onKeyDown={e=>{ if (e.key === 'Enter') addWorkNote(item); }}
+                          placeholder="Add a progress note — what was done today…"
+                          style={{
+                            flex:1, background:'rgba(10,24,56,0.9)', border:`1px solid ${C.border}`,
+                            borderRadius:9, padding:'7px 10px', color:C.text, fontSize:11, outline:'none',
+                          }}
+                        />
+                        <ERPBtn size="sm" variant="success" onClick={()=>addWorkNote(item)}>
+                          <Plus size={11} /> Note
+                        </ERPBtn>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
+            <span style={{ fontSize:10, color:C.muted }}>
+              Progress {modalWork.length ? Math.round((modalDone / modalWork.length) * 100) : 0}%
+            </span>
+            <ERPBtn size="sm" variant="secondary" onClick={()=>setWorkFor(null)}>Close</ERPBtn>
           </div>
         </div>
       </ERPModal>

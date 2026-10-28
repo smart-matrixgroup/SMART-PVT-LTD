@@ -259,6 +259,11 @@ export default function ERPInvoices() {
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20`, maxWidth: 200 }}>
                       <span style={{ fontSize: 11, color: C.subtle, overflow: 'hidden', display: 'block', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{inv.description}</span>
+                      {inv.quotationNo && (
+                        <div style={{ fontSize: 9.5, color: C.muted, marginTop: 2 }}>
+                          from {inv.quotationNo}{inv.receiptNo ? ` · ${inv.receiptNo}` : ''}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <span style={{ fontSize: 10, color: C.muted }}>{inv.milestone || '—'}</span>

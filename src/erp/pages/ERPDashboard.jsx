@@ -135,7 +135,7 @@ export default function ERPDashboard() {
     },
     returnedSheets > 0 && {
       id: 'sheets', icon: '📄', accent: '#00D9FF', count: returnedSheets,
-      title: 'Work sheets returned by staff', body: 'Ready to download or import',
+      title: 'Work sheets returned by staff', body: 'Ready to review, approve or import',
       actionLabel: 'Review', onAction: () => navigate('/erp/staff?tab=updates'),
     },
   ].filter(Boolean);

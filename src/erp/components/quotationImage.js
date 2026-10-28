@@ -45,6 +45,9 @@ export async function renderQuotationImageBlob(quotation, bank) {
   }
   const d = buildDoc(quotation, bank || null);
   const canvas = document.createElement('canvas');
+  // Acquired before renderTemplate so the context is CPU-backed: the renderer
+  // reads pixel blocks back to lift the sample text off the letterhead.
+  canvas.getContext('2d', { willReadFrequently: true });
   renderTemplate(canvas, tpl, {
     ...d,
     shots: { laptop: laptop || null, phone: phone || null },

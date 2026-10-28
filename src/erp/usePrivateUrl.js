@@ -10,8 +10,17 @@ import { getStorage, ref, getBytes } from 'firebase/storage';
 //  only the Storage PATH on the document and reads the bytes through the
 //  SDK on demand — which makes the security rules run on every single
 //  view — then shows a blob: URL that lives in this tab's memory only.
+//
+//  `rev` (a doc's renderImage.savedAt) is what makes a re-painted file refresh:
+//  a quotation letterhead is OVERWRITTEN at the same path, so the path alone
+//  cannot say "the bytes behind me changed", and an edited quotation would keep
+//  showing its old picture until the page was reloaded.
 // ─────────────────────────────────────────────────────────────────
-export function usePrivateUrl(path, enabled = true) {
+// Firestore hands back a NEW Timestamp object on every snapshot, so a doc field
+// cannot be used as `rev` directly — this flattens one to a stable scalar.
+export const revOf = (v) => (v == null ? '' : v.seconds != null ? `${v.seconds}:${v.nanoseconds || 0}` : String(v));
+
+export function usePrivateUrl(path, enabled = true, rev = '') {
   const [url,  setUrl]  = useState('');
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
@@ -39,7 +48,7 @@ export function usePrivateUrl(path, enabled = true) {
       }
     })();
     return () => { alive = false; if (created) URL.revokeObjectURL(created); };
-  }, [path, enabled]);
+  }, [path, enabled, rev]);
 
   return { url, busy, err };
 }
