@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDocs,
+  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, getDocs,
   query, where, serverTimestamp
 } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -8,13 +8,16 @@ import { db, auth, isFirebaseConfigured, createClientAuthAccount } from '../../c
 import { useAuth } from '../../context/AuthContext';
 import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
-  ERPModal, ERPInput, ERPEmpty, ERPAvatar,
+  ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
 import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
+import { nextNumber } from '../../staff/staffUtils';
+import { saveClientStatementPdf, saveClientsRosterPdf } from '../utils/clientReportPdf';
 import {
   Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText, Pencil, Trash2,
-  Key, Shield, CheckCircle2, RotateCcw, MapPin, ListChecks, History
+  Key, Shield, CheckCircle2, RotateCcw, MapPin, ListChecks, History,
+  Link2, Copy, ExternalLink, Inbox, Send, UserPlus, Download
 } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
@@ -70,7 +73,40 @@ const DEV_WORK = {
   ],
 };
 
-const EMPTY_FORM = { name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'' };
+const EMPTY_FORM = { name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'',
+  // Optional first project — the client and their project are created together,
+  // so a brand-new client is never left with an empty project list.
+  projTitle:'', projService:'', projStatus:'requirements_pending' };
+
+const EMPTY_PROJECT = { title:'', serviceType:'', status:'requirements_pending' };
+const PROJECT_STATUS = [
+  { value:'requirements_pending', label:'Requirements Pending' },
+  { value:'quotation_sent',       label:'Quotation Sent' },
+  { value:'quotation_accepted',   label:'Quotation Accepted' },
+  { value:'advance_paid',         label:'Advance Paid' },
+  { value:'In Progress',          label:'In Progress' },
+  { value:'Completed',            label:'Completed' },
+];
+
+// Portfolio-request link token. 12 random bytes → base36, short enough to read
+// out over the phone but not guessable (the link is the only access control
+// the public form has).
+function newLinkToken() {
+  const bytes = new Uint8Array(12);
+  try { (window.crypto || window.msCrypto).getRandomValues(bytes); }
+  catch { for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); }
+  return Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 14);
+}
+const linkUrl = (token) => `${window.location.origin}/portfolio/${token}`;
+// The owner picks the link address themselves (e.g. …/portfolio/lovecake) —
+// readable in WhatsApp, and the same address stays theirs on every resend.
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/;
+const slugify = (v) => String(v || '').toLowerCase().trim()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+// Where the owner copies/shows the link. They may point their own short link
+// (or domain) at the form; the form itself always lives at linkUrl(token).
+const shareUrl = (l) => (l?.publicUrl || '').trim() || linkUrl(l?.token || '');
+const monthYear = () => new Date().toLocaleDateString('en-GB', { month:'long', year:'numeric' });
 
 async function countWhere(col, field, value) {
   const snap = await getDocs(query(collection(db, col), where(field, '==', value)));
@@ -137,6 +173,32 @@ export default function ERPClients() {
   const [workOpen,  setWorkOpen]  = useState({});   // itemId -> history expanded
   const [workDraft, setWorkDraft] = useState({});   // itemId -> progress note being typed
 
+  // ── Portfolio request links ───────────────────────────────────────
+  // A saved link owns the URL (portfolioLinks/{token}); the public form posts
+  // to portfolioRequests, and every submission becomes a client + a Portfolio
+  // project here. Links live in their own collection so they survive and can
+  // be reused for a second person, and so "this came from the manual link"
+  // stays distinguishable from QR / walk-in leads.
+  const [links,      setLinks]      = useState([]);
+  const [linksOpen,  setLinksOpen]  = useState(false);
+  const [linkLabel,  setLinkLabel]  = useState('');
+  const [linkSlug,   setLinkSlug]   = useState('');
+  const [linkExternal, setLinkExternal] = useState('');
+  const [showOwnLink, setShowOwnLink] = useState(false);
+  const [linkBusy,   setLinkBusy]   = useState(false);
+  const [linkErr,    setLinkErr]    = useState('');
+  const [reqs,       setReqs]       = useState([]);
+  const [reqView,    setReqView]    = useState(null);
+  const [noPortal,   setNoPortal]   = useState(false); // clipboard blocked → show the URL to copy by hand
+  // Which first project the client-detail "New Project" button is creating
+  const [projOpen,   setProjOpen]   = useState(false);
+  const [projForm,   setProjForm]   = useState(EMPTY_PROJECT);
+  const [projErr,    setProjErr]    = useState('');
+  const converting = useRef(new Set());
+  // The auto-conversion effect must not retry a failing request in a loop: if
+  // the reset-to-'new' write echoes back, the same id would run again forever.
+  const autoTried = useRef(new Set());
+
   useEffect(() => {
     if (!live) return;
     const unsubC = onSnapshot(collection(db, 'clients'), snap => {
@@ -151,7 +213,15 @@ export default function ERPClients() {
     const unsubP = onSnapshot(collection(db, 'projects'), snap => {
       setProjects(snap.docs.map(d => ({ id:d.id, ...d.data() })));
     }, err => console.error('Projects listener error', err));
-    return () => { unsubC(); unsubP(); };
+    const unsubL = onSnapshot(collection(db, 'portfolioLinks'), snap => {
+      setLinks(snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a, b) => String(b.createdAt?.seconds || 0).localeCompare(String(a.createdAt?.seconds || 0))));
+    }, err => console.error('Portfolio links listener error', err));
+    const unsubR = onSnapshot(collection(db, 'portfolioRequests'), snap => {
+      setReqs(snap.docs.map(d => ({ id:d.id, ...d.data() }))
+        .sort((a, b) => String(b.createdAt?.seconds || 0).localeCompare(String(a.createdAt?.seconds || 0))));
+    }, err => console.error('Portfolio requests listener error', err));
+    return () => { unsubC(); unsubP(); unsubL(); unsubR(); };
   }, [live]);
 
   const filtered = clients.filter(c =>
@@ -160,11 +230,14 @@ export default function ERPClients() {
     (c.email||'').toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectedProjects = selected
-    ? (live
-        ? projects.filter(p => p.clientId === selected.id)
-        : (DEV_PROJECTS[selected.id] || []))
-    : [];
+  // Live projects all come from the listener, so the count is always the real
+  // number of docs — not a stored counter that can drift after a delete.
+  const projectsOf = (clientId) => (live
+    ? projects.filter(p => p.clientId === clientId)
+    : [...(DEV_PROJECTS[clientId] || []), ...projects.filter(p => p.clientId === clientId)]);
+  const projectCountOf = (c) => projectsOf(c.id).filter(p => p.status !== 'archived').length;
+
+  const selectedProjects = selected ? projectsOf(selected.id) : [];
 
   const openAdd = () => {
     setEditId(null);
@@ -185,6 +258,9 @@ export default function ERPClients() {
       clientSince: c.clientSince || '',
       createAccount: false,
       password: '',
+      projTitle: '',
+      projService: '',
+      projStatus: 'requirements_pending',
     });
     setSaveError('');
     setShowForm(true);
@@ -241,28 +317,38 @@ export default function ERPClients() {
             authUid: uid,
             ...payload,
             hasPortalAccount: true,
-            projects: 0,
+            projects: form.projTitle.trim() ? 1 : 0,
             invoices: 0,
             createdAt: serverTimestamp(),
           };
           await setDoc(doc(db, 'clients', uid), clientData);
           setClients(p => [clientData, ...p]);
-          setNotice({ kind: 'ok', msg: `Client ${form.name} created with portal login account (${form.email}).` });
+          if (form.projTitle.trim()) {
+            await addProjectFor(uid, payload.name, payload.company, form);
+          }
+          setNotice({ kind: 'ok', msg: `Client ${form.name} created with portal login account (${form.email}).${form.projTitle.trim() ? ' Their project was added too.' : ''}` });
         } else {
           const local = { id: `C${Date.now()}`, projects: 0, invoices: 0, hasPortalAccount: false, ...payload };
           if (live) {
             const ref = await addDoc(collection(db, 'clients'), {
-              ...payload, hasPortalAccount: false, projects: 0, invoices: 0, createdAt: serverTimestamp(),
+              ...payload, hasPortalAccount: false, projects: form.projTitle.trim() ? 1 : 0, invoices: 0, createdAt: serverTimestamp(),
             });
+            local.id = ref.id;
             setClients(p => [{ ...local, id: ref.id }, ...p]);
+            if (form.projTitle.trim()) {
+              await addProjectFor(ref.id, payload.name, payload.company, form);
+            }
           } else {
             setClients(p => [local, ...p]);
+            if (form.projTitle.trim()) {
+              await addProjectFor(local.id, payload.name, payload.company, form);
+            }
           }
           setNotice({
             kind: 'ok',
             msg: form.createAccount && !form.email.trim()
-              ? `Client ${form.name} saved without a portal login (add an email later to create one).`
-              : `Client ${form.name} saved.`,
+              ? `Client ${form.name} saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''} — no portal login yet (add an email later to create one).`
+              : `Client ${form.name} saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''}.`,
           });
         }
       }
@@ -356,18 +442,31 @@ export default function ERPClients() {
         pays = Number(delTarget.invoices || 0);
       }
 
-      if (quotes + projs + pays > 0) {
+      // Money is never destroyed: a client with quotations or payments must be
+      // archived, because that history is what receipts and invoices point at.
+      // Projects carry no money of their own, so they are archived and the
+      // client record can go — which is what a test/mistaken client needs.
+      if (quotes + pays > 0) {
         setDelError(
-          `Cannot permanently delete: this client has ${projs} project(s), ${quotes} quotation(s), and ${pays} payment record(s). Archive instead to keep history.`
+          `Cannot permanently delete: this client has ${quotes} quotation(s) and ${pays} payment record(s). Archive instead to keep that money history.`
         );
         setDelBusy(false);
         return;
+      }
+
+      if (live && projs > 0) {
+        const linked = await getDocs(query(collection(db, 'projects'), where('clientId', '==', delTarget.id)));
+        await Promise.all(linked.docs.map(d => updateDoc(d.ref, { status: 'archived', archivedAt: serverTimestamp() })));
+        setProjects(p => p.map(pr => pr.clientId === delTarget.id ? { ...pr, status: 'archived' } : pr));
       }
 
       setClients(p => p.filter(c => c.id !== delTarget.id));
       if (selected?.id === delTarget.id) setSelected(null);
       if (live) await deleteDoc(doc(db, 'clients', delTarget.id));
       setDelTarget(null);
+      setNotice({ kind:'ok', msg: projs > 0
+        ? `Client deleted. ${projs} project(s) were archived and stay in the Projects page.`
+        : 'Client deleted.' });
     } catch (err) {
       console.error(err);
       setDelError(err.message || 'Delete failed.');
@@ -389,6 +488,235 @@ export default function ERPClients() {
       setDelError(err.message || 'Archive failed.');
     } finally {
       setDelBusy(false);
+    }
+  };
+
+  // ── Portfolio request links + submissions ───────────────────────
+  const createPortfolioLink = async () => {
+    if (!live) { setLinkErr('Links need Firebase — connect the project to create a public URL.'); return; }
+    const label = linkLabel.trim() || `Portfolio link — ${new Date().toLocaleDateString('en-GB')}`;
+    const wantSlug = slugify(linkSlug || linkLabel);
+    if (linkSlug.trim() && !SLUG_RE.test(wantSlug)) {
+      setLinkErr('Link address must be 3–40 characters: letters, numbers and dashes.');
+      return;
+    }
+    const external = linkExternal.trim();
+    if (external && !/^https?:\/\/\S+\.\S+/.test(external)) {
+      setLinkErr('Your own link must start with https:// (e.g. https://smart.lk/portfolio).');
+      return;
+    }
+    setLinkBusy(true);
+    setLinkErr('');
+    const token = wantSlug || newLinkToken();
+    try {
+      // Never overwrite another link — the address is the whole access control.
+      const existing = await getDoc(doc(db, 'portfolioLinks', token));
+      if (existing.exists()) {
+        setLinkErr(`“${token}” is already used by another link — choose a different address.`);
+        setLinkBusy(false);
+        return;
+      }
+      const data = {
+        token, label, publicUrl: external, service: 'Portfolio', active: true, submissions: 0,
+        createdBy: adminName, createdAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'portfolioLinks', token), data);
+      setLinks(p => [{ ...data, id: token, createdAt: { seconds: Date.now() / 1000 } }, ...p]);
+      setLinkLabel(''); setLinkSlug(''); setLinkExternal('');
+      setNotice({ kind:'ok', msg:`Portfolio link ready — send it to the client: ${external || linkUrl(token)}` });
+    } catch (e) {
+      console.error(e);
+      setLinkErr(
+        e.code === 'permission-denied'
+          ? "Permission denied — the live Firestore rules don't allow portfolioLinks for this account yet. Deploy them (firebase deploy --only firestore:rules) and sign in as an admin."
+          : (e.message || 'Could not create the link.')
+      );
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const copyLink = async (l) => {
+    const url = shareUrl(l);
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice({ kind:'ok', msg:'Link copied — paste it in WhatsApp or email.' });
+    } catch {
+      setNoPortal(true);
+    }
+  };
+
+  const toggleLink = async (link) => {
+    const active = !(link.active !== false);
+    setLinks(p => p.map(l => l.id === link.id ? { ...l, active } : l));
+    if (live) {
+      try { await updateDoc(doc(db, 'portfolioLinks', link.id), { active }); }
+      catch (e) { console.error(e); setLinkErr('Could not update that link.'); }
+    }
+  };
+
+  // Turn one submission into a real client + their Portfolio project. Runs
+  // automatically for every new request, and again from the inbox button, so a
+  // missed run (page closed) is never lost.
+  const convertPortfolioRequest = async (r, opts = {}) => {
+    if (!r || r.clientId || converting.current.has(r.id)) return;
+    converting.current.add(r.id);
+    try {
+      if (live) await updateDoc(doc(db, 'portfolioRequests', r.id), { status:'converting', updatedAt: serverTimestamp() });
+      const clientData = {
+        name: r.name || 'Client',
+        company: r.company || '',
+        email: r.email || '',
+        loginEmail: r.email || '',
+        phone: r.phone || '',
+        address: r.address || '',
+        clientSince: r.submittedLabel || monthYear(),
+        status: 'New',
+        hasPortalAccount: false,
+        projects: 1,
+        invoices: 0,
+        intakeSource: 'portfolio-link',
+        intakeRequestId: r.id,
+        intakeToken: r.token || '',
+        intakeLabel: r.linkLabel || '',
+        // Every answer from the requirements form (skills, projects, design
+        // prefs, hosting, …) is kept on the client record so nothing the
+        // client typed is lost after they are added.
+        requirements: r.answers || null,
+      };
+      let clientId = `C${Date.now()}`;
+      let projectId = '';
+      let existingClient = null;
+      if (live) {
+        // Same person filling the form twice (or already a client) must not
+        // become a duplicate — match their email/phone first and attach the
+        // submitted project to the record we already have.
+        const email = String(r.email || '').trim().toLowerCase();
+        const phoneDigits = String(r.phone || '').replace(/\D/g, '');
+        if (email) {
+          const byEmail = await getDocs(query(collection(db, 'clients'), where('email', '==', email)));
+          if (!byEmail.empty) existingClient = { id: byEmail.docs[0].id, ...byEmail.docs[0].data() };
+        }
+        if (!existingClient && phoneDigits) {
+          const byPhone = await getDocs(query(collection(db, 'clients'), where('phone', '==', r.phone)));
+          if (!byPhone.empty) existingClient = { id: byPhone.docs[0].id, ...byPhone.docs[0].data() };
+        }
+      }
+      if (live && existingClient) {
+        clientId = existingClient.id;
+        await updateDoc(doc(db, 'clients', clientId), {
+          projects: (Number(existingClient.projects) || 0) + 1,
+          intakeRequestId: r.id,
+          updatedAt: serverTimestamp(),
+        });
+        setClients(p => p.map(c => c.id === clientId
+          ? { ...c, projects: (Number(c.projects) || 0) + 1, intakeRequestId: r.id } : c));
+      } else if (live) {
+        const cref = await addDoc(collection(db, 'clients'), { ...clientData, createdAt: serverTimestamp() });
+        clientId = cref.id;
+        setClients(p => [{ ...clientData, id: cref.id }, ...p]);
+      }
+      if (live) {
+        const projectData = {
+          projectCode: await nextNumber('projects', 'PR'),
+          clientId,
+          clientName: clientData.name,
+          clientCompany: clientData.company,
+          title: r.projectTitle || 'Portfolio',
+          serviceType: 'Portfolio',
+          status: 'requirements_pending',
+          completion: 0,
+          milestones: [],
+          description: r.description || '',
+          budget: r.budget || '',
+          deadline: r.deadline || '',
+          intakeRequestId: r.id,
+          requirements: r.answers || null,
+          createdAt: serverTimestamp(),
+        };
+        const pref = await addDoc(collection(db, 'projects'), projectData);
+        projectId = pref.id;
+        await updateDoc(doc(db, 'portfolioRequests', r.id), {
+          status: 'added', clientId, projectId, addedAt: serverTimestamp(),
+        });
+      }
+      setReqs(p => p.map(x => x.id === r.id ? { ...x, status:'added', clientId, projectId } : x));
+      if (!opts.silent) {
+        setNotice({ kind:'ok', msg: existingClient
+          ? `${clientData.name} was already a client — the portfolio project was attached to their record.`
+          : `${clientData.name} added as a client with a Portfolio project.` });
+      }
+    } catch (e) {
+      console.error('portfolio request → client failed', e);
+      if (live) {
+        try { await updateDoc(doc(db, 'portfolioRequests', r.id), { status:'new' }); } catch { /* retried on refresh */ }
+      }
+      setNotice({ kind:'error', msg: e.message || 'Could not add that portfolio request as a client.' });
+    } finally {
+      converting.current.delete(r.id);
+    }
+  };
+
+  // A submission waiting for review is turned into a client automatically, so
+  // the client module carries everything the person typed without a manual
+  // re-entry step. The raw form stays in portfolioRequests for "what did they
+  // actually fill in".
+  useEffect(() => {
+    if (!live) return;
+    reqs.filter(r => r.status === 'new' && !r.clientId)
+      .forEach(r => {
+        if (autoTried.current.has(r.id) || converting.current.has(r.id)) return;
+        autoTried.current.add(r.id);
+        convertPortfolioRequest(r, { silent: true });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reqs, live]);
+
+  // ── Save the optional first project with a new client ────────────
+  const addProjectFor = async (clientId, clientName, clientCompany, src = projForm) => {
+    const title = (src.projTitle ?? src.title ?? '').trim();
+    if (!title || !clientId) return null;
+    const data = {
+      projectCode: live
+        ? await nextNumber('projects', 'PR')
+        : `PR-${new Date().getFullYear()}-${String((projects?.length || 0) + 1).padStart(4, '0')}`,
+      clientId,
+      clientName,
+      clientCompany,
+      title,
+      serviceType: (src.projService ?? src.serviceType ?? '').trim(),
+      status: src.projStatus ?? src.status ?? 'requirements_pending',
+      completion: 0,
+      milestones: [],
+      createdAt: serverTimestamp(),
+    };
+    if (live) {
+      const ref = await addDoc(collection(db, 'projects'), data);
+      setProjects(p => [{ ...data, id: ref.id }, ...p]);
+      return ref.id;
+    }
+    setProjects(p => [{ ...data, id: `P${Date.now()}`, createdAt: new Date().toISOString() }, ...p]);
+    return null;
+  };
+
+  const saveProjectForSelected = async () => {
+    if (!selected) return;
+    if (!projForm.title.trim()) { setProjErr('Project title is required.'); return; }
+    setProjErr('');
+    const n = projectsOf(selected.id).length + 1;
+    try {
+      await addProjectFor(selected.id, selected.name, selected.company, projForm);
+      // Keep the denormalised counter on the client doc roughly in step; the
+      // UI itself counts project docs, so this is only for other screens.
+      setClients(p => p.map(c => c.id === selected.id ? { ...c, projects: n } : c));
+      setSelected(s => (s && s.id === selected.id ? { ...s, projects: n } : s));
+      if (live) updateDoc(doc(db, 'clients', selected.id), { projects: n }).catch(() => {});
+      setProjOpen(false);
+      setProjForm(EMPTY_PROJECT);
+      setNotice({ kind:'ok', msg:`Project "${projForm.title.trim()}" added to ${selected.name}.` });
+    } catch (e) {
+      console.error(e);
+      setProjErr(e.message || 'Could not save the project.');
     }
   };
 
@@ -498,6 +826,33 @@ export default function ERPClients() {
     }
   };
 
+  // Client report exports — a statement for the opened client and one roster
+  // sheet for all clients. Both write a real PDF file, not a print dialog.
+  const clientReportPdf = () => {
+    if (!selected) return;
+    try {
+      saveClientStatementPdf({
+        client: selected,
+        projects: selectedProjects,
+        work: workOf(selected).filter(w => !w.removed),
+        adminName,
+      });
+      setNotice({ kind: 'ok', msg: `Client report for ${selected.name} saved as a PDF.` });
+    } catch (err) {
+      console.error(err);
+      setNotice({ kind: 'error', msg: err.message || 'Could not build that PDF.' });
+    }
+  };
+  const clientsRosterPdf = () => {
+    try {
+      saveClientsRosterPdf({ clients: filtered, projectCountOf, workOf, adminName });
+      setNotice({ kind: 'ok', msg: `Clients report saved as a PDF (${filtered.length} clients).` });
+    } catch (err) {
+      console.error(err);
+      setNotice({ kind: 'error', msg: err.message || 'Could not build that PDF.' });
+    }
+  };
+
   // Derived values for the profile summary + the tracker modal.
   const selWork       = workOf(selected).filter(w => !w.removed);
   const selWorkDone   = selWork.filter(w => w.status === 'done').length;
@@ -546,10 +901,57 @@ export default function ERPClients() {
         <ERPBtn variant="primary" onClick={openAdd}>
           <Plus size={13} /> Add Client
         </ERPBtn>
+        <ERPBtn variant="secondary" onClick={() => { setLinkErr(''); setLinksOpen(true); }}>
+          <Link2 size={13} /> Portfolio Link
+        </ERPBtn>
+        <ERPBtn variant="secondary" onClick={clientsRosterPdf} disabled={!filtered.length}>
+          <Download size={13} /> Clients Report PDF
+        </ERPBtn>
         <div style={{ marginLeft:'auto', fontSize:12, color:C.muted }}>
           {filtered.length} client{filtered.length !== 1 ? 's' : ''}
         </div>
       </div>
+
+      {/* ── Portfolio requests — what clients filled in via the saved link ── */}
+      {reqs.length > 0 && (
+        <ERPPanel>
+          <ERPPanelHeader title="Portfolio Requests" icon={<Inbox size={15} style={{ color:C.cyan }} />}
+            action={<span style={{ fontSize:10, color:C.muted }}>
+              {reqs.filter(r => !r.clientId).length} waiting · link submissions
+            </span>} />
+          <div style={{ display:'flex', flexDirection:'column' }}>
+            {reqs.slice(0, 6).map((r, i) => (
+              <div key={r.id} style={{
+                display:'flex', alignItems:'center', gap:12, padding:'11px 16px', flexWrap:'wrap',
+                borderTop: i > 0 ? `1px solid ${C.border}25` : 'none',
+              }}>
+                <ERPAvatar name={r.name || 'Client'} color={COLORS[i % COLORS.length]} size={30} />
+                <div style={{ flex:1, minWidth:140 }}>
+                  <div style={{ fontSize:12, fontWeight:800, color:C.text }}>
+                    {r.name} {r.company ? <span style={{ fontWeight:600, color:C.muted }}>· {r.company}</span> : null}
+                  </div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>
+                    {r.projectTitle || 'Portfolio'} · {r.linkLabel || (r.token ? `link ${r.token.slice(0, 6)}…` : 'manual link')}
+                    {r.createdAt?.toDate ? ` · ${r.createdAt.toDate().toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}` : ''}
+                  </div>
+                </div>
+                <ERPBadge status={r.clientId ? 'Completed' : 'New'} label={r.clientId ? 'Added' : 'New'} />
+                <ERPBtn size="sm" variant="secondary" onClick={() => setReqView(r)}>
+                  <FileText size={11} /> View form
+                </ERPBtn>
+                {!r.clientId && (
+                  <ERPBtn size="sm" variant="primary" onClick={() => convertPortfolioRequest(r)}>
+                    <UserPlus size={11} /> Add as client
+                  </ERPBtn>
+                )}
+              </div>
+            ))}
+            {reqs.length > 6 && (
+              <div style={{ padding:'9px 16px', fontSize:10, color:C.muted }}>+{reqs.length - 6} older request(s)</div>
+            )}
+          </div>
+        </ERPPanel>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns: selected ? '1fr 380px' : 'repeat(auto-fill,minmax(280px,1fr))', gap:14 }}>
 
@@ -606,7 +1008,7 @@ export default function ERPClients() {
 
             <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${C.border}30`, display:'flex', gap:16 }}>
               {[
-                { icon:'📁', label:'Projects', val:c.projects||0 },
+                { icon:'📁', label:'Projects', val:projectCountOf(c) },
                 { icon:'🧾', label:'Invoices', val:c.invoices||0 },
                 { icon:'📅', label:'Since', val:c.clientSince },
               ].map(({ icon, label, val }) => (
@@ -691,7 +1093,7 @@ export default function ERPClients() {
               )}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
                 {[
-                  { label:'Projects', val:selected.projects||selectedProjects.length, color:'#0066FF' },
+                  { label:'Projects', val:projectCountOf(selected), color:'#0066FF' },
                   { label:'Invoices', val:selected.invoices||0, color:'#18C77A' },
                   { label:'Messages', val:'—', color:'#8B5CF6' },
                 ].map(({ label, val, color }) => (
@@ -705,9 +1107,24 @@ export default function ERPClients() {
                 ))}
               </div>
 
-              {selectedProjects.length > 0 && (
-                <div>
-                  <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:8 }}>Projects</div>
+              <div>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                  <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.8px' }}>Projects</div>
+                  <span style={{ fontSize:10, fontWeight:700, color:C.muted }}>{selectedProjects.length}</span>
+                </div>
+                {selectedProjects.length === 0 ? (
+                  <div style={{
+                    padding:'12px 14px', borderRadius:10, textAlign:'center',
+                    background:'rgba(10,24,56,0.6)', border:`1px dashed ${C.border}`, fontSize:11, color:C.muted, lineHeight:1.6,
+                  }}>
+                    No projects yet for this client.
+                    <div style={{ marginTop:8 }}>
+                      <ERPBtn size="sm" variant="primary" onClick={() => { setProjForm(EMPTY_PROJECT); setProjErr(''); setProjOpen(true); }}>
+                        <Plus size={11} /> Add their first project
+                      </ERPBtn>
+                    </div>
+                  </div>
+                ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                     {selectedProjects.map(p => (
                       <div key={p.id} style={{
@@ -715,7 +1132,12 @@ export default function ERPClients() {
                         background:'rgba(10,24,56,0.6)', border:`1px solid ${C.border}30`,
                       }}>
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                          <span style={{ fontSize:11, fontWeight:700, color:C.text }}>{p.title}</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:C.text }}>
+                            {p.title}
+                            {p.projectCode && (
+                              <span style={{ fontSize:9.5, color:C.cyan, fontFamily:'monospace', marginLeft:6 }}>{p.projectCode}</span>
+                            )}
+                          </span>
                           <ERPBadge status={p.status} size="sm" />
                         </div>
                         <ERPProgress value={p.completion} />
@@ -723,6 +1145,20 @@ export default function ERPClients() {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+
+              {/* Where this client came from — a portfolio-link submission is
+                  labelled so it is never confused with a walk-in or QR lead. */}
+              {selected.intakeSource === 'portfolio-link' && (
+                <div style={{
+                  padding:'10px 12px', borderRadius:10,
+                  background:'rgba(0,217,255,0.06)', border:`1px solid ${C.cyan}30`,
+                  fontSize:10.5, color:C.subtle, lineHeight:1.6,
+                }}>
+                  <span style={{ fontWeight:800, color:C.cyan }}>From portfolio link</span>
+                  {selected.intakeLabel ? ` · ${selected.intakeLabel}` : ''}
+                  {selected.intakeToken ? <span style={{ color:C.muted }}> · {selected.intakeToken.slice(0, 6)}…</span> : null}
                 </div>
               )}
 
@@ -796,8 +1232,11 @@ export default function ERPClients() {
                 <ERPBtn variant="danger" onClick={()=>requestDelete(selected)} style={{ justifyContent:'center' }}>
                   <Trash2 size={13} /> Delete Client
                 </ERPBtn>
-                <ERPBtn variant="primary" style={{ justifyContent:'center' }}>
+                <ERPBtn variant="primary" onClick={() => { setProjForm(EMPTY_PROJECT); setProjErr(''); setProjOpen(true); }} style={{ justifyContent:'center' }}>
                   <FolderKanban size={13} /> New Project
+                </ERPBtn>
+                <ERPBtn variant="secondary" onClick={clientReportPdf} style={{ justifyContent:'center' }}>
+                  <Download size={13} /> Client Report PDF
                 </ERPBtn>
                 <ERPBtn variant="secondary" style={{ justifyContent:'center' }}>
                   <FileText size={13} /> Create Invoice
@@ -835,6 +1274,38 @@ export default function ERPClients() {
           </div>
           <ERPInput label="Address" value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))} placeholder="No, street, city" />
           <ERPInput label="Client since" value={form.clientSince} onChange={e=>setForm(p=>({...p,clientSince:e.target.value}))} placeholder="e.g. March 2024" />
+
+          {!editId && (
+            <div style={{
+              padding:'12px 14px', borderRadius:10,
+              background:'rgba(139,92,246,0.07)', border:`1px solid ${C.violet}35`,
+              display:'flex', flexDirection:'column', gap:10,
+            }}>
+              <div style={{ fontSize:11, fontWeight:800, color:C.text, display:'flex', alignItems:'center', gap:6 }}>
+                <FolderKanban size={13} style={{ color:C.violet }} /> First project (optional)
+              </div>
+              <div style={{ fontSize:10.5, color:C.muted, marginTop:-4, lineHeight:1.5 }}>
+                Fill this and the project is created with the client, so their profile never
+                starts with an empty Projects section.
+              </div>
+              <ERPInput label="Project title" value={form.projTitle}
+                onChange={e=>setForm(p=>({...p,projTitle:e.target.value}))}
+                placeholder="e.g. Portfolio Website" />
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <ERPInput label="Service" value={form.projService}
+                  onChange={e=>setForm(p=>({...p,projService:e.target.value}))}
+                  placeholder="e.g. Portfolio" />
+                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                  <span style={{ fontSize:10.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px' }}>Status</span>
+                  <select value={form.projStatus} onChange={e=>setForm(p=>({...p,projStatus:e.target.value}))}
+                    style={{ background:'rgba(10,24,56,0.9)', border:`1px solid ${C.border}`, borderRadius:10,
+                      padding:'9px 10px', color:C.text, fontSize:12, outline:'none', width:'100%' }}>
+                    {PROJECT_STATUS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
 
           {!editId && (
             <div style={{
@@ -884,7 +1355,9 @@ export default function ERPClients() {
       <ERPModal isOpen={!!delTarget} onClose={()=>{setDelTarget(null);setDelError('');}} title="Delete Client?" width={460}>
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           <div style={{ fontSize:12, color:C.muted, lineHeight:1.5 }}>
-            Permanently delete <strong style={{color:C.text}}>{delTarget?.name}</strong>? If this client has quotations, projects, or payments, deletion is blocked so history stays intact.
+            Permanently delete <strong style={{color:C.text}}>{delTarget?.name}</strong>? Their projects
+            are archived and stay on the Projects page. If this client has quotations or payment
+            records, deletion is blocked — archive them instead so the money history is kept.
           </div>
           {delError && (
             <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
@@ -904,6 +1377,207 @@ export default function ERPClients() {
             )}
           </div>
         </div>
+      </ERPModal>
+
+      {/* ── New project for the selected client ─────────────────── */}
+      <ERPModal isOpen={projOpen} onClose={() => setProjOpen(false)} title={`New Project — ${selected?.name || ''}`} width={460}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <ERPInput label="Project title" value={projForm.title} required
+            onChange={e=>setProjForm(p=>({ ...p, title:e.target.value }))}
+            placeholder="e.g. Portfolio Website" />
+          <ERPInput label="Service type" value={projForm.serviceType}
+            onChange={e=>setProjForm(p=>({ ...p, serviceType:e.target.value }))}
+            placeholder="e.g. Portfolio" />
+          <ERPSelect label="Status" value={projForm.status}
+            onChange={e=>setProjForm(p=>({ ...p, status:e.target.value }))}
+            options={PROJECT_STATUS} />
+          {projErr && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {projErr}
+            </div>
+          )}
+          <div style={{ display:'flex', gap:10 }}>
+            <ERPBtn variant="secondary" onClick={() => setProjOpen(false)} style={{ flex:1, justifyContent:'center' }}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" onClick={saveProjectForSelected} style={{ flex:1, justifyContent:'center' }}>
+              <Plus size={12} /> Add Project
+            </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* ── Portfolio request links (saved separately) ───────────── */}
+      <ERPModal isOpen={linksOpen} onClose={() => setLinksOpen(false)} title="Portfolio Request Links" width={640}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <ERPInput label="Link name" value={linkLabel} required
+              onChange={e=>{ setLinkLabel(e.target.value); if (!linkSlug) setLinkSlug(slugify(e.target.value)); }}
+              placeholder="e.g. For Nimal — Portfolio" />
+            <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+              <span style={{ fontSize:10.5, fontWeight:700, color:C.subtle }}>
+                Web address <span style={{ fontWeight:500, color:C.muted }}>(auto from the name)</span>
+              </span>
+              <div style={{ display:'flex', alignItems:'center', background:'rgba(10,24,56,0.8)',
+                border:`1px solid ${C.border}`, borderRadius:10, padding:'0 10px', overflow:'hidden' }}>
+                <span style={{ fontSize:10.5, color:C.muted, whiteSpace:'nowrap' }}>
+                  {window.location.origin}/portfolio/
+                </span>
+                <input value={linkSlug} onChange={e=>setLinkSlug(slugify(e.target.value))}
+                  placeholder={slugify(linkLabel) || 'lovecake'}
+                  style={{ flex:1, minWidth:80, background:'none', border:'none', outline:'none',
+                    color:C.cyan, fontSize:11.5, padding:'9px 2px' }} />
+              </div>
+              <div style={{ fontSize:10, color:C.muted, lineHeight:1.5, wordBreak:'break-all' }}>
+                Client will open: <b style={{ color:C.cyan, fontFamily:'monospace' }}>
+                  {slugify(linkSlug || linkLabel)
+                    ? linkUrl(slugify(linkSlug || linkLabel))
+                    : `${window.location.origin}/portfolio/<your-name>`}
+                </b>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowOwnLink(v => !v)}
+              style={{ alignSelf:'flex-start', background:'none', border:'none', padding:0,
+                cursor:'pointer', fontSize:10.5, fontWeight:700, color:C.cyan }}>
+              {showOwnLink ? '− Hide my own web address' : '+ Send my own web address instead (optional)'}
+            </button>
+            {showOwnLink && (
+              <ERPInput label="My own link (optional)" value={linkExternal}
+                onChange={e=>setLinkExternal(e.target.value)}
+                placeholder="https://smart.lk/lovecake" />
+            )}
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-end' }}>
+            <ERPBtn variant="primary" onClick={createPortfolioLink} disabled={linkBusy || !linkLabel.trim()}>
+              <Link2 size={13} /> {linkBusy ? 'Creating…' : 'Create link'}
+            </ERPBtn>
+          </div>
+
+          {linkErr && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {linkErr}
+            </div>
+          )}
+
+          {noPortal && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(0,102,255,0.08)', border:`1px solid ${C.blue}40`, fontSize:11, color:C.subtle, lineHeight:1.6 }}>
+              Clipboard is blocked in this browser — select and copy the link below by hand.
+            </div>
+          )}
+
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {links.length === 0 && (
+              <div style={{ padding:'16px 14px', borderRadius:12, textAlign:'center', background:'rgba(10,24,56,0.5)', border:`1px dashed ${C.border}`, fontSize:11.5, color:C.muted }}>
+                No links yet — create the first one above.
+              </div>
+            )}
+            {links.map(l => {
+              const used = reqs.filter(r => r.token === l.token).length;
+              const url = shareUrl(l);
+              return (
+                <div key={l.id} style={{
+                  padding:'11px 12px', borderRadius:12, background:'rgba(10,24,56,0.75)',
+                  border:`1px solid ${C.border}`, display:'flex', flexDirection:'column', gap:8,
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <span style={{ fontSize:12, fontWeight:800, color:C.text }}>{l.label || 'Portfolio link'}</span>
+                    <ERPBadge status={l.active !== false ? 'active' : 'inactive'} label={l.active !== false ? 'Active' : 'Off'} />
+                    <span style={{ fontSize:10, color:C.muted, marginLeft:'auto' }}>
+                      {used} submission{used === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <input readOnly value={url} onFocus={e => e.target.select()}
+                    style={{ width:'100%', background:'rgba(4,13,31,0.9)', border:`1px solid ${C.border}`,
+                      borderRadius:8, padding:'7px 10px', color:C.cyan, fontSize:10.5, outline:'none', boxSizing:'border-box' }} />
+                  <a href={linkUrl(l.token)} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize:9.5, color:C.muted, fontVariantNumeric:'tabular-nums', wordBreak:'break-all' }}>
+                    Form: {linkUrl(l.token)}
+                  </a>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    <ERPBtn size="sm" variant="secondary" onClick={() => copyLink(l)}><Copy size={11} /> Copy</ERPBtn>
+                    <a href={`https://wa.me/?text=${encodeURIComponent(`Hi, please fill in your project details here: ${url}`)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:8,
+                        textDecoration:'none', fontSize:10.5, fontWeight:700, color:'#25D366',
+                        background:'rgba(37,211,102,0.1)', border:'1px solid rgba(37,211,102,0.3)' }}>
+                      <Send size={11} /> WhatsApp
+                    </a>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:8,
+                        textDecoration:'none', fontSize:10.5, fontWeight:700, color:'#8CC2FF',
+                        background:'rgba(0,102,255,0.14)', border:'1px solid rgba(0,102,255,0.45)' }}>
+                      <ExternalLink size={11} /> Open
+                    </a>
+                    <button onClick={() => toggleLink(l)}
+                      style={{ marginLeft:'auto', background:'none', border:`1px solid ${C.border}`, borderRadius:8,
+                        padding:'5px 10px', color:C.muted, fontSize:10.5, fontWeight:700, cursor:'pointer' }}>
+                      {l.active !== false ? 'Turn off' : 'Turn on'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display:'flex', justifyContent:'flex-end' }}>
+            <ERPBtn size="sm" variant="secondary" onClick={() => setLinksOpen(false)}>Close</ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* ── The filled form, exactly as the client sent it ───────── */}
+      <ERPModal isOpen={!!reqView} onClose={() => setReqView(null)} title={`Portfolio request — ${reqView?.name || ''}`} width={700}>
+        {reqView && (
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+              <ERPBadge status={reqView.clientId ? 'Completed' : 'New'} label={reqView.clientId ? 'Added as client' : 'Waiting'} />
+              <span style={{ fontSize:10, color:C.muted }}>
+                {reqView.linkLabel || 'Portfolio link'}{reqView.token ? ` · ${reqView.token}` : ''}
+              </span>
+            </div>
+            {reqView.answers && Object.keys(reqView.answers).length ? (
+              <div style={{ display:'flex', flexDirection:'column', gap:9,
+                padding:'12px 14px', borderRadius:10, background:'rgba(4,13,31,0.45)',
+                border:'1px solid rgba(32,52,93,0.8)' }}>
+                {Object.entries(reqView.answers)
+                  .filter(([, v]) => v && String(v).trim())
+                  .map(([label, v]) => (
+                    <div key={label} style={{ display:'flex', gap:12, fontSize:11.5, lineHeight:1.55 }}>
+                      <span style={{ width:132, flexShrink:0, color:C.muted }}>{label}</span>
+                      <span style={{ flex:1, color:C.subtle, fontWeight:600, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{v}</span>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              [
+                ['Name', reqView.name],
+                ['Company', reqView.company],
+                ['Phone / WhatsApp', reqView.phone],
+                ['Email', reqView.email],
+                ['Address', reqView.address],
+                ['Project title', reqView.projectTitle],
+                ['Budget', reqView.budget],
+                ['Deadline', reqView.deadline],
+                ['Reference links', reqView.links],
+                ['Their message', reqView.description],
+              ].filter(([, v]) => v).map(([label, v]) => (
+                <div key={label} style={{ display:'flex', gap:12, fontSize:11.5, lineHeight:1.55 }}>
+                  <span style={{ width:130, flexShrink:0, color:C.muted }}>{label}</span>
+                  <span style={{ flex:1, color:C.subtle, fontWeight:600, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{v}</span>
+                </div>
+              ))
+            )}
+            <div style={{ fontSize:10, color:C.muted }}>
+              Submitted through the saved portfolio link — this is the raw form, kept even after the client is added.
+            </div>
+            <div style={{ display:'flex', gap:10 }}>
+              <ERPBtn variant="secondary" onClick={() => setReqView(null)} style={{ flex:1, justifyContent:'center' }}>Close</ERPBtn>
+              {!reqView.clientId && (
+                <ERPBtn variant="primary" onClick={() => { convertPortfolioRequest(reqView); setReqView(null); }} style={{ flex:1, justifyContent:'center' }}>
+                  <UserPlus size={13} /> Add as client
+                </ERPBtn>
+              )}
+            </div>
+          </div>
+        )}
       </ERPModal>
 
       {/* Create Login Account Modal for existing client */}

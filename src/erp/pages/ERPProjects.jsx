@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  collection, onSnapshot, doc, updateDoc, deleteDoc, getDocs,
+  collection, onSnapshot, doc, updateDoc, deleteDoc, getDocs, addDoc,
   query, where, serverTimestamp
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
@@ -12,7 +12,8 @@ import {
   ERPProgress, C
 } from '../components/ERPui';
 import { formatWhen } from '../formatWhen';
-import { CheckCircle2, Circle, ExternalLink, Pencil, Trash2 } from 'lucide-react';
+import { nextNumber } from '../../staff/staffUtils';
+import { CheckCircle2, Circle, ExternalLink, Pencil, Trash2, Plus } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
 const STATUS_OPTS = [
@@ -92,6 +93,22 @@ export default function ERPProjects() {
   const [delBusy,   setDelBusy]    = useState(false);
   const [saveError, setSaveError]  = useState('');
   const [loadError, setLoadError]  = useState('');
+  // New project (was missing entirely — projects could only be created from
+  // the Clients page, so an empty Projects page had no way forward).
+  const [clients,   setClients]    = useState([]);
+  const [showNew,   setShowNew]    = useState(false);
+  const [newForm,   setNewForm]    = useState({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'' });
+  const [newError,  setNewError]   = useState('');
+  const [notice,    setNotice]     = useState(null);
+
+  useEffect(() => {
+    if (!live) return;
+    return onSnapshot(collection(db, 'clients'), snap => {
+      setClients(snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => c.status !== 'deleted' && c.status !== 'archived')
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))));
+    }, err => console.error('Clients listener error', err));
+  }, [live]);
 
   useEffect(() => {
     if (!live) return;
@@ -117,11 +134,41 @@ export default function ERPProjects() {
     }, err => console.error('Work assignments listener error', err));
   }, [live]);
 
+  // Every project gets a code (PR-2026-0001). Projects created before codes
+  // existed get one once, the first time this page sees them.
+  const codedRef = useRef(false);
+  useEffect(() => {
+    if (!live || codedRef.current) return;
+    const missing = projects.filter(p => !p.projectCode && p.status !== 'deleted' && p.status !== 'archived');
+    if (!missing.length) return;
+    codedRef.current = true;
+    (async () => {
+      for (const p of missing) {
+        try {
+          const projectCode = await nextNumber('projects', 'PR');
+          await updateDoc(doc(db, 'projects', p.id), { projectCode });
+          setProjects(prev => prev.map(x => x.id === p.id ? { ...x, projectCode } : x));
+        } catch (e) {
+          console.error('project code backfill failed', e);
+        }
+      }
+    })();
+  }, [live, projects]);
+
   // Initials + colour for compact staff chips.
   const initialsOf = name => (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const chipColor  = name => COLORS[(name || '').length % COLORS.length];
 
-  const filters = ['All','In Progress','advance_paid','quotation_sent','Completed'];
+  const FILTER_LABEL = {
+    All:'All',
+    requirements_pending:'Requirements',
+    'In Progress':'In Progress',
+    advance_paid:'Advance Paid',
+    quotation_sent:'Quote Sent',
+    Completed:'Completed',
+    archived:'Archived',
+  };
+  const filters = Object.keys(FILTER_LABEL);
   const filtered = filter==='All' ? projects : projects.filter(p=>p.status===filter);
 
   const selProj = selected ? projects.find(p=>p.id===selected) : null;
@@ -219,10 +266,11 @@ export default function ERPProjects() {
     setDelBusy(true);
     setDelError('');
     try {
-      // Payments & receipts live inside quotations (no separate invoices
-      // collection), so any linked quotation blocks permanent deletion.
+      // Only money blocks a permanent delete: payments & receipts live inside
+      // quotations, so a linked quotation must survive. Staff task assignments
+      // belong to this project and go with it.
       let quotes = 0;
-      let workCount = 0;
+      let linkedAssignments = [];
       if (live) {
         const [byId, byTitle, byAssignments] = await Promise.all([
           getDocs(query(collection(db,'quotations'), where('projectId','==', delTarget.id))),
@@ -230,19 +278,21 @@ export default function ERPProjects() {
           getDocs(query(collection(db,'workAssignments'), where('projectId','==', delTarget.id))),
         ]);
         quotes = byId.size + byTitle.size;
-        workCount = byAssignments.size;
+        linkedAssignments = byAssignments.docs;
       }
-      if (quotes > 0 || workCount > 0) {
-        const reasons = [];
-        if (quotes > 0) reasons.push(`${quotes} linked quotation(s)`);
-        if (workCount > 0) reasons.push(`${workCount} staff task assignment(s)`);
-        setDelError(`Cannot permanently delete: ${reasons.join(' and ')} exist. Archive the project instead — history is kept.`);
+      if (quotes > 0) {
+        setDelError(`Cannot permanently delete: ${quotes} linked quotation(s) exist. Archive the project instead — the quotation and its money history stay intact.`);
         setDelBusy(false);
         return;
+      }
+      if (linkedAssignments.length > 0) {
+        await Promise.all(linkedAssignments.map(d => deleteDoc(d.ref)));
+        setAssignments(prev => prev.filter(a => a.projectId !== delTarget.id));
       }
       setProjects(prev => prev.filter(p => p.id !== delTarget.id));
       if (selected === delTarget.id) setSelected(null);
       if (live) await deleteDoc(doc(db,'projects', delTarget.id));
+      setNotice({ kind:'ok', msg:`"${delTarget.title}" permanently deleted${linkedAssignments.length ? ` along with ${linkedAssignments.length} staff task(s)` : ''}.` });
       setDelTarget(null);
     } catch (err) {
       console.error(err);
@@ -258,6 +308,7 @@ export default function ERPProjects() {
     try {
       setProjects(prev => prev.map(p => p.id === delTarget.id ? { ...p, status: 'archived' } : p));
       if (live) await updateDoc(doc(db,'projects', delTarget.id), { status: 'archived', archivedAt: serverTimestamp() });
+      setNotice({ kind:'ok', msg:`"${delTarget.title}" archived — it stays visible under the Archived filter.` });
       setDelTarget(null);
       setDelError('');
     } catch (err) {
@@ -267,13 +318,63 @@ export default function ERPProjects() {
     }
   };
 
+  // Create a project straight from this page, optionally for an existing client.
+  const createProject = async () => {
+    if (!newForm.title.trim()) { setNewError('Project title is required.'); return; }
+    setNewError('');
+    setSaving(true);
+    const projectCode = live
+      ? await nextNumber('projects', 'PR')
+      : `PR-${new Date().getFullYear()}-${String(projects.length + 1).padStart(4, '0')}`;
+    const payload = {
+      projectCode,
+      title: newForm.title.trim(),
+      serviceType: newForm.serviceType.trim(),
+      clientId: newForm.clientId || '',
+      clientName: newForm.clientName.trim(),
+      clientCompany: newForm.clientCompany.trim(),
+      status: newForm.status,
+      completion: 0,
+      milestones: [],
+      createdAt: serverTimestamp(),
+    };
+    try {
+      if (live) {
+        const ref = await addDoc(collection(db,'projects'), payload);
+        setProjects(p => [{ ...payload, id: ref.id }, ...p]);
+      } else {
+        setProjects(p => [{ ...payload, id:`P${Date.now()}`, createdAt: new Date().toISOString() }, ...p]);
+      }
+      setNotice({ kind:'ok', msg:`Project "${payload.title}" created.` });
+      setShowNew(false);
+      setFilter('All');
+    } catch (err) {
+      console.error(err);
+      setNewError(err.message || 'Could not create the project.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
 
+      {notice && (
+        <div style={{
+          padding:'10px 14px', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'space-between',
+          background: notice.kind==='ok' ? 'rgba(24,199,122,0.12)' : 'rgba(240,90,103,0.12)',
+          border: `1px solid ${notice.kind==='ok' ? 'rgba(24,199,122,0.35)' : 'rgba(240,90,103,0.35)'}`,
+          color: notice.kind==='ok' ? C.green : C.red, fontSize:12, fontWeight:600,
+        }}>
+          <span>{notice.msg}</span>
+          <button onClick={()=>setNotice(null)} style={{ background:'none', border:'none', color:'inherit', cursor:'pointer', fontSize:14 }}>✕</button>
+        </div>
+      )}
+
       {/* Filters */}
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
         {filters.map(f => {
-          const lbl = {All:'All','In Progress':'In Progress','advance_paid':'Advance Paid','quotation_sent':'Quote Sent','Completed':'Completed'}[f];
+          const lbl = FILTER_LABEL[f];
           const cnt = f==='All'?projects.length:projects.filter(p=>p.status===f).length;
           return (
             <button key={f} onClick={()=>setFilter(f)} style={{
@@ -286,7 +387,12 @@ export default function ERPProjects() {
             }}>{lbl} {cnt>0&&<span style={{opacity:0.7,marginLeft:4}}>({cnt})</span>}</button>
           );
         })}
-        <div style={{marginLeft:'auto',fontSize:12,color:C.muted,display:'flex',alignItems:'center'}}>{filtered.length} projects</div>
+        <div style={{marginLeft:'auto',fontSize:12,color:C.muted,display:'flex',alignItems:'center',gap:10}}>
+          {filtered.length} projects
+          <ERPBtn variant="primary" onClick={()=>{ setNewForm({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'' }); setNewError(''); setShowNew(true); }}>
+            <Plus size={13}/> New Project
+          </ERPBtn>
+        </div>
       </div>
 
       {/* Load error banner */}
@@ -322,6 +428,10 @@ export default function ERPProjects() {
 
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:10}}>
                 <div style={{flex:1,minWidth:0}}>
+                  {proj.projectCode && (
+                    <div style={{fontSize:9.5,fontWeight:800,color:C.cyan,fontFamily:'monospace',
+                      letterSpacing:0.5,marginBottom:4}}>{proj.projectCode}</div>
+                  )}
                   <div style={{fontSize:11,color:C.muted,marginBottom:3}}>{proj.clientName} · {proj.clientCompany}</div>
                   <div style={{fontSize:13,fontWeight:800,color:C.text,lineHeight:1.3}}>{proj.title}</div>
                   <div style={{fontSize:10,color:C.cyan,marginTop:2}}>{proj.serviceType}</div>
@@ -377,7 +487,10 @@ export default function ERPProjects() {
                 <ERPAvatar name={proj.clientName} color={COLORS[i%COLORS.length]} size={30} />
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{proj.title}</div>
-                  <div style={{fontSize:10,color:C.muted}}>{proj.clientName}</div>
+                  <div style={{fontSize:10,color:C.muted}}>
+                    {proj.projectCode ? <span style={{color:C.cyan,fontFamily:'monospace'}}>{proj.projectCode}</span> : null}
+                    {proj.projectCode ? ' · ' : ''}{proj.clientName}
+                  </div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
                   <ERPBadge status={proj.status} size="sm" />
@@ -401,6 +514,9 @@ export default function ERPProjects() {
                 <div>
                   <div style={{fontSize:14,fontWeight:800,color:C.text}}>{selProj.clientName}</div>
                   <div style={{fontSize:11,color:C.muted}}>{selProj.clientCompany} · {selProj.serviceType}</div>
+                  {selProj.projectCode && (
+                    <div style={{fontSize:10,color:C.cyan,fontFamily:'monospace',marginTop:3}}>{selProj.projectCode}</div>
+                  )}
                 </div>
               </div>
 
@@ -431,6 +547,27 @@ export default function ERPProjects() {
                   <Trash2 size={12}/> Delete
                 </ERPBtn>
               </div>
+
+              {/* Client requirements — everything they submitted on the form */}
+              {selProj.requirements && Object.keys(selProj.requirements).length > 0 && (
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:10}}>
+                    Client requirements
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:7,padding:'10px 12px',borderRadius:10,
+                    background:'rgba(10,24,56,0.6)',border:`1px solid ${C.border}30`,
+                    maxHeight:230,overflowY:'auto'}}>
+                    {Object.entries(selProj.requirements)
+                      .filter(([, v]) => v && String(v).trim())
+                      .map(([label, v]) => (
+                        <div key={label} style={{display:'flex',gap:10,fontSize:11,lineHeight:1.5}}>
+                          <span style={{width:110,flexShrink:0,color:C.muted}}>{label}</span>
+                          <span style={{flex:1,color:C.subtle,fontWeight:600,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>{v}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Milestones */}
               <div>
@@ -555,6 +692,81 @@ export default function ERPProjects() {
             <ERPBtn variant="secondary" onClick={()=>setShowEdit(false)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
             <ERPBtn variant="primary" onClick={saveEdit} disabled={saving} style={{flex:1,justifyContent:'center'}}>
               {saving ? 'Saving...' : 'Save Changes'}
+            </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
+
+      {/* Delete confirmation — without this modal the Delete button did
+          nothing at all (it only set delTarget). */}
+      <ERPModal isOpen={!!delTarget} onClose={()=>{setDelTarget(null);setDelError('');}} title="Delete Project?" width={460}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{fontSize:12,color:C.muted,lineHeight:1.6}}>
+            Permanently delete <strong style={{color:C.text}}>{delTarget?.title}</strong>?
+            If this project has quotations or staff task assignments, deletion is blocked —
+            archive it instead and it stays under the Archived filter.
+          </div>
+          {delError && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {delError}
+            </div>
+          )}
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <ERPBtn variant="secondary" onClick={()=>{setDelTarget(null);setDelError('');}} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            {delError ? (
+              <ERPBtn variant="secondary" onClick={archiveProject} disabled={delBusy} style={{flex:1,justifyContent:'center'}}>
+                {delBusy ? 'Saving...' : 'Archive instead'}
+              </ERPBtn>
+            ) : (
+              <ERPBtn variant="danger" onClick={confirmDelete} disabled={delBusy} style={{flex:1,justifyContent:'center'}}>
+                {delBusy ? 'Checking...' : 'Confirm Delete'}
+              </ERPBtn>
+            )}
+          </div>
+          {!delError && (
+            <button onClick={archiveProject} disabled={delBusy}
+              style={{ background:'none', border:'none', color:C.muted, fontSize:11, cursor:'pointer', textDecoration:'underline' }}>
+              or just archive it
+            </button>
+          )}
+        </div>
+      </ERPModal>
+
+      {/* New project */}
+      <ERPModal isOpen={showNew} onClose={()=>setShowNew(false)} title="New Project" width={460}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <ERPInput label="Project title" value={newForm.title} required
+            onChange={e=>setNewForm(p=>({...p,title:e.target.value}))}
+            placeholder="e.g. Portfolio Website" />
+          <ERPInput label="Service type" value={newForm.serviceType}
+            onChange={e=>setNewForm(p=>({...p,serviceType:e.target.value}))}
+            placeholder="e.g. Portfolio" />
+          {clients.length > 0 && (
+            <ERPSelect label="Client" value={newForm.clientId}
+              onChange={e=>{
+                const c = clients.find(x => x.id === e.target.value);
+                setNewForm(p => ({ ...p, clientId: e.target.value, clientName: c?.name || '', clientCompany: c?.company || '' }));
+              }}
+              options={[{ value:'', label:'— No client / type manually —' }, ...clients.map(c => ({ value:c.id, label:`${c.name}${c.company ? ` — ${c.company}` : ''}` }))]} />
+          )}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <ERPInput label="Client name" value={newForm.clientName}
+              onChange={e=>setNewForm(p=>({...p,clientName:e.target.value}))} placeholder="e.g. Nimal Perera" />
+            <ERPInput label="Client company" value={newForm.clientCompany}
+              onChange={e=>setNewForm(p=>({...p,clientCompany:e.target.value}))} placeholder="e.g. Love Cake House" />
+          </div>
+          <ERPSelect label="Status" value={newForm.status}
+            onChange={e=>setNewForm(p=>({...p,status:e.target.value}))}
+            options={STATUS_OPTS} />
+          {newError && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
+              {newError}
+            </div>
+          )}
+          <div style={{display:'flex',gap:10}}>
+            <ERPBtn variant="secondary" onClick={()=>setShowNew(false)} style={{flex:1,justifyContent:'center'}}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" onClick={createProject} disabled={saving} style={{flex:1,justifyContent:'center'}}>
+              <Plus size={12}/> {saving ? 'Creating...' : 'Create Project'}
             </ERPBtn>
           </div>
         </div>

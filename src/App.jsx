@@ -24,6 +24,7 @@ const InsightsPage        = lazy(() => import('./pages/InsightsPage'));
 const InsightDetailPage   = lazy(() => import('./pages/InsightDetailPage'));
 const ContactPage         = lazy(() => import('./pages/ContactPage'));
 const ClientRequestQRPage = lazy(() => import('./pages/ClientRequestQRPage'));
+const PortfolioRequestPage = lazy(() => import('./pages/PortfolioRequestPage'));
 const ClientLoginPage     = lazy(() => import('./pages/ClientLoginPage'));
 const ClientDashboardPage = lazy(() => import('./pages/ClientDashboardPage'));
 const AdminPanelPage      = lazy(() => import('./pages/AdminPanelPage'));
@@ -79,6 +80,8 @@ function StandaloneRoutes() {
         } />
         <Route path="/request" element={<ClientRequestQRPage />} />
         <Route path="/qr-request" element={<ClientRequestQRPage />} />
+        {/* Saved portfolio link sent to a client from ERP → Clients */}
+        <Route path="/portfolio/:token" element={<PortfolioRequestPage />} />
         <Route path="*" element={<ERPFallback />} />
       </Routes>
     </Suspense>
@@ -160,7 +163,8 @@ function AppRouter() {
     pathname.startsWith('/admin-panel') ||
     pathname.startsWith('/staff-portal') ||
     pathname.startsWith('/staff-login') ||
-    pathname.startsWith('/staff-checkin');
+    pathname.startsWith('/staff-checkin') ||
+    pathname.startsWith('/portfolio/');
 
   return isStandalone ? <StandaloneRoutes /> : <WebsiteRoutes />;
 }

@@ -148,6 +148,62 @@ export const DOC_CATEGORIES = [
   { id: 'hr',          label: 'Other HR' },
 ];
 
+// ── Staff name matching (sheet imports, report grouping) ───────────────
+// The same person arrives from a Google Sheet as "Thisha", "Thishalini",
+// "Sathu", "Sathurshika", "Lukshi", "Luksikka"… A plain equality or
+// "contains" check misses the shortened forms, so the importer used to
+// create a brand new record instead of updating that person's days.
+const nameToken = s => String(s ?? '')
+  .toLowerCase()
+  .replace(/[^a-z\s]/g, ' ')
+  .trim()
+  .split(/\s+/)
+  .filter(Boolean);
+
+const isSubsequence = (short, long) => {
+  let i = 0;
+  for (const ch of long) { if (i < short.length && ch === short[i]) i++; }
+  return i === short.length;
+};
+
+/** 0 → no match, 1 → same name. Tolerant of typos and short forms. */
+export function nameMatchScore(a, b) {
+  const ta = nameToken(a), tb = nameToken(b);
+  if (!ta.length || !tb.length) return 0;
+  const na = ta.join(''), nb = tb.join('');
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.9;
+  // Compare the shortest first names both sides ("thisha" ⊂ "thishalini")
+  const pairs = [[ta[0], tb[0]], [tb[0], ta[0]]];
+  for (const [short, long] of pairs) {
+    if (short.length >= 4 && isSubsequence(short, long)) {
+      return short === long ? 0.85 : 0.75;
+    }
+  }
+  // Different first name but a shared surname ("Paththima Asra" / "Asra")
+  const overlap = ta.filter(x => x.length > 2 && tb.includes(x)).length;
+  if (overlap) return 0.8;
+  // Spelling drift on the same name ("luksikka" / "lukshi" share "luks")
+  const pa = ta[0], pb = tb[0];
+  let prefix = 0;
+  while (prefix < pa.length && prefix < pb.length && pa[prefix] === pb[prefix]) prefix++;
+  if (prefix >= 4 && Math.abs(pa.length - pb.length) <= 4) return 0.7;
+  return 0;
+}
+
+/** Find the staff record this sheet name refers to. */
+export function findStaffBySheetName(staffList, name) {
+  let best = null, bestScore = 0;
+  (staffList || []).forEach(s => {
+    const score = Math.max(nameMatchScore(s?.name, name), nameMatchScore(s?.staffName, name));
+    if (score > bestScore) { bestScore = score; best = s; }
+  });
+  return bestScore >= 0.7 ? best : null;
+}
+
+/** True when two spellings mean the same person (used for de-duping). */
+export const sameStaffName = (a, b) => nameMatchScore(a, b) >= 0.7;
+
 // ── CSV export (client-side, no dependency) ──────────────────────
 function csvCell(v) {
   const s = String(v ?? '');
@@ -308,4 +364,223 @@ export function getDayName(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   if (isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+// ── Google Sheet / Excel cell readers ──────────────────────────────────
+// Anything pasted or exported out of a sheet arrives in whatever shape the
+// author's locale produced. These three turn that into ERP fields, and the
+// day is always resolved to yyyy-mm-dd so an imported week cannot silently
+// land on the wrong dates.
+const MONTHS_MAP = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const p2 = n => String(n).padStart(2, '0');
+
+/** "2026-10-28", "28/10/2026", "28-Oct-2026", "Oct 28, 2026",
+ *  "2026-10-28T00:00:00" → 'yyyy-mm-dd'; anything unknown → null. */
+export function sheetDate(v) {
+  const s = String(v ?? '').trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);          // 2026-10-28 [+ time]
+  if (m) return `${m[1]}-${p2(+m[2])}-${p2(+m[3])}`;
+  m = s.match(/^(\d{4})[/.](\d{1,2})[/.](\d{1,2})/);                     // 2026/10/28
+  if (m) return `${m[1]}-${p2(+m[2])}-${p2(+m[3])}`;
+  m = s.match(/^(\d{1,2})[-/\s]([A-Za-z]{3,})[-/\s,]*(\d{4})/);          // 28-Sep-2026 / 28 Sep 2026
+  if (m) { const mm = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]; if (mm) return `${m[3]}-${p2(mm)}-${p2(+m[1])}`; }
+  m = s.match(/^([A-Za-z]{3,})[-/\s,]*(\d{1,2})[-/\s,]*(\d{4})/);        // Sep 28, 2026
+  if (m) { const mm = MONTHS_MAP[m[1].slice(0, 3).toLowerCase()]; if (mm) return `${m[3]}-${p2(mm)}-${p2(+m[2])}`; }
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[T\s].*)?$/);      // 28/09/2026 (day first)
+  if (m) return `${m[3]}-${p2(+m[2])}-${p2(+m[1])}`;
+  return null;
+}
+
+/** "8:30 am" / "08.30" → '08:30' (24 h). Empty when unreadable. */
+export function to24h(v) {
+  const m = String(v ?? '').trim().match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
+  if (!m) return '';
+  let h = +m[1];
+  const ap = (m[3] || '').toLowerCase();
+  if (ap === 'pm' && h < 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  return `${p2(h)}:${m[2]}`;
+}
+
+/** "08:30-11:00: Analysed design | 11:00-13:00: Built login [In Progress]"
+ *  → tasks[] with start/end/hours/description/status.
+ *  `fallbackStatus` is the STATUS column of a filled template, used whenever
+ *  a segment has no [In Progress] marker of its own. */
+export function parseWorkSegments(wd, fallbackStatus = '') {
+  if (!wd) return [];
+  const fallback = String(fallbackStatus || '').trim();
+  return String(wd).split('|').map(s => s.trim()).filter(Boolean).map((seg, i) => {
+    const m = seg.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})\s*[:;\-]?\s*(.*)$/);
+    const body = m ? m[3] : seg;
+    const sm = body.match(/\s*\[([^\]]+)\]\s*$/);
+    const status = sm ? sm[1].trim() : (fallback || 'Completed');
+    const description = (sm ? body.slice(0, sm.index) : body).trim();
+    if (m) return { no: i + 1, start: m[1], end: m[2], hours: calculateTaskDuration(m[1], m[2]), description, status };
+    return { no: i + 1, start: '', end: '', hours: '—', description, status };
+  });
+}
+
+// ── Daily report import — flat "one row per staff per day" sheets ────────
+// The importer reads whatever header the Google Sheet / Excel file actually
+// has, so the office never has to rename columns before importing. Living
+// next to the other sheet helpers means the page and the QA tests share the
+// exact same parsing.
+export const IMPORT_ALIASES = {
+  NAME: ['NAME', 'STAFF NAME', 'STAFF', 'EMPLOYEE', 'EMPLOYEE NAME', 'TEAM MEMBER'],
+  POSITION: ['POSITION', 'ROLE', 'DESIGNATION', 'JOB ROLE'],
+  DATE: ['DATE', 'WORK DATE', 'DAY DATE'],
+  DAY: ['DAY', 'WEEKDAY'],
+  LOCATION: ['LOCATION', 'JOB LOCATION', 'SITE'],
+  'WORK MODE': ['WORK MODE', 'MODE', 'WORK TYPE'],
+  ARRIVAL: ['ARRIVAL', 'CHECK IN', 'CHECK-IN', 'IN TIME', 'START TIME'],
+  'LUNCH START': ['LUNCH START', 'LUNCH IN'],
+  'LUNCH END': ['LUNCH END', 'LUNCH OUT'],
+  'LUNCH DURATION': ['LUNCH DURATION', 'LUNCH'],
+  DEPARTURE: ['DEPARTURE', 'CHECK OUT', 'CHECK-OUT', 'OUT TIME', 'END TIME'],
+  'TOTAL WORK HRS': ['TOTAL WORK HRS', 'TOTAL HOURS', 'WORK HOURS', 'HOURS'],
+  'WORK / DESCRIPTION': ['WORK / DESCRIPTION', 'WORK DESCRIPTION', 'WORK', 'DESCRIPTION', 'TASK', 'TASKS', 'WORK DONE', 'TODAY WORK', 'UPDATE', 'DAILY UPDATE', 'PROGRESS', 'WORK UPDATE'],
+  STATUS: ['STATUS', 'TASK STATUS'],
+  REMARKS: ['REMARKS', 'NOTES', 'REMARK', 'COMMENTS'],
+  'PLAN FOR TOMORROW': ['PLAN FOR TOMORROW', 'TOMORROW', 'NEXT DAY PLAN', 'PLAN'],
+};
+
+/** rows (2-D strings, row 0 = header) → { flat, sheet, entries[] }. */
+export function buildImportEntries(rows) {
+  const head = (rows[0] || []).map(h => String(h).replace(/\s+/g, ' ').trim().toUpperCase());
+  const findCol = names => {
+    for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; }
+    for (const n of names) { const i = head.findIndex(h => h.startsWith(n)); if (i >= 0) return i; }
+    return -1;
+  };
+  const idx = {};
+  Object.entries(IMPORT_ALIASES).forEach(([key, names]) => { idx[key] = findCol(names); });
+  const flat = idx.NAME >= 0 && idx.DATE >= 0;
+  const sheet = (rows || []).some(r => r.join(' ').toUpperCase().includes('DAILY WORK REPORT'));
+  if (!flat) return { flat: false, sheet, idx, head, entries: [] };
+
+  const cell = (r, h) => { const i = idx[h]; return i >= 0 ? String(r[i] ?? '').trim() : ''; };
+  const entries = (rows || []).slice(1).map(r => ({
+    name: cell(r, 'NAME'), position: cell(r, 'POSITION'), location: cell(r, 'LOCATION'),
+    date: sheetDate(cell(r, 'DATE')), rawDate: cell(r, 'DATE'), day: cell(r, 'DAY'),
+    workMode: cell(r, 'WORK MODE'),
+    arrival: to24h(cell(r, 'ARRIVAL')), lunchStart: to24h(cell(r, 'LUNCH START')),
+    lunchEnd: to24h(cell(r, 'LUNCH END')), departure: to24h(cell(r, 'DEPARTURE')),
+    lunchDuration: cell(r, 'LUNCH DURATION'), totalWorkHours: cell(r, 'TOTAL WORK HRS'),
+    // A STATUS column applies to every task line that has no [marker].
+    tasks: parseWorkSegments(cell(r, 'WORK / DESCRIPTION'), cell(r, 'STATUS')),
+    remarks: cell(r, 'REMARKS'), planTomorrow: cell(r, 'PLAN FOR TOMORROW'),
+  }));
+  return { flat: true, sheet, idx, head, entries };
+}
+
+// ── Work Progress stages (staff portal → Work Progress) ──────────────
+// Staff build their OWN list of the work they are going to do for an
+// assigned project — one row per stage. They mark a stage Not Started →
+// In Progress → Completed and leave the note of what they finished; the
+// admin then approves (or sends back) each finished stage, and only
+// approved stages are shown to the client on their portal.
+export const STAGE_STATUSES = ['Not Started', 'In Progress', 'Completed', 'On Hold'];
+
+/** The stage's own status — old rows without a status read as In Progress. */
+export function stageStatusOf(item) {
+  const s = String(item?.status || '').trim();
+  if (STAGE_STATUSES.includes(s)) return s;
+  return s ? s : 'In Progress';
+}
+
+/** Where the admin review stands for a stage (staff never set this). */
+export function stageReviewOf(item) {
+  const r = String(item?.reviewState || '').toLowerCase();
+  if (r === 'accepted') return { key: 'accepted', label: 'Approved by admin', note: String(item?.reviewNote || '') };
+  if (r === 'rework') return { key: 'rework', label: 'Rework needed', note: String(item?.reviewNote || '') };
+  if (stageStatusOf(item) === 'Completed') return { key: 'pending', label: 'Awaiting admin approval', note: '' };
+  return { key: 'none', label: '', note: '' };
+}
+
+/** Progress of one project's stage list, for staff, admin and client views. */
+export function stageStats(items) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  const done = list.filter(i => stageStatusOf(i) === 'Completed').length;
+  const accepted = list.filter(i => stageReviewOf(i).key === 'accepted').length;
+  const rework = list.filter(i => stageReviewOf(i).key === 'rework').length;
+  const proofs = list.reduce((s, i) => s + ((i?.proofs || []).length), 0);
+  return {
+    total, done, accepted, rework, proofs,
+    open: total - done,
+    pendingReview: list.filter(i => stageReviewOf(i).key === 'pending').length,
+    pct: total ? Math.round((done / total) * 100) : 0,
+    clientPct: total ? Math.round((accepted / total) * 100) : 0,
+  };
+}
+
+/** Stage order is what the staff wrote it as: number → date → newest edit. */
+export function sortStages(items) {
+  return [...(Array.isArray(items) ? items : [])].sort((a, b) => {
+    const no = x => Number(x?.stage || x?.no || 0) || 0;
+    return (no(a) - no(b)) || String(a?.date || '').localeCompare(String(b?.date || ''))
+      || (toMs(b?.updatedAt || b?.createdAt) - toMs(a?.updatedAt || a?.createdAt));
+  });
+}
+
+/**
+ * Group a staff member's stages by the project they belong to.
+ * Rows with no project (general work) land in the last "General work" group.
+ */
+export function groupStagesByProject(items) {
+  const out = new Map();
+  (Array.isArray(items) ? items : []).forEach(it => {
+    const projectId = String(it?.projectId || '').trim();
+    const title = String(it?.projectTitle || '').trim();
+    const key = projectId || title.toLowerCase() || '__general__';
+    if (!out.has(key)) {
+      out.set(key, { key, projectId, projectTitle: title, clientId: '', clientName: '', items: [] });
+    }
+    const g = out.get(key);
+    // Older rows may carry an empty snapshot — the first row that has it wins,
+    // so a project card never loses its client name because of add order.
+    if (!g.projectTitle) g.projectTitle = title;
+    if (!g.clientId)     g.clientId = String(it?.clientId || '').trim();
+    if (!g.clientName)   g.clientName = String(it?.clientName || '').trim();
+    g.items.push(it);
+  });
+  return [...out.values()]
+    .map(g => ({
+      ...g,
+      projectTitle: g.projectTitle || (g.projectId ? 'Project' : 'General work'),
+      items: sortStages(g.items),
+      stats: stageStats(g.items),
+    }))
+    .sort((a, b) => (a.key === '__general__' ? 1 : b.key === '__general__' ? -1
+      : b.stats.open - a.stats.open || a.projectTitle.localeCompare(b.projectTitle)));
+}
+
+/** Next stage number the staff should see when adding to a project list. */
+export const nextStageNo = items => (Array.isArray(items) ? items : [])
+  .reduce((mx, i) => Math.max(mx, Number(i?.stage || i?.no || 0) || 0), 0) + 1;
+
+/** Append-only who/when trail — a stage log line is never rewritten. */
+export const stageHistoryEntry = (by, text, at = Date.now()) => ({ at, by: String(by || ''), text: String(text || '') });
+
+/** Is a stage the client is allowed to see? (approved by the admin) */
+export const stageVisibleToClient = item => stageReviewOf(item).key === 'accepted';
+
+// ── Dev-session stage store ────────────────────────────────────────
+// The staff portal keeps its preview list here; in a dev session the admin
+// screens read and review the very same list, so the whole
+// staff lists → marks done → admin approves loop can be tried in the browser
+// without touching Firestore. Real sessions never read this key.
+export const DEV_STAGE_KEY = 'smart_dev_progress';
+
+export function loadDevStages() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(window.sessionStorage.getItem(DEV_STAGE_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+export function saveDevStages(list) {
+  if (typeof window === 'undefined') return;
+  try { window.sessionStorage.setItem(DEV_STAGE_KEY, JSON.stringify(list)); } catch { /* private mode */ }
 }

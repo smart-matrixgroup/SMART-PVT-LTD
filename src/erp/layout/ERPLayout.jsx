@@ -57,35 +57,13 @@ export default function ERPLayout() {
   const [readIds,    setReadIds]    = useState([]);
   const seededNotifs = useRef(false);
   const contentRef   = useRef(null);
-  const tiltRef      = useRef(null);
 
   const meta = PAGE_META[location.pathname] || { title: 'ERP', subtitle: '' };
   const currentAccent = accentForPath(location.pathname);
 
-  // Mouse-reactive 3D tilt of the page content (no glow — real motion feel).
-  useEffect(() => {
-    const el = tiltRef.current;
-    if (!el) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    let raf = 0;
-    const onMove = (e) => {
-      const rect = el.getBoundingClientRect();
-      const nx = (e.clientX - rect.left) / rect.width  - 0.5; // -0.5..0.5
-      const ny = (e.clientY - rect.top)  / rect.height - 0.5;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        el.style.transform = `perspective(1400px) rotateX(${(-ny * 1.6).toFixed(2)}deg) rotateY(${(nx * 1.6).toFixed(2)}deg)`;
-      });
-    };
-    const onLeave = () => { el.style.transform = 'perspective(1400px) rotateX(0deg) rotateY(0deg)'; };
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerleave', onLeave);
-    return () => {
-      cancelAnimationFrame(raf);
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerleave', onLeave);
-    };
-  }, [location.pathname]);
+  // No mouse-reactive tilt: moving the cursor used to rotate/skew the whole
+  // page (content appeared to slide right/down while hovering). Pages must sit
+  // still under the pointer.
 
   // Button ripple across every admin page (delegated from the content area).
   useEffect(() => {
@@ -271,16 +249,7 @@ export default function ERPLayout() {
           scrollbarColor: 'rgba(32,52,93,0.8) transparent',
         }}>
           <div key={location.pathname} className="sp-rise">
-            <div
-              ref={tiltRef}
-              style={{
-                transform: 'perspective(1400px)',
-                transition: 'transform 0.18s ease-out',
-                willChange: 'transform',
-              }}
-            >
-              <Outlet />
-            </div>
+            <Outlet />
           </div>
         </main>
       </div>

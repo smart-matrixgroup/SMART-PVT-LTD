@@ -11,6 +11,7 @@ import {
   ERPModal, ERPInput, ERPEmpty, ERPAvatar, C
 } from '../components/ERPui';
 import { formatWhen, toMillis } from '../formatWhen';
+import { nextNumber } from '../../staff/staffUtils';
 import { passwordError, generateStrongPassword, PASSWORD_HINT } from '../passwordPolicy';
 import { CheckCircle2, XCircle, Trash2, MessageSquare, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -161,6 +162,7 @@ export default function ERPLeads() {
         // First project — created from the lead request so the client's
         // dashboard shows their work immediately after login.
         const projRef = await addDoc(collection(db, 'projects'), {
+          projectCode:   await nextNumber('projects', 'PR'),
           clientId:      uid,
           clientName:    accForm.name,
           clientCompany: accForm.company || '',

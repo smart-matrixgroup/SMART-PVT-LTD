@@ -22,16 +22,19 @@ import {
 import {
   nextNumber, DOC_CATEGORIES, STAFF_STATUSES, computeNet, compressImage, todayKey, getDayName,
   calculateTaskDuration, toMs, fmtHours, dateKeyOf,
+  stageStats, groupStagesByProject, loadDevStages,
 } from '../../staff/staffUtils';
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
 import { toMillis } from '../formatWhen';
 import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
+import PrivateFileLink from '../components/PrivateFileLink';
+import StageReviewPanel from '../components/StageReviewPanel';
 import {
   Plus, Eye, Pencil, Trash2, KeyRound, Download, Upload, FileText,
   ShieldCheck, AlertTriangle, CheckCircle2, Camera, Clock, Calendar,
   Coffee, Check, Hourglass, Search, ChevronDown, ChevronUp, User,
   Briefcase, DollarSign, Activity, Sparkles, FolderKanban, CheckSquare,
-  X, RefreshCw, MapPin
+  X, RefreshCw, MapPin, ListChecks
 } from 'lucide-react';
 import ERPStaffWork        from './ERPStaffWork';
 import ERPStaffAttendance  from './ERPStaffAttendance';
@@ -172,6 +175,7 @@ function StaffTab() {
   const [staffUpdates,      setStaffUpdates]      = useState([]);
   const [updatesLoading,    setUpdatesLoading]    = useState(false);
   const [staffProjects,     setStaffProjects]     = useState([]);
+  const [staffProgress,     setStaffProgress]     = useState([]);   // staff-maintained work list
   const [historySearch,     setHistorySearch]     = useState('');
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [expandedUpdateId,  setExpandedUpdateId]  = useState(null);
@@ -222,6 +226,18 @@ function StaffTab() {
       query(collection(db, 'workAssignments'), where('authUid', '==', detailId)),
       snap => setStaffProjects(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
       err => console.error('work assignments live sync failed', err),
+    );
+    return unsub;
+  }, [detailId, live]);
+
+  // ── live staff-maintained work progress for the open profile ────
+  useEffect(() => {
+    if (!live) { setStaffProgress(loadDevStages().filter(s => s.staffUid === detailId)); return; }
+    if (!detailId) { setStaffProgress([]); return; }
+    const unsub = onSnapshot(
+      query(collection(db, 'staffProgress'), where('staffUid', '==', detailId)),
+      snap => setStaffProgress(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      err => console.error('staff progress live sync failed', err),
     );
     return unsub;
   }, [detailId, live]);
@@ -539,6 +555,29 @@ function StaffTab() {
   });
   const workOpen = staffProjects.filter(p => p.status !== 'Completed');
   const workDone = staffProjects.filter(p => p.status === 'Completed');
+  const progressStats = stageStats(staffProgress);
+  // How much of this staff member's approved work each client can see.
+  const progressClientGroups = (() => {
+    const assign = new Map();
+    staffProjects.forEach(w => {
+      const k = String(w.projectId || w.projectTitle || '').trim();
+      if (k && !assign.has(k)) assign.set(k, w);
+    });
+    return groupStagesByProject(staffProgress)
+      .filter(g => g.stats.total > 0 && (g.projectId || g.projectTitle) && g.key !== '__general__')
+      .map(g => {
+        const w = assign.get(g.projectId)
+          || [...assign.values()].find(x => String(x.projectTitle || '').trim() === g.projectTitle);
+        return {
+          key: g.key,
+          label: (w && (w.clientName || w.clientCompany)) || g.clientName || g.projectTitle,
+          project: g.projectTitle,
+          total: g.stats.total,
+          accepted: g.stats.accepted,
+          clientPct: g.stats.clientPct,
+        };
+      });
+  })();
 
   if (loading) {
     return <div style={{ padding: 60, textAlign: 'center', color: C.muted, fontSize: 13 }}>Loading staff…</div>;
@@ -794,6 +833,7 @@ function StaffTab() {
               {[
                 { id: 'updates', label: 'Daily Progress', icon: <Activity size={12} /> },
                 { id: 'work',    label: `Work${workOpen.length ? ` (${workOpen.length})` : ''}`, icon: <Briefcase size={12} /> },
+                { id: 'progress', label: `Work Progress${staffProgress.length ? ` (${staffProgress.length})` : ''}`, icon: <ListChecks size={12} /> },
                 { id: 'profile', label: 'Profile', icon: <User size={12} /> },
                 { id: 'docs',    label: `Documents (${(detail.docs || []).length})`, icon: <FileText size={12} /> },
               ].map(t => (
@@ -1131,6 +1171,38 @@ function StaffTab() {
               </div>
             )}
 
+            {/* ── Work Progress tab — the staff member's own list ── */}
+            {activeProfileTab === 'progress' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 10.5, color: C.muted, lineHeight: 1.55 }}>
+                  Work stages {detail.name.split(' ')[0]} added in Staff Portal → Work Progress. An approved stage is the
+                  only thing the client sees on their portal.
+                  {' '}<strong style={{ color: C.subtle }}>{progressStats.total} stage{progressStats.total === 1 ? '' : 's'}</strong>
+                  {' '}· {progressStats.done} completed
+                  {' '}· <strong style={{ color: C.cyan }}>{progressStats.pendingReview} to review</strong>
+                  {' '}· {progressStats.accepted} approved · {progressStats.proofs} proof file{progressStats.proofs === 1 ? '' : 's'}.
+                </div>
+
+                {progressClientGroups.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {progressClientGroups.map(g => (
+                      <span key={g.key} title={`${g.project} — approved stages are visible to ${g.label}`}
+                        style={{
+                          fontSize: 9.5, fontWeight: 800, padding: '4px 10px', borderRadius: 20,
+                          background: g.clientPct === 100 ? 'rgba(24,199,122,0.14)' : 'rgba(0,102,255,0.12)',
+                          color: g.clientPct === 100 ? C.green : C.cyan,
+                          border: `1px solid ${g.clientPct === 100 ? 'rgba(24,199,122,0.4)' : 'rgba(0,102,255,0.35)'}`,
+                        }}>
+                        {g.label} · {g.accepted}/{g.total} shown to client
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <StageReviewPanel items={staffProgress}
+                  emptyText={`Nothing added yet. ${detail.name.split(' ')[0]} can write their own project work stages from Staff Portal → Work Progress, and they appear here instantly.`} />
+              </div>
+            )}
             {/* ── Profile tab ── */}
             {activeProfileTab === 'profile' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getDoc, doc } from 'firebase/firestore';
+import { getDoc, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { company } from '../../config/company';
 import { toInt, formatLKR } from '../money';
 import { ERPBtn, ERPInput, ERPTextarea, C } from './ERPui';
 import { Download, Printer, Copy, Image as ImageIcon, Plus, Trash2, LayoutTemplate, Sparkles, Save, ExternalLink, ArrowUp, ArrowDown } from 'lucide-react';
-import { TEMPLATE_QUOTATION, renderTemplate } from './quotationTemplateRenderer';
+import { TEMPLATE_QUOTATION, renderTemplate, renderTemplateBase, drawQuotationShots } from './quotationTemplateRenderer';
 import { usePrivateUrl, revOf } from '../usePrivateUrl';
 
 // ────────────────────────────────────────────────────────────────────
@@ -82,27 +82,70 @@ const BANK_ROW_LABELS = [
   ['accountType',   'Account Type'],
 ];
 
+// ── Payment details that stay put ───────────────────────────────
+// The owner fills the same bank block into every quotation, so the last set
+// typed in the Studio is remembered (this browser + settings/bankDetails) and
+// used as the default for the next one. A quotation that already carries its
+// own quoteRows.payRows keeps them, and every row stays editable here.
+const PAY_DEFAULTS_KEY = 'smart.payRows.v1';
+const normPayRow = (r) => ({ label: String(r?.label ?? '').trim(), value: String(r?.value ?? '').trim() });
+
+export function readPayDefaults() {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(PAY_DEFAULTS_KEY) || 'null');
+    return Array.isArray(v) ? v.map(normPayRow).filter(r => r.label && r.value) : [];
+  } catch { return []; }
+}
+
+// Remember only the repeatable rows: the remark is per quotation and custom
+// fields belong to the service being quoted, so neither becomes a default.
+function rememberPayDefaults(rows, q) {
+  const skip = new Set(['payment remark',
+    ...(q?.customFields || []).map(f => String(f.label || '').trim().toLowerCase()).filter(Boolean)]);
+  const qn = String(q?.quotationNo || '').trim();
+  const defaults = (rows || []).map(normPayRow)
+    .filter(r => r.label && r.value && !skip.has(r.label.toLowerCase()) && r.value !== qn);
+  try { window.localStorage.setItem(PAY_DEFAULTS_KEY, JSON.stringify(defaults)); } catch { /* private mode */ }
+  return defaults;
+}
+
 function defaultPayRows(bank, q) {
   const b = bank || {};
-  const rows = BANK_ROW_LABELS.map(([k, label]) => ({ label, value: String(b[k] || '').trim() })).filter(r => r.value);
+  const fromFields = BANK_ROW_LABELS
+    .map(([k, label]) => ({ label, value: String(b[k] || '').trim() }))
+    .filter(r => r.value);
+  const stored = (Array.isArray(b.payRows) && b.payRows.length ? b.payRows : null)
+    || (fromFields.length ? fromFields : readPayDefaults());
+  const rows = stored.map(normPayRow).filter(r => r.label && r.value);
   const remark = String(q?.quotationNo || '').trim();
   if (remark) rows.push({ label: 'Payment Remark', value: remark });
   // Custom fields typed in the quotation form print here too, with their own title.
   (q?.customFields || []).forEach(f => {
     const label = String(f.label || '').trim();
-    if (label) rows.push({ label, value: String(f.value || '').trim() });
+    if (!label) return;
+    if (rows.some(r => r.label.toLowerCase() === label.toLowerCase())) return;
+    rows.push({ label, value: String(f.value || '').trim() });
   });
   return rows;
 }
 
+function discountRowText(q) {
+  const pct = q?.discountMode === 'percent' ? toInt(q?.discountValue) : 0;
+  return pct > 0 ? `Less: discount (${pct}%)` : 'Less: discount';
+}
+
 // The pricing rows a quotation starts with: its own line items when it has
 // them (that is what makes a 2-part digital package print as 2 numbered rows),
-// otherwise the single subject line — plus the advance line the letterhead had.
+// otherwise the single subject line — plus the discount and the advance line.
 function defaultPriceRows(q, { priceLabel, subject, total, adv, balance }) {
   const items = (q?.items || [])
     .map(it => ({ text: String(it.label || '').trim(), amount: toInt(it.amount), was: 0, kind: 'item' }))
     .filter(it => it.text && it.amount > 0);
   const rows = items.length ? items : [{ text: priceLabel || subject || 'Scope of work', amount: total, was: 0, kind: 'item' }];
+  const discount = toInt(q?.discountAmount);
+  if (discount > 0) {
+    rows.push({ text: discountRowText(q), amount: -discount, was: 0, kind: 'note' });
+  }
   if (adv > 0) {
     rows.push({
       text: `Advance payment — balance ${money(balance)} after completion`,
@@ -112,9 +155,25 @@ function defaultPriceRows(q, { priceLabel, subject, total, adv, balance }) {
   return rows;
 }
 
+// Screenshot crop for the laptop / phone mockups: zoom (1 = cover fit) and
+// x/y pan across the room the zoom creates (−1 left/top, 0 centre, 1 right/bottom).
+const clampNum = (v, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(v)) ? Number(v) : 0));
+export function normShotFit(v) {
+  const one = (o) => ({
+    zoom: clampNum(o?.zoom || 1, 1, 4),
+    x: clampNum(o?.x || 0, -1, 1),
+    y: clampNum(o?.y || 0, -1, 1),
+  });
+  return { laptop: one(v?.laptop), phone: one(v?.phone) };
+}
+
 // build the editable document model from a Firestore quotation
 export function buildDoc(q, bank) {
   const total  = toInt(q.totalAmount);
+  const discount = Math.max(0, toInt(q.discountAmount));
+  const itemsSum = (q.items || []).reduce((s, it) => s + toInt(it.amount), 0);
+  // The items card sums to the subtotal; the total band prints the net amount.
+  const subtotal = Math.max(total, toInt(q.subtotal) || itemsSum || total);
   const paid   = toInt(q.paidTotal);
   const adv    = toInt(q.advanceAmount) || Math.round(total * (toInt(q.advancePct) || 0) / 100);
   const subject = q.projectTitle || q.service || '';
@@ -126,6 +185,14 @@ export function buildDoc(q, bank) {
   const flavour = serviceFlavour(q);
   const priceLabel = subject || (q.items && q.items[0] && q.items[0].label) || q.service || '';
   const savedRows = q.quoteRows || {};
+  // Text the owner typed directly on the letterhead in the Studio. It is
+  // stored separately from the quotation's own fields so a studio edit to the
+  // printed "Subject / Intro / Service details / Key features" survives the
+  // next open — before this, those boxes changed the picture once and were
+  // gone as soon as the Studio closed.
+  const lh = q.letterhead || {};
+  const pick = (v, fallback) => (v == null || v === '' ? fallback : v);
+  const pickList = (v, fallback) => (Array.isArray(v) ? v : fallback);
 
   const introByFlavour = {
     website: `We are pleased to provide this quotation for the ${subject || 'project'} with domain registration and hosting on our company server.`,
@@ -172,9 +239,9 @@ export function buildDoc(q, bank) {
     accent: '#0A5BFF',
     accent2: '#00C6E0',
     title: 'QUOTATION',
-    refNo: q.quotationNo || '',
-    date: q.createdAt ? new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '',
-    validUntil: q.validUntil || '',
+    refNo: pick(lh.refNo, q.quotationNo || ''),
+    date: pick(lh.date, q.createdAt ? new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : ''),
+    validUntil: pick(lh.validUntil, q.validUntil || ''),
     status: q.status || 'Draft',
     clientName: q.clientName || '',
     clientCompany: q.clientCompany || '',
@@ -182,7 +249,8 @@ export function buildDoc(q, bank) {
     description: q.description || '',
     scope: q.scope || '',
     items: (q.items || []).map(it => ({ label: it.label, amount: toInt(it.amount) })),
-    subtotal: total,
+    subtotal,
+    discount,
     advance: adv,
     paid,
     balance,
@@ -195,19 +263,21 @@ export function buildDoc(q, bank) {
     // ---- optional project screenshots drawn into the laptop / phone ----
     laptopShot: q.laptopShot || '',
     phoneShot: q.phoneShot || '',
+    // Per-device crop: { zoom, x, y } set in the Studio's screenshot controls.
+    shotFit: q.shotFit || {},
 
     // ---- template mode (owner's letterhead) ----
-    clientLine: [q.clientName, q.clientCompany].filter(Boolean).join('  ·  ') || '',
-    subject,
+    clientLine: pick(lh.clientLine, [q.clientName, q.clientCompany].filter(Boolean).join('  ·  ') || ''),
+    subject: pick(lh.subject, subject),
     priceLabel,
-    intro: q.description || introByFlavour[flavour],
-    service: q.scope || q.description || '',
-    features: scopeLines,
+    intro: pick(lh.intro, q.description || introByFlavour[flavour]),
+    service: pick(lh.service, q.scope || q.description || ''),
+    features: pickList(lh.features, scopeLines),
     listPrice: total,
     // 0 / blank = no discount → the letterhead prints only the actual cost.
     // A smaller value than the actual cost prints the red strike-through.
     offerPrice: 0,
-    domain: domainByFlavour[flavour],
+    domain: pickList(lh.domain, domainByFlavour[flavour]),
     payRemark: q.quotationNo || '',
 
     // ── Editable letterhead rows ──────────────────────────────────
@@ -223,22 +293,31 @@ export function buildDoc(q, bank) {
     totalLabel: typeof savedRows.totalLabel === 'string' ? savedRows.totalLabel : 'Total Quotation Amount',
     // 0 = "not overridden" → the renderer uses the quotation's own total.
     totalAmount: toInt(savedRows.totalAmount) || total,
-    priceRows: Array.isArray(savedRows.priceRows) && savedRows.priceRows.length
-      ? savedRows.priceRows
-      : Array.isArray(savedRows.priceRows)
-        ? []
-        : defaultPriceRows(q, { priceLabel, subject, total, adv, balance }),
+    priceRows: (() => {
+      const base = Array.isArray(savedRows.priceRows)
+        ? savedRows.priceRows
+        : defaultPriceRows(q, { priceLabel, subject, total, adv, balance });
+      if (discount <= 0 || !base.length) return base;
+      // A saved layout may predate the discount, so the deduction row is added
+      // to it as well — unless the owner already wrote a discount line.
+      if (base.some(r => /discount|offer/i.test(String(r?.text || '')))) return base;
+      const row = { text: discountRowText(q), amount: -discount, was: 0, kind: 'note' };
+      const advIdx = base.findIndex(r => /advance/i.test(String(r?.text || '')));
+      return advIdx >= 0
+        ? [...base.slice(0, advIdx), row, ...base.slice(advIdx)]
+        : [...base, row];
+    })(),
     payRows: Array.isArray(savedRows.payRows)
       ? savedRows.payRows
       : defaultPayRows(bank, q),
 
-    termList: [
+    termList: pickList(lh.termList, [
       `Advance payment of ${money(adv)} is required to start the work.`,
       `Balance payment of ${money(balance)} is to be paid after completion and final approval.`,
       ...extraTermsByFlavour[flavour],
       'Any additional custom features will be quoted separately if required.',
       `This quotation is valid until ${q.validUntil || '—'}.`,
-    ],
+    ]),
   };
 }
 
@@ -260,8 +339,21 @@ function MiniBtn({ children, onClick, title, danger, disabled }) {
 // "Open saved image" — pulls the stored letterhead through the SDK from its
 // Storage path, so no public token URL is ever written to the quotation doc.
 function OpenSavedImage({ path, rev }) {
-  const { url, busy } = usePrivateUrl(path, !!path, revOf(rev));
-  if (busy || !url) return null;
+  const [retry, setRetry] = useState(0);
+  const { url, busy, err } = usePrivateUrl(path, !!path, `${revOf(rev)}|${retry}`);
+  if (busy) {
+    return <span style={{ fontSize:11, color:C.muted }}>Opening saved image…</span>;
+  }
+  if (!url) {
+    return (
+      <button type="button" onClick={() => setRetry(n => n + 1)}
+        title={err || 'Load the saved image again'}
+        style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 12px', borderRadius:9, cursor:'pointer',
+          background:'rgba(224,66,60,0.12)', border:'1px solid rgba(224,66,60,0.4)', color:C.red, fontWeight:700, fontSize:12 }}>
+        <ExternalLink size={13} /> Saved image could not open — Retry
+      </button>
+    );
+  }
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       style={{ display:'flex', alignItems:'center', gap:6, padding:'9px 12px', borderRadius:9, textDecoration:'none',
@@ -271,7 +363,7 @@ function OpenSavedImage({ path, rev }) {
   );
 }
 
-export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref, onDocChange, onSaveImage }) {
+export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref, onDocChange, onSaveImage, saveDisabledReason = '' }) {
   const [d, setD] = useState(null);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
@@ -292,11 +384,40 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   // Stored as small data URLs on the quotation (no Storage round-trip).
   const [shots, setShots] = useState({ laptop:'', phone:'' });
   const shotImgs = useRef({ laptop:null, phone:null });
+  // Zoom / position of each screenshot inside its mockup screen.
+  const [shotFit, setShotFit] = useState(() => normShotFit(quotation?.shotFit));
+  const fitSig = useRef('');
+  const fitPending = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return;
     setShots({ laptop: quotation?.laptopShot || '', phone: quotation?.phoneShot || '' });
+    // Seed the crop controls from the saved document; the signature is set too,
+    // so opening the Studio is not mistaken for an edit that needs saving.
+    const seed = normShotFit(quotation?.shotFit);
+    fitSig.current = JSON.stringify(seed);
+    fitPending.current = null;
+    setShotFit(seed);
   }, [isOpen, quotation?.id, quotation?.laptopShot, quotation?.phoneShot]);
+
+  // Slider drags should paint immediately but reach Firestore once the hand
+  // stops moving — one write per gesture instead of one per pixel.
+  useEffect(() => {
+    const sig = JSON.stringify(shotFit);
+    if (sig === fitSig.current) return undefined;
+    fitSig.current = sig;
+    fitPending.current = shotFit;
+    const t = setTimeout(() => {
+      onDocChangeRef.current?.({ shotFit });
+      fitPending.current = null;
+    }, 450);
+    return () => clearTimeout(t);
+  }, [shotFit]);
+
+  const patchFit = (k, patch) => setShotFit(prev => ({
+    ...prev,
+    [k]: { ...prev[k], ...patch },
+  }));
 
   // Decode the data URLs into canvas-ready images (and trigger a repaint).
   useEffect(() => {
@@ -336,6 +457,9 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   const onDocChangeRef = useRef(onDocChange);
   useEffect(() => { onDocChangeRef.current = onDocChange; });
 
+  const quoteRef = useRef(quotation);
+  useEffect(() => { quoteRef.current = quotation; }, [quotation]);
+
   const commitRows = useCallback(() => {
     if (rowsTimer.current) { clearTimeout(rowsTimer.current); rowsTimer.current = null; }
     const rows = pendingRows.current;
@@ -343,6 +467,14 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
     pendingRows.current = null;
     rowsSig.current = JSON.stringify(rows);
     onDocChangeRef.current?.({ quoteRows: rows });
+    // The payment block is the same on every quotation — remember what was
+    // just approved so the next one opens already filled (still editable).
+    const defaults = rememberPayDefaults(rows.payRows, quoteRef.current);
+    if (isFirebaseConfigured && defaults.length) {
+      setDoc(doc(db, 'settings', 'bankDetails'),
+        { payRows: defaults, updatedAt: serverTimestamp() }, { merge: true })
+        .catch(() => { /* defaults also live in this browser */ });
+    }
   }, []);
 
   useEffect(() => {
@@ -366,12 +498,66 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, d?.priceRows, d?.payRows, d?.totalLabel, d?.totalAmount]);
 
+  // ── Letterhead text written straight back onto the quotation ──────
+  // The template inputs (subject, intro, service details, key features,
+  // domain notes, terms, ref/date/valid-until, TO line) used to live only in
+  // this panel's own state: the picture changed while the Studio was open and
+  // the edit vanished the moment it closed — the "edit panni save pannalum
+  // maari irukku" report. They are now stored as `letterhead` on the doc and
+  // buildDoc() prefers them, so reopening shows exactly what was typed.
+  const lhSig = useRef('');
+  const pendingLH = useRef(null);
+  const lhTimer = useRef(null);
+  const commitLetterhead = useCallback(() => {
+    if (lhTimer.current) { clearTimeout(lhTimer.current); lhTimer.current = null; }
+    const lh = pendingLH.current;
+    if (!lh) return;
+    pendingLH.current = null;
+    lhSig.current = JSON.stringify(lh);
+    onDocChangeRef.current?.({ letterhead: lh });
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !d || mode !== 'template') return undefined;
+    const lh = {
+      refNo: String(d.refNo || ''),
+      date: String(d.date || ''),
+      validUntil: String(d.validUntil || ''),
+      clientLine: String(d.clientLine || ''),
+      subject: String(d.subject || ''),
+      intro: String(d.intro || ''),
+      service: String(d.service || ''),
+      features: (d.features || []).map(String),
+      domain: (d.domain || []).map(String),
+      termList: (d.termList || []).map(String),
+    };
+    const sig = JSON.stringify(lh);
+    if (sig === lhSig.current) return undefined;
+    if (!lhSig.current) { lhSig.current = sig; return undefined; }  // seed pass
+    pendingLH.current = lh;
+    lhTimer.current = setTimeout(commitLetterhead, 600);
+    return () => clearTimeout(lhTimer.current);
+  }, [isOpen, mode, d, commitLetterhead]);
+
+  // Zoom / pan: the last slider position must reach the quotation even when
+  // the Studio is closed within the debounce window (that is exactly how a
+  // fitted screenshot reverted to the centre on the next open).
+  const commitFit = useCallback(() => {
+    const v = fitPending.current;
+    if (!v) return;
+    fitPending.current = null;
+    onDocChangeRef.current?.({ shotFit: v });
+  }, []);
+
   // Closing the Studio (and unmounting the page) must never drop a pending edit.
   useEffect(() => {
     if (isOpen) return;
     commitRows();
-  }, [isOpen, commitRows]);
-  useEffect(() => () => commitRows(), [commitRows]);
+    commitLetterhead();
+    commitFit();
+  }, [isOpen, commitRows, commitLetterhead, commitFit]);
+  useEffect(() => () => { commitRows(); commitLetterhead(); commitFit(); },
+    [commitRows, commitLetterhead, commitFit]);
 
   // Load bank details (settings/bankDetails) once per open
   useEffect(() => {
@@ -381,6 +567,8 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
     // never mistaken for an edit and written back to the wrong quotation.
     rowsSig.current = '';
     pendingRows.current = null;
+    lhSig.current = '';
+    pendingLH.current = null;
     const seed = buildDoc(quotation, null);
     setD(seed);
     if (!isFirebaseConfigured) return () => { alive = false; };
@@ -641,6 +829,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
     const totW = 420, totX = W - PAD - totW;
     const rows = [
       ['Subtotal', money(toInt(d.subtotal)), false],
+      ...(toInt(d.discount) > 0 ? [['Discount', `− ${money(toInt(d.discount))}`, false]] : []),
       [`Advance (${d.advance ? Math.round(toInt(d.advance) / (toInt(d.total) || 1) * 100) : 0}%)`, money(toInt(d.advance)), false],
       ['Paid so far', money(toInt(d.paid)), false],
       ['Balance due', money(toInt(d.balance)), false],
@@ -714,13 +903,50 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   }, [d]);
 
   // ── Template renderer (the owner's own letterhead) ──────────────
+  // Painting the letterhead means re-deriving the sample-text ink removal from
+  // pixels — ~1 s at export size. That is far too slow to repeat while a zoom /
+  // pan slider moves, so the letterhead WITHOUT screenshots is cached in an
+  // offscreen canvas and each fit change only composites that cache + the two
+  // screens (a couple of drawImage calls). The cache is rebuilt whenever the
+  // document content (rows, text, shots) changes.
+  const baseCanvas = useRef(null);
+  const baseKey = useRef(null);
   const drawTemplate = useCallback(() => {
-    if (!canvasRef.current || !d) return;
-    renderTemplate(canvasRef.current, tplRef.current, {
+    const cv = canvasRef.current;
+    if (!cv || !d) return;
+    // Shots are excluded from the cache key: they are composited separately.
+    const key = JSON.stringify({ ...d, shotFit: null, assetsReady });
+    if (!baseCanvas.current || baseKey.current !== key) {
+      const nextBase = document.createElement('canvas');
+      renderTemplateBase(nextBase, tplRef.current, { ...d, shots: {} }, TEMPLATE_QUOTATION.scale);
+      baseCanvas.current = nextBase;
+      baseKey.current = key;
+    }
+    const base = baseCanvas.current;
+    if (base && base.width) {
+      if (cv.width !== base.width || cv.height !== base.height) {
+        cv.width = base.width; cv.height = base.height;
+      }
+      const S = base.width / TEMPLATE_QUOTATION.width;
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(base, 0, 0);
+      ctx.setTransform(S, 0, 0, S, 0, 0);
+      drawQuotationShots(ctx, {
+        ...d,
+        shotFit,
+        shots: { laptop: shotImgs.current.laptop, phone: shotImgs.current.phone },
+      });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      return;
+    }
+    renderTemplate(cv, tplRef.current, {
       ...d,
       shots: { laptop: shotImgs.current.laptop, phone: shotImgs.current.phone },
+      shotFit,
     });
-  }, [d, assetsReady]);
+  }, [d, assetsReady, shotFit]);
 
   useEffect(() => {
     if (mode === 'template') drawTemplate();
@@ -757,6 +983,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
         cx.drawImage(im, 0, 0, cv.width, cv.height);
         const data = cv.toDataURL('image/jpeg', 0.72);
         setShots(s => ({ ...s, [k]: data }));
+        patchFit(k, { zoom:1, x:0, y:0 });   // a new picture starts centred
         onDocChange?.({ [shotField(k)]: data });
         flash(`${k === 'laptop' ? 'Laptop' : 'Phone'} screenshot added`);
       };
@@ -768,6 +995,7 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
   const clearShot = (k) => {
     setShots(s => ({ ...s, [k]: '' }));
     shotImgs.current[k] = null;
+    patchFit(k, { zoom:1, x:0, y:0 });
     onDocChange?.({ [shotField(k)]: '' });
     setAssetsReady(n => n + 1);
   };
@@ -868,9 +1096,10 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
     </div>
   );
 
+  // The backdrop never closes this box — only its own Close / Save buttons do,
+  // so an accidental click outside cannot throw away the letterhead being edited.
   return createPortal(
-    <div className="doc-studio-overlay" style={{ position:'fixed', inset:0, zIndex:220, background:'rgba(0,0,0,0.78)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="doc-studio-overlay" style={{ position:'fixed', inset:0, zIndex:220, background:'rgba(0,0,0,0.78)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
       <div className="doc-studio-modal" style={{ width:'100%', maxWidth:1180, height:'92vh', background:'rgba(6,17,43,0.99)', border:'1px solid rgba(32,52,93,0.7)', borderRadius:18, boxShadow:'0 30px 90px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         {/* header */}
         <div className="doc-studio-head" style={{ padding:'14px 20px', borderBottom:'1px solid rgba(32,52,93,0.6)', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -906,10 +1135,6 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
             <div className="doc-studio-editor" style={{ display:'flex', flexDirection:'column', gap:10 }}>
               {mode === 'template' ? (
                 <>
-                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5, padding:'8px 10px', background:'rgba(0,198,224,0.07)', border:'1px solid rgba(0,198,224,0.22)', borderRadius:8 }}>
-                    Unga letterhead image adiye use aagum — keezha irukura values mattum athula overwrite aagum.
-                  </div>
-
                   <div style={{ display:'flex', gap:8 }}>
                     <ERPInput label="Quotation No" value={d.refNo} onChange={ed('refNo')} style={{ flex:1 }} />
                   </div>
@@ -926,11 +1151,6 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
                   <ERPTextarea label="One feature per line (tick list)" value={d.features.join('\n')} onChange={listEd('features')} rows={8} />
 
                   {section('Pricing rows')}
-                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5 }}>
-                    Add, rename, re-order or delete a row for this client. Up to 4 rows print at full
-                    size; more rows shrink to fit the card automatically. &ldquo;Was&rdquo; prints the
-                    old price struck through above the row amount.
-                  </div>
                   {rowsOf('priceRows').map((r, i) => (
                     <div key={i} style={rowCard}>
                       <div style={{ display:'flex', gap:6, alignItems:'center' }}>
@@ -976,46 +1196,73 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
                   <ERPTextarea label="Domain & hosting notes (one per line)" value={d.domain.join('\n')} onChange={listEd('domain')} rows={4} />
 
                   {section('Project screenshots')}
-                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5 }}>
-                    Optional — show the client&apos;s own website / app inside the laptop and phone on the letterhead.
-                  </div>
                   {[
                     { k:'laptop', label:'Laptop screen', hint:'Wide screenshot works best' },
                     { k:'phone',  label:'Phone screen',  hint:'Portrait screenshot' },
                   ].map(s => (
-                    <div key={s.k} style={{ display:'flex', alignItems:'center', gap:10, padding:8, borderRadius:10,
+                    <div key={s.k} style={{ padding:8, borderRadius:10,
                       border:'1px dashed rgba(32,52,93,0.8)', background:'rgba(4,13,31,0.45)' }}>
-                      <div style={{ width:64, height:48, borderRadius:6, overflow:'hidden', flexShrink:0,
-                        background:'rgba(10,24,56,0.9)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        {shots[s.k]
-                          ? <img src={shots[s.k]} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                          : <ImageIcon size={15} style={{ color:C.muted }} />}
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div style={{ width:64, height:48, borderRadius:6, overflow:'hidden', flexShrink:0,
+                          background:'rgba(10,24,56,0.9)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          {shots[s.k]
+                            ? <img src={shots[s.k]} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                            : <ImageIcon size={15} style={{ color:C.muted }} />}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:11.5, fontWeight:700, color:C.text }}>{s.label}</div>
+                          <div style={{ fontSize:9.5, color:C.muted }}>{shots[s.k] ? 'Uploaded — shown in the mockup' : s.hint}</div>
+                        </div>
+                        <label style={{ padding:'6px 10px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700,
+                          background:'rgba(0,102,255,0.16)', border:'1px solid rgba(0,102,255,0.5)', color:'#8CC2FF', flexShrink:0 }}>
+                          {shots[s.k] ? 'Change' : 'Upload'}
+                          <input type="file" accept="image/*" onChange={pickShot(s.k)} style={{ display:'none' }} />
+                        </label>
+                        {shots[s.k] && (
+                          <button onClick={() => clearShot(s.k)} title="Remove screenshot"
+                            style={{ background:'none', border:'none', color:C.red, cursor:'pointer', display:'flex', flexShrink:0 }}>
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:11.5, fontWeight:700, color:C.text }}>{s.label}</div>
-                        <div style={{ fontSize:9.5, color:C.muted }}>{shots[s.k] ? 'Uploaded — shown in the mockup' : s.hint}</div>
-                      </div>
-                      <label style={{ padding:'6px 10px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700,
-                        background:'rgba(0,102,255,0.16)', border:'1px solid rgba(0,102,255,0.5)', color:'#8CC2FF', flexShrink:0 }}>
-                        {shots[s.k] ? 'Change' : 'Upload'}
-                        <input type="file" accept="image/*" onChange={pickShot(s.k)} style={{ display:'none' }} />
-                      </label>
+
+                      {/* Zoom + pan: the crop never leaves the picture, so the
+                          screen always fills edge to edge. */}
                       {shots[s.k] && (
-                        <button onClick={() => clearShot(s.k)} title="Remove screenshot"
-                          style={{ background:'none', border:'none', color:C.red, cursor:'pointer', display:'flex', flexShrink:0 }}>
-                          <Trash2 size={13} />
-                        </button>
+                        <div style={{ marginTop:8, padding:'8px 10px', borderRadius:8,
+                          background:'rgba(10,24,56,0.55)', border:`1px solid ${C.border}`,
+                          display:'flex', flexDirection:'column', gap:6 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                            <span style={{ fontSize:9.5, fontWeight:800, color:C.cyan, letterSpacing:'0.5px' }}>
+                              FIT INSIDE THE SCREEN
+                            </span>
+                            <button type="button" onClick={() => patchFit(s.k, { zoom:1, x:0, y:0 })}
+                              style={{ background:'none', border:'none', color:C.muted, fontSize:9.5, fontWeight:700, cursor:'pointer' }}>
+                              Reset
+                            </button>
+                          </div>
+                          {[
+                            { key:'zoom', label:'Zoom',     min:1,   max:3, step:0.02, text:v => `${v.toFixed(2)}×` },
+                            { key:'x',    label:'Move ↔',   min:-1,  max:1, step:0.01, text:v => `${Math.round(v * 100)}%` },
+                            { key:'y',    label:'Move ↕',   min:-1,  max:1, step:0.01, text:v => `${Math.round(v * 100)}%` },
+                          ].map(f => (
+                            <label key={f.key} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                              <span style={{ width:50, flexShrink:0, fontSize:10, color:C.subtle }}>{f.label}</span>
+                              <input type="range" min={f.min} max={f.max} step={f.step}
+                                value={shotFit[s.k][f.key]}
+                                onChange={e => patchFit(s.k, { [f.key]: Number(e.target.value) })}
+                                style={{ flex:1, minWidth:0, accentColor:C.blue }}/>
+                              <span style={{ width:40, flexShrink:0, textAlign:'right', fontSize:9.5, color:C.muted,
+                                fontVariantNumeric:'tabular-nums' }}>{f.text(shotFit[s.k][f.key])}</span>
+                            </label>
+                          ))}
+                        </div>
                       )}
                     </div>
                   ))}
 
 
                   {section('Payment / detail rows')}
-                  <div style={{ fontSize:10.5, color:C.muted, lineHeight:1.5 }}>
-                    These print in the PAYMENT DETAILS card as “Title : value”. The defaults come from
-                    Settings → Bank details plus the quotation&apos;s custom fields — rename any of them,
-                    delete what does not apply, or add a row for something the letterhead never had.
-                  </div>
                   {rowsOf('payRows').map((r, i) => (
                     <div key={i} style={{ ...rowCard, flexDirection:'row', alignItems:'center', flexWrap:'wrap' }}>
                       <input value={r.label || ''} placeholder="Title" title="Row title"
@@ -1128,7 +1375,8 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
         {/* action bar */}
         <div style={{ padding:'12px 18px', borderTop:'1px solid rgba(32,52,93,0.6)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
           {onSaveImage && (
-            <ERPBtn variant="primary" onClick={saveToQuotation} disabled={!!busy}>
+            <ERPBtn variant="primary" onClick={saveToQuotation} disabled={!!busy || !!saveDisabledReason}
+              title={saveDisabledReason || 'Store this exact image on the quotation'}>
               <Save size={14} /> {busy === 'save' ? 'Saving…' : 'Save to quotation'}
             </ERPBtn>
           )}
@@ -1143,8 +1391,8 @@ export default function QuotationDocStudio({ isOpen, onClose, quotation, waHref,
               Open WhatsApp
             </a>
           )}
-          <span style={{ marginLeft:'auto', fontSize:11, color:C.muted }}>
-            Tip: Copy image → WhatsApp Web → Ctrl+V → Send
+          <span style={{ marginLeft:'auto', fontSize:11, color:saveDisabledReason ? C.cyan : C.muted }}>
+            {saveDisabledReason || 'Tip: Copy image → WhatsApp Web → Ctrl+V → Send'}
           </span>
         </div>
       </div>

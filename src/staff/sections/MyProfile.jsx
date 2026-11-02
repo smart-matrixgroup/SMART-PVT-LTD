@@ -1,27 +1,27 @@
 // ─────────────────────────────────────────────────────────────────
 //  Phase 3 B — Staff portal: Profile + secure personal documents.
-//  - MyProfile: read-only company record + self-service edit of ONLY
-//    phone/address (matches the firestore.rules hasOnly allow-list).
+//  - MyProfile: read-only company record. The profile is admin-managed;
+//    staff cannot change name/phone/address/photo from here.
 //  - MyDocuments: per-category (kyc / certificate) document manager.
 //    Uploads go to staff-docs/{uid}/... (Storage rules enforce
 //    image/pdf + 10 MB); downloads use getBytes — files are never
 //    exposed as public URLs. No delete here on purpose: document
 //    removal stays admin-only (see storage.rules).
 // ─────────────────────────────────────────────────────────────────
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getBytes, getDownloadURL } from 'firebase/storage';
+import { ref as storageRef, uploadBytes, getBytes } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPInput, ERPAvatar,
+  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPAvatar,
 } from '../../erp/components/ERPui';
 import StaffEmpty from '../components/StaffEmpty';
-import { DOC_CATEGORIES, compressImage } from '../staffUtils';
+import { DOC_CATEGORIES } from '../staffUtils';
 import { fmtDate } from '../../erp/money';
 import {
   User, Mail, Phone, MapPin, CalendarDays, GraduationCap, Briefcase, Info,
-  Save, Upload, FileText, Download, AlertCircle, CheckCircle2, Camera, Trash2,
+  Upload, FileText, Download, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 
 const fmtWhen = iso => {
@@ -37,24 +37,14 @@ const fmtSize = n => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
 // ═════════════════════════════════════════════════════════════════
-//  My Profile — read-only fields + phone/address self-service edit
+//  My Profile — the company record, read-only.
+//  Staff cannot change their own profile: name, phone, address,
+//  department, salary and photo are admin-managed (see firestore.rules
+//  and storage.rules). Only the KYC / certificate documents below are
+//  uploaded from this portal.
 // ═════════════════════════════════════════════════════════════════
 export default function MyProfile() {
-  const { staffProfile, isDevSession } = useAuth();
-  const live = isFirebaseConfigured && !isDevSession;
-
-  const [phone, setPhone]     = useState(staffProfile?.phone || '');
-  const [address, setAddress] = useState(staffProfile?.address || '');
-  const [busy, setBusy]       = useState(false);
-  const [err, setErr]         = useState('');
-  const [ok, setOk]           = useState('');
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const photoRef = useRef(null);
-
-  useEffect(() => {
-    setPhone(staffProfile?.phone || '');
-    setAddress(staffProfile?.address || '');
-  }, [staffProfile?.id]);
+  const { staffProfile } = useAuth();
 
   if (!staffProfile) {
     return (
@@ -67,34 +57,6 @@ export default function MyProfile() {
     );
   }
 
-  const dirty =
-    phone.trim() !== (staffProfile.phone || '') ||
-    address.trim() !== (staffProfile.address || '');
-
-  const save = async () => {
-    setErr(''); setOk('');
-    if (!phone.trim()) { setErr('Phone number is required.'); return; }
-    setBusy(true);
-    try {
-      if (live) {
-        // Only phone/address/updatedAt — everything else is rejected by
-        // the firestore.rules hasOnly allow-list for staff self-edits.
-        await updateDoc(doc(db, 'staff', staffProfile.id), {
-          phone: phone.trim(),
-          address: address.trim(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-      setOk(live ? 'Profile updated.' : 'Saved for this session (dev mode — not persisted).');
-    } catch (e) {
-      setErr(
-        e?.code === 'permission-denied'
-          ? 'Not allowed — only phone and address can be edited here.'
-          : 'Could not save. Please try again.'
-      );
-    } finally { setBusy(false); }
-  };
-
   const fields = [
     { icon: Mail,          label: 'Email',      value: staffProfile.loginEmail || staffProfile.email || '—' },
     { icon: Phone,         label: 'Phone',      value: staffProfile.phone || '—' },
@@ -103,50 +65,6 @@ export default function MyProfile() {
     { icon: User,          label: 'Job Role',   value: staffProfile.role || '—' },
     { icon: GraduationCap, label: 'Education',  value: staffProfile.education || '—' },
   ];
-
-  // ── Profile photo ───────────────────────────────────────────────
-  // Compressed locally, uploaded to staff-photos/{uid}/ (public-read
-  // avatar path in storage.rules) and the URL is stamped on the staff
-  // doc — the admin's Staff page and portal header update live.
-  const onPhotoPick = async (e) => {
-    const file = e.target.files?.[0];
-    if (photoRef.current) photoRef.current.value = '';
-    if (!file) return;
-    setErr(''); setOk('');
-    if (!file.type.startsWith('image/')) { setErr('Please choose a JPG or PNG image.'); return; }
-    if (file.size > 5 * 1024 * 1024) { setErr('Photo is larger than 5 MB — please choose a smaller image.'); return; }
-    if (!live) { setErr('Photo upload needs the live Firebase backend (not available in dev session).'); return; }
-    setPhotoBusy(true);
-    try {
-      const { blob } = await compressImage(file, 480, 0.86);
-      const path = `staff-photos/${staffProfile.id}/avatar_${Date.now()}.jpg`;
-      const snap = await uploadBytes(storageRef(storage, path), blob, { contentType: 'image/jpeg' });
-      const url = await getDownloadURL(snap.ref);
-      await updateDoc(doc(db, 'staff', staffProfile.id), {
-        photoURL: url,
-        updatedAt: serverTimestamp(),
-      });
-      setOk('Profile photo updated — your admin sees it immediately.');
-    } catch (ex) {
-      setErr(
-        ex?.code === 'storage/unauthorized' || ex?.code === 'permission-denied'
-          ? 'Upload denied — ask your administrator to publish the latest Storage rules.'
-          : 'Photo upload failed. Please try again.'
-      );
-    } finally { setPhotoBusy(false); }
-  };
-
-  const removePhoto = async () => {
-    setErr(''); setOk('');
-    if (!live) { setErr('Photo changes need the live Firebase backend.'); return; }
-    setPhotoBusy(true);
-    try {
-      await updateDoc(doc(db, 'staff', staffProfile.id), { photoURL: '', updatedAt: serverTimestamp() });
-      setOk('Profile photo removed.');
-    } catch {
-      setErr('Could not remove the photo. Please try again.');
-    } finally { setPhotoBusy(false); }
-  };
 
   const avColor = AVATAR_COLORS[(staffProfile.name || '').length % AVATAR_COLORS.length];
 
@@ -157,24 +75,7 @@ export default function MyProfile() {
 
         {/* Identity header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <ERPAvatar name={staffProfile.name} color={avColor} size={64} src={staffProfile.photoURL || null} />
-            <button
-              type="button"
-              onClick={() => photoRef.current?.click()}
-              disabled={photoBusy}
-              title="Upload / change profile photo"
-              style={{
-                position: 'absolute', bottom: -5, right: -5, width: 24, height: 24, borderRadius: '50%',
-                border: '2px solid #06112B', background: 'linear-gradient(135deg,#0066FF,#8B5CF6)',
-                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: photoBusy ? 'wait' : 'pointer', padding: 0, boxShadow: '0 3px 10px rgba(0,0,0,0.45)',
-              }}
-            >
-              <Camera size={11} />
-            </button>
-            <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onPhotoPick} />
-          </div>
+          <ERPAvatar name={staffProfile.name} color={avColor} size={64} src={staffProfile.photoURL || null} />
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{staffProfile.name || '—'}</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
@@ -185,20 +86,6 @@ export default function MyProfile() {
               <span style={{ fontSize: 11.5, color: C.muted }}>{staffProfile.role || '—'}</span>
               {staffProfile.status && <ERPBadge status={staffProfile.status} />}
             </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <ERPBtn size="sm" variant="secondary" disabled={photoBusy} onClick={() => photoRef.current?.click()}>
-              <Camera size={12} /> {photoBusy ? 'Uploading…' : staffProfile.photoURL ? 'Change photo' : 'Upload photo'}
-            </ERPBtn>
-            {staffProfile.photoURL && (
-              <button type="button" disabled={photoBusy} onClick={removePhoto} style={{
-                background: 'transparent', border: 'none', color: C.muted, fontSize: 10, fontWeight: 700,
-                cursor: photoBusy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center',
-                justifyContent: 'center', gap: 4, padding: 0,
-              }}>
-                <Trash2 size={10} /> Remove photo
-              </button>
-            )}
           </div>
         </div>
 
@@ -218,7 +105,6 @@ export default function MyProfile() {
               </div>
             </div>
           ))}
-          {/* Address spans on its own row when space allows */}
           <div style={{
             display: 'flex', gap: 10, alignItems: 'flex-start', gridColumn: '1 / -1',
             padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`,
@@ -232,52 +118,11 @@ export default function MyProfile() {
             </div>
           </div>
         </div>
-
-        {/* Self-service edit */}
-        <div style={{
-          marginTop: 16, padding: 14, borderRadius: 12, background: C.bg,
-          border: `1px dashed ${C.border}`, display: 'flex', flexDirection: 'column', gap: 12,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: C.text, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Edit my contact details
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
-            <ERPInput label="Phone" value={phone} onChange={setPhone} placeholder="+94 77 123 4567" />
-            <ERPInput label="Address" value={address} onChange={setAddress} placeholder="Street, city" />
-          </div>
-
-          {err && (
-            <div style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start', padding: '9px 12px', borderRadius: 10,
-              background: 'rgba(240,90,103,0.1)', border: '1px solid rgba(240,90,103,0.35)',
-              color: C.red, fontSize: 11.5,
-            }}>
-              <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {err}
-            </div>
-          )}
-          {ok && (
-            <div style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start', padding: '9px 12px', borderRadius: 10,
-              background: 'rgba(24,199,122,0.1)', border: '1px solid rgba(24,199,122,0.35)',
-              color: C.green, fontSize: 11.5,
-            }}>
-              <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {ok}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <ERPBtn variant="primary" disabled={busy || !dirty} onClick={save}>
-              <Save size={13} /> {busy ? 'Saving…' : 'Save changes'}
-            </ERPBtn>
-            <span style={{ fontSize: 10.5, color: C.muted, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Info size={11} /> Only phone and address are editable here — ask an admin for other changes.
-            </span>
-          </div>
-        </div>
       </ERPPanel>
     </div>
   );
 }
+
 
 // ═════════════════════════════════════════════════════════════════
 //  My Documents — the staff's OWN kyc / certificate files.

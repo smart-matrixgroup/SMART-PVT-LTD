@@ -20,6 +20,7 @@ import {
 import { DEFAULT_ACCESS_RULES } from '../config/accessRules';
 import MyDashboard  from './sections/MyDashboard';
 import MyWork       from './sections/MyWork';
+import MyProgress   from './sections/MyProgress';
 import DailyUpdate  from './sections/DailyUpdate';
 import MyAttendance from './sections/MyAttendance';
 import MyProfile, { MyDocuments } from './sections/MyProfile';
@@ -112,7 +113,7 @@ function Section({ page, onNavigate, isAllowed }) {
 
   switch (page) {
     case 'work':            return <MyWork variant="assigned" />;
-    case 'progress':        return <MyWork variant="progress" />;
+    case 'progress':        return <MyProgress />;
     case 'daily':           return <DailyUpdate />;
     case 'sheets':          return <WorkSheets />;
     case 'client_projects': return <StaffClientProjects isRestricted={false} />;

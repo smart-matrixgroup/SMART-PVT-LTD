@@ -5,10 +5,14 @@ service cloud.firestore {
     // Role is resolved by document existence rather than Firebase custom
     // claims, since this project has no Cloud Functions/Admin SDK backend
     // to mint claims. See src/context/AuthContext.jsx for the client side.
+    // Keep this email list identical to storage.rules → isAdmin(), otherwise
+    // an admin can upload files but gets "Missing or insufficient permissions"
+    // on every Firestore write (e.g. creating a portfolio link).
     function isAdmin() {
       return request.auth != null &&
         (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-         request.auth.token.email == 'admin@smart.com');
+         request.auth.token.email == 'admin@smart.com' ||
+         request.auth.token.email == 'admin@findmysmart.com');
     }
 
     // Admin membership list — never created/edited from the client.
@@ -64,7 +68,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Project chat threads (client portal messages - legacy compatibility)
+    // Portfolio request links (ERP → Clients → Portfolio Link). The token in
+    // the URL is the only access control the public form has, so anyone may
+    // GET one link by its exact id (the form validates it), but listing all
+    // links or creating/turning them off stays admin-only.
+    match /portfolioLinks/{token} {
+      allow get: if true;
+      allow list, create, update, delete: if isAdmin();
+    }
+
+    // Submissions from those links. The public form creates a request with a
+    // name plus a way to reach the person; only admins read them or mark them
+    // as converted into a client.
+    match /portfolioRequests/{requestId} {
+      allow create: if request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && (
+                      (request.resource.data.phone is string && request.resource.data.phone.size() > 0)
+                      || (request.resource.data.email is string && request.resource.data.email.size() > 0)
+                    );
+      allow read, update, delete: if isAdmin();
+    }
+
+
     match /messages/{projectId}/chats/{chatId} {
       allow read, write: if request.auth != null;
     }
@@ -171,10 +197,11 @@ service cloud.firestore {
     // ownership is enforced by the doc id itself.
 
     // Staff profiles. A staff member can read their own profile and may
-    // only edit their phone/address and manage their own `docs` array
-    // (portal Profile / KYC / Certificates pages — the matching Storage
-    // object must already exist under staff-docs/{uid}/). All other
-    // fields — salary, login email, deleted flag — are admin-managed.
+    // only manage their own `docs` array (portal KYC / Certificates pages
+    // — the matching Storage object must already exist under
+    // staff-docs/{uid}/). The profile itself — name, phone, address,
+    // photo, department, salary, login email, deleted flag — is
+    // admin-managed only; staff cannot edit their own record.
     // `deleted: true` blocks portal login (see AuthContext.jsx) — a
     // soft delete, never a hard removal when attendance/salary records
     // exist.
@@ -185,7 +212,7 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (request.auth != null && request.auth.uid == uid &&
          request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['phone', 'address', 'docs', 'photoURL', 'avatar', 'updatedAt']));
+           .hasOnly(['docs', 'updatedAt']));
     }
 
     // Work assignments. Staff read their own (authUid field) and may ONLY
@@ -205,6 +232,30 @@ service cloud.firestore {
          resource.data.authUid == request.auth.uid &&
          request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['status', 'progress', 'updatedAt', 'startedAt']));
+    }
+
+    // Staff-maintained Work Progress list (portal → Work Progress). Each
+    // stage is added by the staff member themselves and carries the photo /
+    // PDF proof paths for the work they finished. Admins read every item
+    // (Staff → profile → Work Progress, Work → Work Stages) and approve each
+    // finished stage; only an APPROVED stage becomes readable by that stage's
+    // client in their portal. Proof files stay staff-private Storage.
+    match /staffProgress/{itemId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.staffUid == request.auth.uid) ||
+        (request.auth != null &&
+         resource.data.clientId == request.auth.uid &&
+         resource.data.reviewState == 'accepted');
+      allow create: if isAdmin() ||
+        (request.auth != null && request.resource.data.staffUid == request.auth.uid);
+      // Staff own their row, but the approval stamp belongs to the admin: a
+      // staff update can never set reviewState to 'accepted' themselves.
+      allow update: if isAdmin() ||
+        (request.auth != null && resource.data.staffUid == request.auth.uid &&
+         (request.resource.data.reviewState != 'accepted' ||
+          resource.data.reviewState == 'accepted'));
+      allow delete: if isAdmin() ||
+        (request.auth != null && resource.data.staffUid == request.auth.uid);
     }
 
     // Attendance. Staff create/update only their own records (the portal
@@ -278,6 +329,17 @@ service cloud.firestore {
          resource.data.staffUid == request.auth.uid &&
          request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['status', 'returnedPath', 'returnedName', 'returnedSize', 'returnedAt', 'updatedAt']));
+    }
+
+    // Finance module — income and expenses (admin only by default).
+    // NOTE: Rules must be deployed manually for these collections to work live.
+    match /financeIncome/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    match /financeExpenses/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
 
     // System Settings & Access Control Rules

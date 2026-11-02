@@ -11,6 +11,7 @@ import { getStaffByIds } from '../config/staff';
 import SEO from '../components/SEO';
 import { company } from '../config/company';
 import { toMillis, formatWhen } from '../erp/formatWhen';
+import { sortStages, stageStatusOf, loadDevStages } from '../staff/staffUtils';
 import { toInt, formatLKR } from '../erp/money';
 import { usePrivateUrl, revOf } from '../erp/usePrivateUrl';
 import PrivateFileLink from '../erp/components/PrivateFileLink';
@@ -283,6 +284,66 @@ function AssignedTeam({ works, heading = "Who's working on this" }) {
   );
 }
 
+// ─── Approved work stages ───────────────────────────────────────
+// The team writes its own stage list per project and marks a stage done
+// with a note; the office approves each stage before it appears here.
+// Proof files stay staff-private, so this list shows text only.
+const STAGE_TONE = {
+  'Completed':   { c:'#34D399', bg:'rgba(16,185,129,0.16)' },
+  'In Progress': { c:'#FBBF24', bg:'rgba(245,158,11,0.16)' },
+  'On Hold':     { c:'#F87171', bg:'rgba(240,90,103,0.16)' },
+  'Not Started': { c:'#94A3B8', bg:'rgba(148,163,184,0.14)' },
+};
+
+function ApprovedStages({ stages, heading = 'Work progress' }) {
+  const list = sortStages(stages || []);
+  if (list.length === 0) return null;
+  const done = list.filter(s => stageStatusOf(s) === 'Completed').length;
+  const pct = Math.round((done / list.length) * 100);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.8px' }}>{heading}</div>
+        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, color: '#A5B4FC', background: 'rgba(99,102,241,0.14)' }}>
+          {done}/{list.length} completed
+        </span>
+      </div>
+      <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, transition: 'width 0.5s',
+          background: pct >= 100 ? 'linear-gradient(90deg,#10B981,#34D399)' : 'linear-gradient(90deg,#4F46E5,#38BDF8)' }} />
+      </div>
+      {list.map(s => {
+        const status = stageStatusOf(s);
+        const tone = STAGE_TONE[status] || STAGE_TONE['Completed'];
+        return (
+          <div key={s.id} style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ width: 22, height: 22, borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 900, color: status === 'Completed' ? '#34D399' : '#A5B4FC', background: tone.bg, border: `1px solid ${tone.bg}` }}>
+              {status === 'Completed' ? <Check size={11} /> : (s.stage || 0)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: '#F1F5F9' }}>{s.title || 'Work stage'}</span>
+                <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, color: tone.c, background: tone.bg }}>{status}</span>
+              </div>
+              {s.details && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, lineHeight: 1.55 }}>{s.details}</div>}
+              {s.completionNote && (
+                <div style={{ marginTop: 7, fontSize: 11, color: '#C7D2FE', lineHeight: 1.55, padding: '8px 10px', borderRadius: 9, background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.24)' }}>
+                  {s.completionNote}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6, fontSize: 10, color: '#64748B' }}>
+                {s.staffName && <span>{s.staffName}</span>}
+                {s.date && <span>{fmtDue(s.date)}</span>}
+                <span style={{ color: '#34D399', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Shield size={9} /> Approved by SMART</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Dev-mode seed messages for the Phase 4 admin 1-on-1 chat
 const DEV_CLIENT_CHAT = [
   { id: 'dc1', senderId: 'admin', senderRole: 'admin', senderName: 'SMART Administration', text: 'Welcome to SMART! Your project kickoff documents have been shared. Please review and confirm.', createdAt: new Date(Date.now() - 172800000) },
@@ -342,6 +403,7 @@ export default function ClientDashboardPage() {
 
   // Assigned team — 'workAssignments' scoped to this client
   const [myWorks,setMyWorks]         = useState([]);
+  const [myStages,setMyStages]     = useState([]);   // staffProgress, approved only
 
   // Invoices raised by the office (Firestore `invoices`, clientId == auth uid)
   const [invoices,setInvoices]       = useState([]);
@@ -434,6 +496,18 @@ export default function ClientDashboardPage() {
     return ()=>{un&&un();};
   },[uid,isDevSession]);
 
+  // Work stages the team completed AND the office approved. Nothing else
+  // from the staff progress list is readable here (firestore.rules).
+  useEffect(()=>{
+    if(!uid) return;
+    if(!isFirebaseConfigured||isDevSession){setMyStages(loadDevStages().filter(s=>s.clientId===uid&&s.reviewState==='accepted'));return;}
+    const un=onSnapshot(
+      query(collection(db,'staffProgress'),where('clientId','==',uid),where('reviewState','==','accepted')),
+      snap=>setMyStages(snap.docs.map(d=>({id:d.id,...d.data()}))),
+      err=>console.error('Approved work stages listener error',err));
+    return ()=>{un&&un();};
+  },[uid,isDevSession]);
+
   // Invoices raised by the office — live, own invoices only.
   useEffect(()=>{
     if(!uid) return;
@@ -452,6 +526,16 @@ export default function ClientDashboardPage() {
     const t=String(proj.title||'').trim().toLowerCase();
     if(!t) return [];
     return myWorks.filter(w=>!w.projectId && String(w.projectTitle||'').trim().toLowerCase()===t);
+  };
+
+  // Stages the team listed for a project — matched like the works above.
+  const stagesFor=(proj)=>{
+    if(!proj) return [];
+    const direct=myStages.filter(s=>s.projectId && s.projectId===proj.id);
+    if(direct.length) return direct;
+    const t=String(proj.title||'').trim().toLowerCase();
+    if(!t) return [];
+    return myStages.filter(s=>!s.projectId && String(s.projectTitle||'').trim().toLowerCase()===t);
   };
 
   useEffect(()=>{msgEndRef.current?.scrollIntoView({behavior:'smooth'});},[messages]);
@@ -1312,6 +1396,7 @@ export default function ClientDashboardPage() {
                   )}
 
                   <AssignedTeam works={worksFor(proj)}/>
+                  <ApprovedStages stages={stagesFor(proj)}/>
 
                   {staff.length>0 && worksFor(proj).length===0 &&(
                     <div>
@@ -1451,6 +1536,7 @@ export default function ClientDashboardPage() {
                 )}
 
                 <AssignedTeam works={worksFor(proj)} heading="Your project team" />
+                <ApprovedStages stages={stagesFor(proj)} heading="Work completed so far" />
 
                 {/* Team and Actions */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:14,borderTop:'1px solid rgba(255,255,255,0.07)',flexWrap:'wrap',gap:10}}>
@@ -1690,7 +1776,7 @@ export default function ClientDashboardPage() {
 
         {/* Advance payment receipt upload modal */}
         {proofModal&&(
-          <div onClick={()=>{if(!proofBusy)setProofModal(null);}} style={{position:'fixed',inset:0,background:'rgba(2,6,23,0.72)',backdropFilter:'blur(4px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{position:'fixed',inset:0,background:'rgba(2,6,23,0.72)',backdropFilter:'blur(4px)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
             <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:440,background:'#0B1836',border:'1px solid rgba(255,255,255,0.12)',borderRadius:20,padding:'22px',boxShadow:'0 24px 60px rgba(0,0,0,0.5)'}}>
               <div style={{fontSize:16,fontWeight:900,color:'#F1F5F9',marginBottom:4}}>Upload Advance Payment Receipt</div>
               <div style={{fontSize:12,color:'#94A3B8',marginBottom:16}}>

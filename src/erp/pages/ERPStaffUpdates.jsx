@@ -13,15 +13,21 @@ import {
   ERPPanel, ERPPanelHeader, ERPBtn, ERPModal, ERPEmpty, ERPAvatar, C
 } from '../components/ERPui';
 import {
-  toMs, todayKey, calculateTaskDuration, calculateAttendanceHours, getDayName
+  toMs, todayKey, calculateTaskDuration, calculateAttendanceHours, getDayName,
+  sameStaffName, findStaffBySheetName, sheetDate, to24h, buildImportEntries
 } from '../../staff/staffUtils';
 import { downloadWorkLogSheet } from '../../staff/workLogTemplate';
+import {
+  downloadPerformanceReport, downloadReportTemplate, prettyDate
+} from '../../staff/performanceReport';
+import { saveWorkReportPdf } from '../../staff/workReportPdf';
 import { ref as storageRef, getBytes, deleteObject } from 'firebase/storage';
 import { storage } from '../../config/firebase';
 import {
   AlertTriangle, ClipboardList, Clock, Coffee, Check, Hourglass,
   Pencil, Trash2, Calendar, User, Search, Filter, RefreshCw, Printer,
-  FileText, Building, Plus, X, Download, Upload, ChevronLeft, ChevronRight, Send, CheckCircle2
+  FileText, Building, Plus, X, Download, Upload, ChevronLeft, ChevronRight, Send, CheckCircle2,
+  FileSpreadsheet
 } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
@@ -44,8 +50,9 @@ const fmtShort = dStr => {
   const [y, m, d] = dStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 };
-// Quoted-CSV parser (Excel / Google-Sheets "save as CSV" compatible)
-const parseCsv = text => {
+// Quoted-CSV parser (Excel / Google-Sheets "save as CSV" compatible).
+// `delim` is ',' for CSV / '\t' for cells copied straight out of Sheets.
+const parseCsv = (text, delim = ',') => {
   const rows = []; let row = [], field = '', inQ = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -54,7 +61,7 @@ const parseCsv = text => {
       else field += ch;
     }
     else if (ch === '"') inQ = true;
-    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === delim) { row.push(field); field = ''; }
     else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && text[i + 1] === '\n') i++;
       row.push(field); rows.push(row); row = []; field = '';
@@ -64,23 +71,25 @@ const parseCsv = text => {
   if (field !== '' || row.length) { row.push(field); rows.push(row); }
   return rows.filter(r => r.some(c => String(c).trim() !== ''));
 };
-// Reverse of the export format: "08:30-11:00: desc [Status] | ..." → tasks[]
-const parseWorkSegments = wd => {
-  if (!wd) return [];
-  return wd.split('|').map(s => s.trim()).filter(Boolean).map((seg, i) => {
-    const m = seg.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*:\s*(.*)$/);
-    const body = m ? m[3] : seg;
-    const sm = body.match(/\s*\[([^\]]+)\]\s*$/);
-    const status = sm ? sm[1].trim() : 'Completed';
-    const description = (sm ? body.slice(0, sm.index) : body).trim();
-    if (m) return { no: i + 1, start: m[1], end: m[2], hours: calculateTaskDuration(m[1], m[2]), description, status };
-    return { no: i + 1, start: '', end: '', hours: '—', description, status };
-  });
+
+// Cells copied directly out of Google Sheets arrive tab-separated; a saved
+// CSV arrives comma-separated. Pick whichever the first line uses more of.
+const parseDelimited = text => {
+  const first = String(text || '').split(/\r?\n/).find(l => l.trim()) || '';
+  const tabs = (first.match(/\t/g) || []).length;
+  const commas = (first.match(/,/g) || []).length;
+  return parseCsv(text, tabs > commas ? '\t' : ',');
 };
 
-const REPORT_HEADERS = ['NAME', 'POSITION', 'DATE', 'DAY', 'LOCATION', 'WORK MODE',
-  'ARRIVAL', 'LUNCH START', 'LUNCH END', 'LUNCH DURATION', 'DEPARTURE',
-  'TOTAL WORK HRS', 'WORK / DESCRIPTION', 'REMARKS', 'PLAN FOR TOMORROW'];
+// https://docs.google.com/spreadsheets/d/<ID>/edit#gid=<GID> → id + gid
+const sheetIdFromUrl = u => (String(u || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/) || [])[1] || '';
+const sheetGidFromUrl = u => (String(u || '').match(/[?#&]gid=(\d+)/) || [])[1] || '0';
+// Reverse of the export format ("08:30-11:00: desc [Status] | …"), the date
+// and time readers, and the staff name matcher all live in staffUtils so the
+// QA suite can test them without a browser.
+
+// Report columns live in staff/performanceReport.js (REPORT_COLUMNS) — the
+// same list is used for the .xlsx export, the import template and the CSV.
 
 // ── Month helpers (Monthly Report view) ─────────────────────────────────
 const addMonths = (dStr, n) => {
@@ -100,31 +109,10 @@ const monthLabel = dStr => {
 
 // ── Tolerant parser for the "DAILY WORK LOG" sheet style CSV ────────────
 // (one profile block + one block per day: the format staff/sir already use)
-const MONTHS_MAP = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 const normTxt = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const nameMatches = (a, b) => {
-  const x = normTxt(a), y = normTxt(b);
-  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
-};
-const to24h = v => {
-  const m = String(v ?? '').trim().match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
-  if (!m) return '';
-  let h = +m[1];
-  const ap = (m[3] || '').toLowerCase();
-  if (ap === 'pm' && h < 12) h += 12;
-  if (ap === 'am' && h === 12) h = 0;
-  return `${pad2(h)}:${m[2]}`;
-};
-const sheetDate = v => {
-  const s = String(v ?? '').trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) return `${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`;
-  m = s.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{4})$/);   // 28-Sep-2026
-  if (m) { const mm = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]; if (mm) return `${m[3]}-${pad2(mm)}-${pad2(+m[1])}`; }
-  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);          // 28/09/2026
-  if (m) return `${m[3]}-${pad2(+m[2])}-${pad2(+m[1])}`;
-  return null;
-};
+// "Thisha" / "Thishalini", "Lukshi" / "Luksikka" are the same person — the
+// shared matcher handles short forms, surnames and spelling drift.
+const nameMatches = (a, b) => sameStaffName(a, b);
 // "2h 00m" / "8h 30m" → "2.0 hrs" ; "1:30" (already hrs) → kept
 const normHours = v => {
   const s = String(v ?? '').trim();
@@ -256,7 +244,7 @@ const DEV_STAFF = [
 ];
 
 export default function ERPStaffUpdates() {
-  const { isFirebaseConfigured, isDevSession } = useAuth();
+  const { isFirebaseConfigured, isDevSession, currentUser } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
 
   const [updates,   setUpdates]   = useState([]);
@@ -266,6 +254,10 @@ export default function ERPStaffUpdates() {
 
   // Filters
   const [dateF,   setDateF]   = useState('');
+  // From / To — one period filter for the whole Daily Reports list, so the
+  // full report (Excel / PDF) can cover any span, not only a week or a month.
+  const [fromF,   setFromF]   = useState('');
+  const [toF,     setToF]     = useState('');
   const [staffF,  setStaffF]  = useState('All');
   const [statusF, setStatusF] = useState('All');
   const [search,  setSearch]  = useState('');
@@ -276,8 +268,18 @@ export default function ERPStaffUpdates() {
   const [weekStart,  setWeekStart]  = useState(() => mondayOf(todayKey()));
   const [monthStart, setMonthStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [importing,  setImporting]  = useState(false);
+  const [exporting,  setExporting]  = useState(false);
   const [importMsg,  setImportMsg]  = useState(null);
   const fileRef = useRef(null);
+
+  // Google Sheet import (link → auto read, or copy/paste the cells)
+  const [sheetOpen,  setSheetOpen]  = useState(false);
+  const [sheetUrl,   setSheetUrl]   = useState('');
+  const [sheetPaste, setSheetPaste] = useState('');
+  const [sheetBusy,  setSheetBusy]  = useState(false);
+  const [sheetMsg,   setSheetMsg]   = useState(null);
+  // Import one person at a time ('All' = every row in the pasted sheet)
+  const [sheetStaff, setSheetStaff] = useState('All');
 
   // Sent work-sheet requests (admin → staff → back)
   const [requests,   setRequests]   = useState([]);
@@ -578,6 +580,8 @@ export default function ERPStaffUpdates() {
   // Filtered List
   const filtered = updates
     .filter(u => (dateF ? u.date === dateF : true))
+    .filter(u => (fromF ? String(u.date) >= fromF : true))
+    .filter(u => (toF ? String(u.date) <= toF : true))
     .filter(u => (staffF === 'All' ? true : (u.staffId === staffF || u.name === staffF || u.staffName === staffF)))
     .filter(u => (statusF === 'All' ? true : (u.status || 'Completed') === statusF))
     .filter(u => {
@@ -595,6 +599,12 @@ export default function ERPStaffUpdates() {
   const todayCount = updates.filter(u => u.date === todayKey()).length;
   const completedCount = updates.filter(u => (u.status || 'Completed') === 'Completed').length;
   const pendingCount = updates.filter(u => u.status === 'Pending').length;
+
+  // Span of everything the ERP holds — the "Full period" shortcut uses it.
+  const allDates = updates.map(u => String(u.date || '')).filter(d => d.length === 10).sort();
+  const fullFrom = allDates[0] || '';
+  const fullTo   = allDates[allDates.length - 1] || '';
+  const applyFullPeriod = () => { setDateF(''); setFromF(fullFrom); setToF(fullTo); };
 
   // ── Range aggregation (Today, Weekly Mon–Sun, or Monthly) ──
   const rangeStart = rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? weekStart : monthStart;
@@ -621,53 +631,92 @@ export default function ERPStaffUpdates() {
   const sortedRequests = [...requests].sort((a, b) => toMs(b.requestedAt || b.createdAt) - toMs(a.requestedAt || a.createdAt));
   const reqStatusColor = s => s === 'Returned' ? C.blue : s === 'Approved' ? C.green : C.amber;
 
-  // ── Excel (CSV) export — columns match the STAFF PERFORMANCE REPORT sheet ──
-  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const toReportRow = u => {
-    const tasks = u.tasks || (u.items ? u.items.map((it, i) => ({ no: i + 1, description: it, status: u.status || 'Completed' })) : []);
-    const workDesc = tasks.map(t =>
-      `${t.start || ''}${t.end ? `-${t.end}` : ''}: ${t.description}` +
-      (t.status && t.status !== 'Completed' ? ` [${t.status}]` : '')
-    ).join(' | ');
-    return [
-      u.name || u.staffName || '', u.position || '', u.date || '', u.day || getDayName(u.date),
-      u.location || '', u.workMode || '', u.arrival || u.startTime || '',
-      u.lunchStart || '', u.lunchEnd || '', u.lunchDuration || '',
-      u.departure || u.endTime || '', u.totalWorkHours || '',
-      workDesc, u.remarks || u.notes || '', u.planTomorrow || '',
-    ];
+  // ── Report export ────────────────────────────────────────────────────
+  // The report the owner actually opens: a formatted .xlsx — one column per
+  // field, wrapped task lines, grouped per staff member, dates in order.
+  const adminName = currentUser?.displayName || currentUser?.email || 'Admin';
+  const generatedOn = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dailyLabel = [
+    dateF ? prettyDate(dateF)
+      : (fromF || toF) ? `${prettyDate(fromF || fullFrom)} → ${prettyDate(toF || fullTo)}`
+      : 'All dates',
+    staffF !== 'All' ? staffF : null,
+    statusF !== 'All' ? statusF : null,
+    search.trim() ? `“${search.trim()}”` : null,
+  ].filter(Boolean).join('  ·  ');
+  const exportExcel = async () => {
+    if (!filtered.length) return;
+    setExporting(true);
+    try {
+      await downloadPerformanceReport(filtered, {
+        staffRecords: staff,
+        title: 'SMART PVT LTD · STAFF PERFORMANCE WORK REPORT',
+        rangeLabel: dailyLabel,
+        generatedBy: adminName,
+        generatedOn,
+        filename: `STAFF-PERFORMANCE-REPORT-${todayKey()}.xlsx`,
+      });
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ kind: 'err', text: `Export failed — ${err.message || err}` });
+    } finally { setExporting(false); }
   };
-  const downloadCsv = (list, filename) => {
-    // BOM so Excel opens Tamil/unicode text correctly
-    const csv = '\uFEFF' + REPORT_HEADERS.map(esc).join(',') + '\r\n' +
-      list.map(u => toReportRow(u).map(esc).join(',')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const exportRange = async () => {
+    if (!rangeReports.length) return;
+    setExporting(true);
+    try {
+      await downloadPerformanceReport(rangeReports, {
+        staffRecords: staff,
+        title: `SMART PVT LTD · ${rangeTitle.toUpperCase()} WORK REPORT`,
+        rangeLabel,
+        generatedBy: adminName,
+        generatedOn,
+        filename: `STAFF-${rangeMode === 'day' ? 'DAILY' : rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY'}-REPORT-${rangeStart}.xlsx`,
+      });
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ kind: 'err', text: `Export failed — ${err.message || err}` });
+    } finally { setExporting(false); }
   };
-  const exportExcel = () => downloadCsv(filtered, `STAFF-PERFORMANCE-REPORT-${todayKey()}.csv`);
-  const exportRange = () => downloadCsv(rangeReports,
-    `STAFF-${rangeMode === 'day' ? 'DAILY' : rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY'}-REPORT-${rangeStart}.csv`);
 
-  // ── Import template A — flat one-row-per-day CSV ──
-  const downloadTemplate = () => {
-    const example = [
-      'Ashan Perera', 'Software Associate - II', todayKey(), getDayName(todayKey()),
-      'SMART Trincomalee', 'On-Site / Office', '08:30', '13:00', '14:00', '1.0 hrs',
-      '17:30', '8.0 hrs',
-      '08:30-11:00: Example task — DELETE THIS ROW BEFORE IMPORT', 'Remarks here', 'Plan for tomorrow here',
-    ].map(esc).join(',');
-    const csv = '\uFEFF' + REPORT_HEADERS.map(esc).join(',') + '\r\n' + example;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'STAFF-REPORT-IMPORT-TEMPLATE.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const exportPdf = () => {
+    if (!filtered.length) return;
+    try {
+      saveWorkReportPdf(filtered, {
+        staffRecords: staff,
+        title: 'SMART PVT LTD · STAFF WORK REPORT',
+        rangeLabel: dailyLabel,
+        generatedBy: adminName,
+        fileName: `STAFF-WORK-REPORT-${todayKey()}.pdf`,
+      });
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ kind: 'err', text: `PDF export failed — ${err.message || err}` });
+    }
   };
+  const exportRangePdf = () => {
+    if (!rangeReports.length) return;
+    try {
+      saveWorkReportPdf(rangeReports, {
+        staffRecords: staff,
+        title: `SMART PVT LTD · ${rangeTitle.toUpperCase()} WORK REPORT`,
+        rangeLabel,
+        generatedBy: adminName,
+        fileName: `STAFF-${rangeAdj.toUpperCase()}-REPORT-${rangeStart}.pdf`,
+      });
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ kind: 'err', text: `PDF export failed — ${err.message || err}` });
+    }
+  };
+
+  // ── Import template A — flat one-row-per-day workbook (.xlsx), same
+  //    columns as the exported report, so a filled sheet imports straight in.
+  const downloadTemplate = () =>
+    downloadReportTemplate().catch(err => {
+      console.error(err);
+      setImportMsg({ kind: 'err', text: `Template failed — ${err.message || err}` });
+    });
 
   // ── Import template B — the "IT TEAM DAILY WORK LOG" sheet style, as a
   //    real .xlsx workbook (coloured banners, merged title, borders,
@@ -686,62 +735,95 @@ export default function ERPStaffUpdates() {
   //      A) flat one-row-per-day template (NAME, DATE, WORK / DESCRIPTION…)
   //      B) the "IT TEAM DAILY WORK LOG" multi-block sheet (one block per day)
   //    Each imported day is routed to the matching staff member (name → authUid).
-  const runImport = async (rows) => {
+  //    opts.onlyStaff = a single staff member id/name, so the four people in
+  //    the Google Sheet can be imported one person at a time. Same staff +
+  //    same date always updates the existing report instead of duplicating it.
+  const runImport = async (rows, opts = {}) => {
     if (!rows.length) throw new Error('The file is empty.');
 
-    const head = rows[0].map(h => String(h).trim().toUpperCase());
-    const idx = {};
-    REPORT_HEADERS.forEach(h => { idx[h] = head.indexOf(h); });
-    const flat = idx['NAME'] >= 0 && idx['DATE'] >= 0;
-    const sheet = rows.some(r => r.join(' ').toUpperCase().includes('DAILY WORK REPORT'));
+    // Header aliases + flat-row parsing live in staff/staffUtils.js so the
+    // importer and the QA tests read a sheet exactly the same way.
+    const built = buildImportEntries(rows);
 
     // Normalise every source row/block into the same entry shape.
     let entries = [];
-    if (flat) {
-      const cell = (r, h) => { const i = idx[h]; return i >= 0 ? String(r[i] ?? '').trim() : ''; };
-      entries = rows.slice(1).map(r => ({
-        name: cell(r, 'NAME'), position: cell(r, 'POSITION'), location: cell(r, 'LOCATION'),
-        date: sheetDate(cell(r, 'DATE')), rawDate: cell(r, 'DATE'), day: cell(r, 'DAY'),
-        workMode: cell(r, 'WORK MODE'),
-        arrival: to24h(cell(r, 'ARRIVAL')), lunchStart: to24h(cell(r, 'LUNCH START')),
-        lunchEnd: to24h(cell(r, 'LUNCH END')), departure: to24h(cell(r, 'DEPARTURE')),
-        lunchDuration: cell(r, 'LUNCH DURATION'), totalWorkHours: cell(r, 'TOTAL WORK HRS'),
-        tasks: parseWorkSegments(cell(r, 'WORK / DESCRIPTION')),
-        remarks: cell(r, 'REMARKS'), planTomorrow: cell(r, 'PLAN FOR TOMORROW'),
-      }));
-    } else if (sheet) {
+    if (built.flat) {
+      entries = built.entries;
+    } else if (built.sheet) {
       entries = parseSheetBlocks(rows);
     } else {
       throw new Error('Unrecognised format — download the "Excel Template" or "Sheet Template" and fill that.');
     }
+    const flat = built.flat;
 
-    let added = 0, updated = 0, skipped = 0;
+    let added = 0, updated = 0, merged = 0, skipped = 0, ignored = 0;
     const problems = [];
-    for (const it of entries) {
-      const name = String(it.name || '').trim();
-      const date = it.date;
-      if (!name || !date) { skipped++; if (name && it.rawDate) problems.push(`bad date "${it.rawDate}" (${name})`); continue; }
 
-      const match = staff.find(s => nameMatches(s.name || '', name));
+    // ── one staff member at a time ──
+    const target = opts.onlyStaff && opts.onlyStaff !== 'All'
+      ? staff.find(s => s.id === opts.onlyStaff || s.name === opts.onlyStaff) || null
+      : null;
+    if (opts.onlyStaff && !target) {
+      throw new Error(`No staff record matches “${opts.onlyStaff}” — pick them from the staff list first.`);
+    }
+    const sheetNames = [...new Set(entries.map(e => String(e.name || '').trim()).filter(Boolean))];
+    if (target) {
+      entries = entries.filter(e => !!findStaffBySheetName([target], e.name));
+      ignored = sheetNames.filter(n => !findStaffBySheetName([target], n)).length;
+    }
+
+    // Same person + same day written twice inside one import must not create
+    // two report rows (the Google Sheet does that with split blocks).
+    const seen = new Map();
+
+    for (const it of entries) {
+      const rawName = String(it.name || '').trim();
+      const date = it.date;
+      if (!rawName || !date) { skipped++; if (rawName && it.rawDate) problems.push(`bad date "${it.rawDate}" (${rawName})`); continue; }
+      if (/example|delete this row/i.test(rawName)) { skipped++; continue; }
+
+      // The ERP record wins over the sheet spelling: "Luksikka" and "Lukshi"
+      // must not become two people in the report.
+      const match = findStaffBySheetName(staff, rawName) || staff.find(s => nameMatches(s.name || '', rawName));
+      const name = (match && match.name) || rawName;
+      if (match && name !== rawName) problems.push(`"${rawName}" → ${name}`);
       const authUid = (match && (match.authUid || match.id)) || '';
       const arrival = it.arrival || '', lunchStart = it.lunchStart || '', lunchEnd = it.lunchEnd || '', departure = it.departure || '';
       const calc = arrival && departure
         ? calculateAttendanceHours(arrival, lunchStart, lunchEnd, departure) : {};
-      const tasks = (it.tasks || []).map((t, i) => ({ no: i + 1, ...t }));
+      let tasks = (it.tasks || []).map((t, i) => ({ no: i + 1, ...t }));
+
+      const key = `${name.toLowerCase()}|${date}`;
+      const earlier = seen.get(key);
+      const prev = earlier ? earlier.payload : null;
+      if (prev) {
+        const byText = new Set(prev.tasks.map(t => normTxt(t.description)));
+        tasks.forEach(t => { if (!byText.has(normTxt(t.description))) prev.tasks.push({ ...t, no: prev.tasks.length + 1 }); });
+        tasks = prev.tasks;
+        merged++;
+      }
+      const firstOf = (field) => prev && prev[field] ? prev[field] : (it[field] || '');
+      const existingOnFile = updates.find(u => u.date === date && (
+        (authUid && (u.authUid === authUid || u.staffId === authUid)) ||
+        sameStaffName(u.name || u.staffName || '', name)
+      ));
+      const existing = existingOnFile && !earlier ? existingOnFile : null;
 
       const payload = {
         name,
-        position: it.position || (match && match.role) || 'Staff',
-        location: it.location || 'SMART Trincomalee',
+        // the staff record's role keeps ONE position per person in the export
+        position: (match && match.role) || it.position || 'Staff',
+        location: firstOf('location') || 'SMART Trincomalee',
         date,
         day: it.day || getDayName(date),
-        workMode: it.workMode || 'On-Site / Office',
-        arrival, lunchStart, lunchEnd, departure,
-        lunchDuration: it.lunchDuration || calc.lunchDuration || '—',
-        totalWorkHours: it.totalWorkHours || calc.totalWorkHours || '—',
+        workMode: firstOf('workMode') || 'On-Site / Office',
+        arrival: firstOf('arrival'), lunchStart: firstOf('lunchStart'),
+        lunchEnd: firstOf('lunchEnd'), departure: firstOf('departure'),
+        lunchDuration: firstOf('lunchDuration') || calc.lunchDuration || '—',
+        totalWorkHours: firstOf('totalWorkHours') || calc.totalWorkHours || '—',
         tasks,
-        remarks: it.remarks || '',
-        planTomorrow: it.planTomorrow || '',
+        remarks: [prev && prev.remarks, it.remarks].filter(Boolean).join(' · '),
+        planTomorrow: it.planTomorrow || (prev && prev.planTomorrow) || '',
         staffId: (match && match.id) || authUid,
         staffName: name,
         authUid,
@@ -750,34 +832,54 @@ export default function ERPStaffUpdates() {
         status: tasks.length && tasks.every(t => t.status === 'Completed') ? 'Completed' : 'Pending',
         updatedAt: serverTimestamp(),
       };
+      if (name !== rawName) payload.sheetName = rawName;
 
-      const existing = updates.find(u => u.date === date && (
-        (authUid && (u.authUid === authUid || u.staffId === authUid)) ||
-        nameMatches(u.name || u.staffName || '', name)
-      ));
-
+      const id = earlier ? earlier.id : (existing ? existing.id : null);
+      const isNew = !earlier && !existing;
       if (live) {
-        if (existing) {
-          await updateDoc(doc(db, 'dailyUpdates', existing.id), payload);
+        if (id) {
+          await updateDoc(doc(db, 'dailyUpdates', id), payload);
+          seen.set(key, { id, payload });
         } else {
           payload.submittedAt = serverTimestamp();
           payload.createdAt = serverTimestamp();
-          await addDoc(collection(db, 'dailyUpdates'), payload);
+          const ref = await addDoc(collection(db, 'dailyUpdates'), payload);
+          seen.set(key, { id: ref.id, payload });
         }
-      } else if (existing) {
-        setUpdates(prev => prev.map(u => u.id === existing.id ? { ...u, ...payload, updatedAt: Date.now() } : u));
       } else {
-        setUpdates(prev => [{ id: `imp-${Date.now()}-${added}`, ...payload, submittedAt: Date.now() }, ...prev]);
+        const localId = id || `imp-${Date.now()}-${added}-${updated}-${merged}`;
+        if (!id) {
+          setUpdates(prev2 => [{ id: localId, ...payload, submittedAt: Date.now() }, ...prev2]);
+        } else {
+          setUpdates(prev2 => prev2.map(u => u.id === id ? { ...u, ...payload, updatedAt: Date.now() } : u));
+        }
+        seen.set(key, { id: localId, payload });
       }
-      existing ? updated++ : added++;
+      if (isNew) added++;
+      else if (!earlier) updated++;
     }
 
-    if (!added && !updated && !skipped) throw new Error('No dated rows found — make sure each day has a DATE cell.');
-    return { added, updated, skipped, problems, label: flat ? 'Excel template' : 'Sheet format' };
+    if (!added && !updated && !merged && !skipped) {
+      throw new Error(target
+        ? `No dated rows for ${target.name} in this sheet — names found: ${sheetNames.join(', ') || 'none'}.`
+        : 'No dated rows found — make sure each day has a DATE cell.');
+    }
+    const dates = [...new Set(entries.map(e => e.date).filter(Boolean))].sort();
+    return {
+      added, updated, merged, skipped, ignored, problems,
+      label: flat ? 'one row per day' : 'Sheet format',
+      targetName: target ? target.name : '',
+      dateFrom: dates[0] || '', dateTo: dates[dates.length - 1] || '',
+      staffCount: new Set(entries.map(e => (e.name || '').trim()).filter(Boolean)).size,
+    };
   };
 
-  const summarize = ({ added, updated, skipped, problems, label }) =>
-    `Import complete (${label}) — ${added} new, ${updated} updated, ${skipped} skipped` +
+  const summarize = ({ added, updated, merged, skipped, ignored, problems, label, targetName, dateFrom, dateTo, staffCount }) =>
+    `Import complete (${label})${targetName ? ` — ${targetName}` : ''}: ` +
+    `${added} new, ${updated} updated${merged ? `, ${merged} day${merged === 1 ? '' : 's'} merged from duplicate rows` : ''}` +
+    `${ignored ? `, ${ignored} other name${ignored === 1 ? '' : 's'} left alone` : ''}` +
+    `${skipped ? `, ${skipped} skipped` : ''}` +
+    (dateFrom ? ` · ${staffCount || 1} staff · ${prettyDate(dateFrom)}${dateTo && dateTo !== dateFrom ? ` → ${prettyDate(dateTo)}` : ''}` : '') +
     (problems.length ? ` (${problems.slice(0, 3).join('; ')}${problems.length > 3 ? '…' : ''})` : '');
 
   const handleImportFile = async (e) => {
@@ -805,6 +907,56 @@ export default function ERPStaffUpdates() {
     } finally {
       setImporting(false);
     }
+  };
+
+  // ── Google Sheet import — link first, copy/paste as the reliable fallback ──
+  const importFromSheetLink = async () => {
+    const id = sheetIdFromUrl(sheetUrl);
+    if (!id) { setSheetMsg({ kind: 'err', text: 'Paste the full Google Sheets link (…/spreadsheets/d/…).' }); return; }
+    setSheetBusy(true); setSheetMsg(null);
+    try {
+      // gviz CSV is the same feed "Download → CSV" produces. Private sheets
+      // (and many browsers) block this read — the paste box below always works.
+      const res = await fetch(
+        `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${sheetGidFromUrl(sheetUrl)}`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) throw new Error(`Google returned HTTP ${res.status} — set the sheet to “Anyone with the link → Viewer”.`);
+      const text = await res.text();
+      if (/^\s*</.test(text)) throw new Error('Google sent the sign-in page — share the sheet with “Anyone with the link”.');
+      const result = await runImport(parseDelimited(text), { onlyStaff: sheetStaff });
+      const summary = summarize(result);
+      setSheetMsg({ kind: result.problems.length ? 'warn' : 'ok', text: summary });
+      setImportMsg({ kind: result.problems.length ? 'warn' : 'ok', text: summary });
+    } catch (e) {
+      console.error(e);
+      setSheetMsg({
+        kind: 'err',
+        text: `Could not read the link directly (${e.message || e}). Google blocks browser reads for many sheets — tap “Download CSV” and import that file, or copy the cells and paste them below.`,
+      });
+    } finally { setSheetBusy(false); }
+  };
+
+  const importFromPastedCells = async () => {
+    if (!sheetPaste.trim()) { setSheetMsg({ kind: 'err', text: 'Paste the copied sheet cells first.' }); return; }
+    setSheetBusy(true); setSheetMsg(null);
+    try {
+      const result = await runImport(parseDelimited(sheetPaste), { onlyStaff: sheetStaff });
+      const summary = summarize(result);
+      setSheetMsg({ kind: result.problems.length ? 'warn' : 'ok', text: summary });
+      setImportMsg({ kind: result.problems.length ? 'warn' : 'ok', text: summary });
+      setSheetPaste('');
+    } catch (e) {
+      console.error(e);
+      setSheetMsg({ kind: 'err', text: e.message || 'Could not read the pasted rows.' });
+    } finally { setSheetBusy(false); }
+  };
+
+  const openSheetCsv = () => {
+    const id = sheetIdFromUrl(sheetUrl);
+    if (!id) { setSheetMsg({ kind: 'err', text: 'Paste the full Google Sheets link first.' }); return; }
+    window.open(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${sheetGidFromUrl(sheetUrl)}`, '_blank', 'noopener');
+    setSheetMsg({ kind: 'warn', text: 'CSV download opened — save it, then use “Import Excel (xlsx / csv)” to bring it in.' });
   };
 
   // ── Send a pre-filled work-log sheet to staff (one request per person) ──
@@ -1016,7 +1168,9 @@ export default function ERPStaffUpdates() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    // Capped + centred so the summary cards and report sheets never stretch
+    // edge-to-edge on a wide monitor.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', maxWidth: 1320, margin: '0 auto' }}>
 
       {loadError && (
         <div style={{
@@ -1102,7 +1256,7 @@ export default function ERPStaffUpdates() {
 
         <button
           onClick={downloadTemplate}
-          title="Download the Excel/CSV template — fill one row per staff per day, then Import"
+          title="Download the .xlsx import template — fill one row per staff member per day, then Import"
           style={{
             padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
             background: 'rgba(0,217,255,0.08)', color: C.cyan, border: `1px solid ${C.borderHi}`,
@@ -1113,7 +1267,7 @@ export default function ERPStaffUpdates() {
         </button>
 
         <button
-          onClick={downloadSheetTemplate}
+          onClick={() => downloadSheetTemplate()}
           title="Download a blank IT TEAM DAILY WORK LOG template (.xlsx) — one block per day, 6 task rows each, for the selected Week/Month"
           style={{
             padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
@@ -1139,9 +1293,18 @@ export default function ERPStaffUpdates() {
         </button>
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportFile} style={{ display: 'none' }} />
 
-        <span style={{ fontSize: 10.5, color: C.muted }}>
-          <strong style={{ color: C.violet }}>Today's Auto Sheet</strong> = nothing for staff to type. “Send Today's Auto Sheet to All” builds each member's day from their assigned work + check-in time; they only tap Done / In progress / Pending and submit, and you approve it here. “Send Sheet ▼” / “Send to All Staff” in the Week / Month view sends the Excel work log instead — staff fill it and upload it back. Blank Template = anyone can fill.
-        </span>
+        <button
+          onClick={() => { setSheetOpen(true); setSheetMsg(null); }}
+          title="Bring in the existing Google Sheet (4 people's daily work) — paste the link, or copy the cells and paste them in"
+          style={{
+            padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+            background: 'rgba(24,199,122,0.10)', color: C.green, border: '1px solid rgba(24,199,122,0.35)',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          <FileSpreadsheet size={12} /> Google Sheet Import
+        </button>
+
       </div>
 
       {importMsg && (
@@ -1169,6 +1332,47 @@ export default function ERPStaffUpdates() {
             }}
           />
         </div>
+
+        <div style={{ width: 150 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>From</label>
+          <input
+            type="date"
+            value={fromF}
+            onChange={e => setFromF(e.target.value)}
+            style={{
+              width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 10,
+              padding: '9px 12px', color: C.text, fontSize: 12, outline: 'none', boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        <div style={{ width: 150 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>To</label>
+          <input
+            type="date"
+            value={toF}
+            onChange={e => setToF(e.target.value)}
+            style={{
+              width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 10,
+              padding: '9px 12px', color: C.text, fontSize: 12, outline: 'none', boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        <button
+          onClick={applyFullPeriod}
+          disabled={!fullFrom}
+          title="Filter every report the ERP holds, so the Excel / PDF export covers the full period"
+          style={{
+            padding: '9px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+            background: (fromF || toF) ? 'rgba(0,102,255,0.14)' : 'rgba(10,24,56,0.8)',
+            color: (fromF || toF) ? C.cyan : C.muted,
+            border: `1px solid ${(fromF || toF) ? 'rgba(0,102,255,0.4)' : C.border}`,
+            display: 'flex', alignItems: 'center', gap: 6, opacity: fullFrom ? 1 : 0.5,
+          }}
+        >
+          <FileText size={12} /> Full Period{fullFrom ? ` (${prettyDate(fullFrom)} → ${prettyDate(fullTo)})` : ''}
+        </button>
 
         <div style={{ width: 170 }}>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>Staff Member</label>
@@ -1218,9 +1422,9 @@ export default function ERPStaffUpdates() {
           </div>
         </div>
 
-        {(dateF || staffF !== 'All' || statusF !== 'All' || search) && (
+        {(dateF || fromF || toF || staffF !== 'All' || statusF !== 'All' || search) && (
           <button
-            onClick={() => { setDateF(''); setStaffF('All'); setStatusF('All'); setSearch(''); }}
+            onClick={() => { setDateF(''); setFromF(''); setToF(''); setStaffF('All'); setStatusF('All'); setSearch(''); }}
             style={{
               padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer',
               background: 'rgba(10,24,56,0.8)', color: C.cyan, border: `1px solid ${C.border}`
@@ -1232,16 +1436,32 @@ export default function ERPStaffUpdates() {
 
         <button
           onClick={exportExcel}
-          disabled={filtered.length === 0}
-          title="Download filtered reports as an Excel-openable sheet"
+          disabled={filtered.length === 0 || exporting}
+          title="Download the filtered reports as a formatted Excel workbook (.xlsx) — grouped per staff member, dates in order"
           style={{
             padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
             background: filtered.length === 0 ? 'rgba(10,24,56,0.4)' : 'rgba(24,199,122,0.12)',
             color: C.green, border: '1px solid rgba(24,199,122,0.35)',
-            display: 'flex', alignItems: 'center', gap: 6, opacity: filtered.length === 0 ? 0.5 : 1,
+            display: 'flex', alignItems: 'center', gap: 6,
+            opacity: (filtered.length === 0 || exporting) ? 0.5 : 1,
           }}
         >
-          <Download size={12} /> Export Excel ({filtered.length})
+          <Download size={12} /> {exporting ? 'Building…' : `Export Excel (${filtered.length})`}
+        </button>
+
+        <button
+          onClick={exportPdf}
+          disabled={filtered.length === 0}
+          title="Download the filtered reports as a PDF file, grouped per staff member"
+          style={{
+            padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+            background: filtered.length === 0 ? 'rgba(10,24,56,0.4)' : 'rgba(0,102,255,0.12)',
+            color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
+            display: 'flex', alignItems: 'center', gap: 6,
+            opacity: filtered.length === 0 ? 0.5 : 1,
+          }}
+        >
+          <Download size={12} /> Export PDF
         </button>
       </div>
       )}
@@ -1280,14 +1500,29 @@ export default function ERPStaffUpdates() {
                 </button>
                 <button
                   onClick={exportRange}
-                  disabled={rangeReports.length === 0}
+                  disabled={rangeReports.length === 0 || exporting}
+                  title={`Download this ${rangeUnit}'s report as a formatted Excel workbook (.xlsx)`}
                   style={{
                     padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
                     background: 'rgba(24,199,122,0.12)', color: C.green, border: '1px solid rgba(24,199,122,0.35)',
-                    display: 'flex', alignItems: 'center', gap: 5, opacity: rangeReports.length === 0 ? 0.5 : 1,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    opacity: (rangeReports.length === 0 || exporting) ? 0.5 : 1,
                   }}
                 >
-                  <Download size={12} /> {rangeTitle} CSV
+                  <Download size={12} /> {exporting ? 'Building…' : `Export ${rangeTitle} Excel`}
+                </button>
+                <button
+                  onClick={exportRangePdf}
+                  disabled={rangeReports.length === 0}
+                  title={`Download this ${rangeUnit}'s report as a PDF file`}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                    background: 'rgba(0,102,255,0.12)', color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    opacity: rangeReports.length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  <Download size={12} /> Export {rangeTitle} PDF
                 </button>
                 <button
                   onClick={handlePrintWeek}
@@ -1475,7 +1710,9 @@ export default function ERPStaffUpdates() {
                   </span>
                 </div>
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                  {/* minWidth stops the description / remarks columns from being
+                      squeezed into slivers — the card scrolls sideways instead. */}
+                  <table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse', fontSize: 11.5 }}>
                     <thead>
                       <tr style={{ background: 'rgba(14,35,80,0.6)', color: C.muted, textTransform: 'uppercase' }}>
                         <th style={{ padding: '6px 8px', width: 70, textAlign: 'center' }}>DAY</th>
@@ -1483,8 +1720,8 @@ export default function ERPStaffUpdates() {
                         <th style={{ padding: '6px 8px', width: 65, textAlign: 'center' }}>ARRIVAL</th>
                         <th style={{ padding: '6px 8px', width: 70, textAlign: 'center' }}>DEPARTURE</th>
                         <th style={{ padding: '6px 8px', width: 75, textAlign: 'center' }}>TOTAL HRS</th>
-                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>WORK / DESCRIPTION</th>
-                        <th style={{ padding: '6px 8px', width: 180, textAlign: 'left' }}>REMARKS / PLAN</th>
+                        <th style={{ padding: '6px 8px', minWidth: 240, textAlign: 'left' }}>WORK / DESCRIPTION</th>
+                        <th style={{ padding: '6px 8px', minWidth: 190, textAlign: 'left' }}>REMARKS / PLAN</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1495,10 +1732,10 @@ export default function ERPStaffUpdates() {
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.arrival || r.startTime || '—'}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.departure || r.endTime || '—'}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: C.green }}>{r.totalWorkHours || r.totalHours || '—'}</td>
-                          <td style={{ padding: '6px 8px', color: C.text }}>
+                          <td style={{ padding: '6px 8px', color: C.text, wordBreak: 'break-word', lineHeight: 1.5 }}>
                             {r.workDescription || (r.tasks || []).map(t => t.description).join(' | ') || (r.items || []).join(' | ') || '—'}
                           </td>
-                          <td style={{ padding: '6px 8px' }}>
+                          <td style={{ padding: '6px 8px', wordBreak: 'break-word' }}>
                             {(r.remarks || r.notes) && <div style={{ color: C.amber, fontSize: 10.5 }}><strong>RMK:</strong> {r.remarks || r.notes}</div>}
                             {r.planTomorrow && <div style={{ color: C.violet, fontSize: 10.5 }}><strong>PLAN:</strong> {r.planTomorrow}</div>}
                             {!(r.remarks || r.notes || r.planTomorrow) && <span style={{ color: C.muted }}>—</span>}
@@ -1850,16 +2087,19 @@ export default function ERPStaffUpdates() {
                     </div>
                   </div>
 
-                  {/* Tasks Table */}
-                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                  {/* Tasks Table — scrolls inside the card instead of pushing
+                      the whole page wider. */}
+                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflowX: 'auto' }}>
+                    {/* minWidth keeps the time columns readable — the wrapper
+                        scrolls instead of squeezing the description to a sliver. */}
+                    <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', fontSize: 11.5 }}>
                       <thead>
                         <tr style={{ background: 'rgba(14,35,80,0.6)', color: C.muted, textTransform: 'uppercase' }}>
                           <th style={{ padding: '6px 8px', width: 35, textAlign: 'center' }}>NO</th>
                           <th style={{ padding: '6px 8px', width: 75, textAlign: 'center' }}>START</th>
                           <th style={{ padding: '6px 8px', width: 75, textAlign: 'center' }}>END</th>
                           <th style={{ padding: '6px 8px', width: 75, textAlign: 'center' }}>HOURS</th>
-                          <th style={{ padding: '6px 8px', textAlign: 'left' }}>WORK / DESCRIPTION</th>
+                          <th style={{ padding: '6px 8px', minWidth: 220, textAlign: 'left' }}>WORK / DESCRIPTION</th>
                           <th style={{ padding: '6px 8px', width: 110, textAlign: 'center' }}>STATUS</th>
                         </tr>
                       </thead>
@@ -1869,8 +2109,10 @@ export default function ERPStaffUpdates() {
                             <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: C.muted }}>{t.no || idx + 1}</td>
                             <td style={{ padding: '6px 8px', textAlign: 'center' }}>{t.start || '—'}</td>
                             <td style={{ padding: '6px 8px', textAlign: 'center' }}>{t.end || '—'}</td>
-                            <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: C.cyan }}>{t.hours || '—'}</td>
-                            <td style={{ padding: '6px 8px', color: C.text }}>{t.description || '—'}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: C.cyan }}>
+                              {t.hours || (t.start && t.end ? calculateTaskDuration(t.start, t.end) : '—')}
+                            </td>
+                            <td style={{ padding: '6px 8px', color: C.text, wordBreak: 'break-word', lineHeight: 1.5 }}>{t.description || '—'}</td>
                             <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                               <span style={{
                                 fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
@@ -2107,6 +2349,102 @@ export default function ERPStaffUpdates() {
           </div>
         </ERPModal>
       )}
+
+      {/* ── Google Sheet import ─────────────────────────────────── */}
+      <ERPModal isOpen={sheetOpen} onClose={() => setSheetOpen(false)} title="Import from Google Sheet" width={560}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.65 }}>
+            Paste your sheet link first. Share the sheet as
+            {' '}<strong style={{ color: C.subtle }}>Anyone with the link → Viewer</strong> so the ERP can read it.
+            Every row needs a person name and a date; column titles can be
+            “Staff Name / Date / Work Done / Remarks” — they are matched automatically.
+            Pick a person in “Import rows for” to bring the sheet in one member at a time;
+            a repeated staff + date updates that day instead of duplicating it.
+            {' '}<strong style={{ color: C.subtle }}>One tab at a time</strong> — add <code>#gid=…</code> to the link for another tab.
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>
+              Import rows for
+            </label>
+            <select
+              value={sheetStaff}
+              onChange={e => setSheetStaff(e.target.value)}
+              style={{
+                width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '9px 11px', color: C.text, fontSize: 12, outline: 'none', cursor: 'pointer',
+              }}
+            >
+              <option value="All">All staff in the sheet</option>
+              {staff.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>
+              Google Sheet link
+            </label>
+            <input
+              value={sheetUrl}
+              onChange={e => setSheetUrl(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/…"
+              style={{
+                width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '9px 11px', color: C.text, fontSize: 11.5, outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <ERPBtn variant="success" disabled={sheetBusy || !sheetUrl.trim()} onClick={importFromSheetLink}>
+              <FileSpreadsheet size={12} /> {sheetBusy ? 'Reading…' : 'Import from link'}
+            </ERPBtn>
+            <ERPBtn variant="secondary" disabled={!sheetUrl.trim()} onClick={openSheetCsv}>
+              <Download size={12} /> Download CSV
+            </ERPBtn>
+            <ERPBtn variant="ghost" onClick={() => { setSheetOpen(false); fileRef.current && fileRef.current.click(); }}>
+              <Upload size={12} /> Import a downloaded file
+            </ERPBtn>
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 5 }}>
+              Reliable fallback — copy the cells and paste here
+            </label>
+            <textarea
+              rows={5}
+              value={sheetPaste}
+              onChange={e => setSheetPaste(e.target.value)}
+              placeholder="In Google Sheets: select the table → Ctrl/Cmd+C → paste here"
+              style={{
+                width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: '9px 11px', color: C.text, fontSize: 11, resize: 'vertical',
+                fontFamily: 'monospace', outline: 'none',
+              }}
+            />
+            <ERPBtn variant="primary" style={{ marginTop: 8 }} disabled={sheetBusy || !sheetPaste.trim()} onClick={importFromPastedCells}>
+              <Check size={12} /> Import pasted rows
+            </ERPBtn>
+          </div>
+
+          {sheetMsg && (
+            <div style={{
+              fontSize: 11.5, lineHeight: 1.55, padding: '9px 12px', borderRadius: 9,
+              background: sheetMsg.kind === 'err' ? 'rgba(240,90,103,0.1)' : sheetMsg.kind === 'warn' ? 'rgba(245,185,66,0.1)' : 'rgba(24,199,122,0.1)',
+              border: `1px solid ${sheetMsg.kind === 'err' ? 'rgba(240,90,103,0.35)' : sheetMsg.kind === 'warn' ? 'rgba(245,185,66,0.35)' : 'rgba(24,199,122,0.35)'}`,
+              color: sheetMsg.kind === 'err' ? C.red : sheetMsg.kind === 'warn' ? C.amber : C.green,
+            }}>
+              {sheetMsg.text}
+            </div>
+          )}
+
+          <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.55 }}>
+            Rows whose name does not match a staff member are skipped — add that person in
+            {' '}<strong style={{ color: C.subtle }}>Staff</strong> first (or check the spelling) and import again.
+            Importing the same person + date twice updates the existing report instead of duplicating it.
+          </div>
+        </div>
+      </ERPModal>
 
     </div>
   );

@@ -66,6 +66,31 @@ service firebase.storage {
         (request.auth.uid == authUid || isAdmin());
     }
 
+    // Proof files for the staff-maintained Work Progress list, organised as
+    // staff-progress/{authUid}/{itemId}/{fileName} so the folder name enforces
+    // ownership. Staff upload their own completion photo / PDF / document;
+    // only the owner and admins may read; no public token URLs exist — the
+    // app opens them with getBytes (PrivateFileLink).
+    match /staff-progress/{authUid}/{itemId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+
+      allow create, update: if request.auth != null &&
+        request.auth.uid == authUid &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        (request.resource.contentType.matches('image/.*') ||
+         request.resource.contentType.matches('application/pdf') ||
+         request.resource.contentType.matches('application/msword') ||
+         request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+         request.resource.contentType.matches('application/vnd.ms-excel') ||
+         request.resource.contentType.matches('text/plain') ||
+         request.resource.contentType == 'text/csv' ||
+         request.resource.contentType == 'application/octet-stream');
+
+      allow delete: if request.auth != null &&
+        (request.auth.uid == authUid || isAdmin());
+    }
+
     // Advance-payment receipt photos uploaded by clients, organised as
     // payment-proofs/{clientUid}/{quotationId}/{fileName} so the folder
     // name enforces ownership (same pattern as requirement-files).
@@ -136,14 +161,14 @@ service firebase.storage {
       allow delete: if isAdmin();
     }
 
-    // Staff profile photos / avatars — readable by authenticated users and public
+    // Staff profile photos / avatars. Uploading or removing one is an
+    // admin action — staff profiles are admin-managed only.
     match /staff-photos/{authUid}/{fileName} {
       allow read: if true;
-      allow create, update: if request.auth != null &&
-        (request.auth.uid == authUid || isAdmin()) &&
+      allow create, update: if isAdmin() &&
         request.resource.size < 5 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
-      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == authUid);
+      allow delete: if isAdmin();
     }
 
     // No other match block → every other path is denied by default.

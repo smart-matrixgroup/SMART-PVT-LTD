@@ -89,8 +89,18 @@ export default function ERPSettings() {
     }
     setBankBusy(true);
     try {
+      // The quotations' PAYMENT DETAILS card starts from these rows on every
+      // new quotation, so saving here also refreshes that default.
+      const payRows = [
+        ['Account Name', bankForm.accountName], ['Bank', bankForm.bankName],
+        ['Branch', bankForm.branch], ['Account No', bankForm.accountNumber],
+        ['Account Type', bankForm.accountType],
+      ].map(([label, value]) => ({ label, value: String(value || '').trim() }))
+        .filter(r => r.value);
+      try { window.localStorage.setItem('smart.payRows.v1', JSON.stringify(payRows)); }
+      catch { /* private mode — Firestore copy still applies */ }
       await setDoc(doc(db,'settings','bankDetails'), {
-        ...bankForm, updatedAt: serverTimestamp(),
+        ...bankForm, payRows, updatedAt: serverTimestamp(),
       }, { merge:true });
       setBankSaved(true);
       setTimeout(()=>setBankSaved(false),2500);

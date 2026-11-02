@@ -83,7 +83,93 @@ function wrap(ctx, text, maxWidth) {
   return out;
 }
 
-export function renderTemplate(canvas, img, d, scale) {
+// ---- screenshots inside the laptop / phone mockups ----
+// `fit` = { zoom, x, y } saved per device when the owner adjusts the
+// screenshot in the Studio. zoom 1 = cover-fit, x/y ∈ [-1,1] pan the crop
+// across the remaining room (0 = centred). No fit → centre-cover crop.
+//
+// The screen rectangles are MEASURED off the letterhead artwork (pixel scan of
+// public/templates/quotation-template-1.jpg), not guessed: the laptop screen
+// runs x 556→921, y 504→761 (it continues BEHIND the phone, which is why the
+// old 333 px wide rect left a strip of the template's own sample site visible
+// at the right edge), and the phone screen runs x 892→998, y 576→808.
+//
+// Because the laptop rect runs under the phone, the laptop picture is clipped
+// away from the phone's silhouette (even-odd hole) — the bezel, notch and the
+// artwork's own phone stay untouched — and the phone screenshot is painted
+// inside its screen afterwards. The context must already be scaled to the
+// render size (design coordinates).
+//
+// The phone body hole follows the artwork's outer edge exactly (x 884→1007,
+// y 555→812, r 17). A wider box would uncover the template's own sample site
+// beside the phone, which is the "oru orama template photo theriyuthu" strip.
+export const SHOT_RECTS = {
+  laptop: { x: 556, y: 504, w: 365, h: 257, r: 4 },
+  phone:  { x: 892, y: 576, w: 106, h: 232, r: 9 },
+  phoneBody: { x: 884, y: 555, w: 123, h: 257, r: 17 },
+};
+
+function clipRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  if (r && ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
+export function drawQuotationShots(ctx, d) {
+  const shots = d?.shots || {};
+  const shotFit = d?.shotFit || {};
+  const drawShot = (im, rect, fit, hole) => {
+    if (!im || !im.width || !im.height) return;
+    const { x, y, w, h, radius } = rect;
+    const f = fit || {};
+    const zoom = Math.min(4, Math.max(1, Number(f.zoom) || 1));
+    const nx = Math.min(1, Math.max(-1, Number(f.x) || 0));
+    const ny = Math.min(1, Math.max(-1, Number(f.y) || 0));
+    const ir = im.width / im.height;
+    const tr = w / h;
+    let sw = im.width, sh = im.height;
+    if (ir > tr) { sw = im.height * tr; } else { sh = im.width / tr; }
+    // Zooming in shrinks the source crop, which is what creates pan room.
+    sw = Math.max(1, Math.min(im.width, sw / zoom));
+    sh = Math.max(1, Math.min(im.height, sh / zoom));
+    // Cover-fit crops, so the crop can never leave the picture at any zoom or
+    // pan — the screen is always filled edge to edge.
+    const roomX = Math.max(0, im.width - sw);
+    const roomY = Math.max(0, im.height - sh);
+    const sx = Math.min(roomX, Math.max(0, roomX * (nx + 1) / 2));
+    const sy = Math.min(roomY, Math.max(0, roomY * (ny + 1) / 2));
+    ctx.save();
+    // Screen shape, minus the phone when the laptop picture runs underneath it.
+    clipRoundRect(ctx, x, y, w, h, radius || 0);
+    if (hole) {
+      if (ctx.roundRect) ctx.roundRect(hole.x, hole.y, hole.w, hole.h, hole.r);
+      else ctx.rect(hole.x, hole.y, hole.w, hole.h);
+      ctx.clip('evenodd');
+    } else {
+      ctx.clip();
+    }
+    ctx.imageSmoothingEnabled = true;
+    try { ctx.imageSmoothingQuality = 'high'; } catch { /* older engines */ }
+    ctx.drawImage(im, sx, sy, sw, sh, x, y, w, h);
+    ctx.restore();
+  };
+
+  const L = SHOT_RECTS.laptop;
+  const P = SHOT_RECTS.phone;
+  const B = SHOT_RECTS.phoneBody;
+
+  drawShot(shots.laptop, { ...L, radius: L.r }, shotFit.laptop, B);
+  drawShot(shots.phone, { ...P, radius: P.r }, shotFit.phone);
+}
+
+// The letterhead without the client screenshots — what the Studio caches so a
+// zoom / pan drag does not have to repaint (and re-read pixels from) the whole
+// 2048 × 3072 document on every slider tick.
+export function renderTemplateBase(canvas, img, d, scale) {
+  return renderTemplate(canvas, img, d, scale, { skipShots: true });
+}
+
+export function renderTemplate(canvas, img, d, scale, opts = {}) {
   if (!canvas || !d) return;
   const W = TEMPLATE_QUOTATION.width;
   const H = TEMPLATE_QUOTATION.height;
@@ -108,28 +194,11 @@ export function renderTemplate(canvas, img, d, scale) {
   }
 
   // ---- screenshots inside the laptop / phone mockups ----
-  // Optional per-quotation uploads. Each image is cover-cropped into the
-  // screen rect measured from the letterhead (design px), so the device
-  // bezels and the notch stay untouched. Empty → the sample stays.
-  // The laptop rect stops at the phone so the phone bezel is never painted over.
-  const shots = d.shots || {};
-  const drawShot = (im, x, y, w, h, radius) => {
-    if (!im || !im.width || !im.height) return;
-    const ir = im.width / im.height;
-    const tr = w / h;
-    let sw = im.width, sh = im.height, sx = 0, sy = 0;
-    if (ir > tr) { sw = im.height * tr; sx = (im.width - sw) / 2; }
-    else { sh = im.width / tr; sy = (im.height - sh) / 2; }
-    ctx.save();
-    ctx.beginPath();
-    if (radius && ctx.roundRect) ctx.roundRect(x, y, w, h, radius);
-    else ctx.rect(x, y, w, h);
-    ctx.clip();
-    ctx.drawImage(im, sx, sy, sw, sh, x, y, w, h);
-    ctx.restore();
-  };
-  drawShot(shots.laptop, 551, 496, 333, 272, 3);
-  drawShot(shots.phone,  890, 570, 103, 233, 6);
+  // Optional per-quotation uploads, cover-cropped into the screen rect
+  // measured from the letterhead (design px). Empty → the sample stays.
+  // Skipped when the caller paints the base letterhead separately (the Studio
+  // caches it once, then re-draws only the screens while zoom/pan moves).
+  if (!opts.skipShots) drawQuotationShots(ctx, d);
 
   const erase = (x, y, w, h, bg) => {
     if (!bg) return;
@@ -670,7 +739,9 @@ export function renderTemplate(canvas, img, d, scale) {
       });
 
       // amount column
-      if (r.amount > 0 || r.was > 0) {
+      if (r.amount !== 0 || r.was > 0) {
+        const amountText = r.amount < 0 ? `−${num(Math.abs(r.amount))}` : num(r.amount);
+        const amountColor = r.amount < 0 ? '#C0392B' : '#0C369A';
         // The struck price is printed ABOVE the real one, which needs two
         // lines of room — with 5-6 rows a row is only ~13px tall, so the
         // discount line is dropped rather than colliding with the next row.
@@ -687,7 +758,7 @@ export function renderTemplate(canvas, img, d, scale) {
           ctx.textAlign = 'left';
           line(num(r.amount), AMT_X, cy + fSize * 0.95, { maxW: AMT_MAXW, size: fSize * 1.12, weight: 700, color: '#0C369A', align: 'right' });
         } else {
-          line(num(r.amount), AMT_X, cy + fSize * 0.36, { maxW: AMT_MAXW, size: fSize * 1.18, weight: 700, color: '#0C369A', align: 'right' });
+          line(amountText, AMT_X, cy + fSize * 0.36, { maxW: AMT_MAXW, size: fSize * 1.18, weight: 700, color: amountColor, align: 'right' });
         }
       }
 

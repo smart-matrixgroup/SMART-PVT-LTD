@@ -14,6 +14,7 @@ import {
   todayKey, thisMonthKey, monthLabel,
 } from '../../staff/staffUtils';
 import { company } from '../../config/company';
+import { saveTablePdf } from '../utils/reportPdf';
 import {
   getStaffCheckInPublicUrl, generateStaffCheckInQRCodeDataUrl, downloadStaffCheckInQRPng,
 } from '../../utils/qrUtils';
@@ -25,6 +26,14 @@ const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#
 const DEV_ATT = [];
 
 const REPORT_HEADERS = ['Date', 'Staff', 'Check In', 'Check Out', 'Hours', 'Status'];
+const ATT_PDF_COLUMNS = [
+  { label: 'DATE', width: 12 },
+  { label: 'STAFF', width: 27, wrap: true },
+  { label: 'CHECK IN', width: 10, align: 'center' },
+  { label: 'CHECK OUT', width: 10, align: 'center' },
+  { label: 'HOURS', width: 9, align: 'center' },
+  { label: 'STATUS', width: 12, align: 'center' },
+];
 const reportRows = records => records.map(r => [
   r.date,
   r.staffName,
@@ -35,8 +44,9 @@ const reportRows = records => records.map(r => [
 ]);
 
 export default function ERPStaffAttendance() {
-  const { isFirebaseConfigured, isDevSession } = useAuth();
+  const { isFirebaseConfigured, isDevSession, currentUser } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
+  const adminName = currentUser?.displayName || currentUser?.email || 'Admin';
 
   const [records,  setRecords]  = useState([]);
   const [staff,    setStaff]    = useState([]);
@@ -104,12 +114,38 @@ export default function ERPStaffAttendance() {
       title = `Staff-wise Attendance — ${name} — ${monthLabel(monthF)}`;
       rows = reportRows(monthRecords.filter(r => (staffF === 'All' ? true : r.staffId === staffF)));
     }
-    setPreview({ title, rows });
+    const data = { title, rows };
+    setPreview(data);
+    // "-pdf" now produces the file straight away (still shows the preview).
+    if (kind.endsWith('-pdf')) savePreviewPdf(data);
   };
 
   const downloadPreview = () => {
     const stamp = preview.title.replace(/[^\w]+/g, '_');
     downloadCsv(`${stamp}.csv`, REPORT_HEADERS, preview.rows);
+  };
+
+  // A real .pdf file, not the browser print dialog.
+  const savePreviewPdf = (data = preview) => {
+    if (!data) return;
+    const hours = data.rows.reduce((n, r) => n + (parseFloat(r[4]) || 0), 0);
+    const present = data.rows.filter(r => /present/i.test(r[5])).length;
+    const absent = data.rows.filter(r => /absent/i.test(r[5])).length;
+    saveTablePdf({
+      title: data.title,
+      subtitle: `${data.rows.length} attendance record${data.rows.length === 1 ? '' : 's'}`,
+      columns: ATT_PDF_COLUMNS,
+      rows: data.rows,
+      summary: [
+        { label: 'Records', value: String(data.rows.length) },
+        { label: 'Total hours', value: `${Math.round(hours * 10) / 10}` },
+        { label: 'Present', value: String(present) },
+        { label: 'Absent', value: String(absent) },
+      ],
+      statusCol: 5,
+      footNote: 'Check-in and check-out punches come from the office attendance QR / staff portal. Manual corrections by an admin are included.',
+      generatedBy: adminName,
+    }, `${data.title.replace(/[^\w]+/g, '-')}.pdf`);
   };
 
   const openEdit = r => {
@@ -326,11 +362,11 @@ export default function ERPStaffAttendance() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <ERPBtn variant="secondary" onClick={() => runReport('daily')}><Download size={12} /> Daily CSV</ERPBtn>
-            <ERPBtn variant="secondary" onClick={() => runReport('daily-pdf')}><Printer size={12} /> Daily PDF</ERPBtn>
+            <ERPBtn variant="secondary" onClick={() => runReport("daily-pdf")}><Download size={12} /> Daily PDF</ERPBtn>
             <ERPBtn variant="secondary" onClick={() => runReport('monthly')}><Download size={12} /> Monthly CSV</ERPBtn>
-            <ERPBtn variant="secondary" onClick={() => runReport('monthly-pdf')}><Printer size={12} /> Monthly PDF</ERPBtn>
+            <ERPBtn variant="secondary" onClick={() => runReport("monthly-pdf")}><Download size={12} /> Monthly PDF</ERPBtn>
             <ERPBtn variant="secondary" onClick={() => runReport('staffwise')}><Download size={12} /> Staff-wise CSV</ERPBtn>
-            <ERPBtn variant="secondary" onClick={() => runReport('staffwise-pdf')}><Printer size={12} /> Staff-wise PDF</ERPBtn>
+            <ERPBtn variant="secondary" onClick={() => runReport("staffwise-pdf")}><Download size={12} /> Staff-wise PDF</ERPBtn>
           </div>
           <div style={{ fontSize: 10, color: C.muted }}>
             CSV/PDF buttons for the same period share one preview — download CSV from the preview too. Daily uses the
@@ -418,8 +454,8 @@ export default function ERPStaffAttendance() {
               <ERPBtn variant="secondary" onClick={downloadPreview} style={{ flex: 1, justifyContent: 'center' }}>
                 <Download size={13} /> Download CSV
               </ERPBtn>
-              <ERPBtn variant="primary" onClick={() => window.print()} style={{ flex: 1, justifyContent: 'center' }}>
-                <Printer size={13} /> Print / Save PDF
+              <ERPBtn variant="primary" onClick={() => savePreviewPdf()} style={{ flex: 1, justifyContent: 'center' }}>
+                <Download size={13} /> Save PDF
               </ERPBtn>
             </div>
           </div>

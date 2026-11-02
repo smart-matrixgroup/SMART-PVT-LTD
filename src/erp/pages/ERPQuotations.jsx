@@ -7,6 +7,7 @@ import {
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useAuth } from '../../context/AuthContext';
+import { syncFinanceIncome } from '../finance/financeSync';
 import { usePrivateUrl, revOf } from '../usePrivateUrl';
 import PrivateFileLink from '../components/PrivateFileLink';
 import { company } from '../../config/company';
@@ -20,7 +21,7 @@ import {
 import {
   Plus, Send, Trash2, Edit2, CheckCircle2, Eye, Copy, Info,
   Printer, CreditCard, Play, AlertTriangle, Receipt as ReceiptIcon, XCircle,
-  MessageSquare, Image as ImageIcon, RotateCcw
+  MessageSquare, Image as ImageIcon, RotateCcw, Download
 } from 'lucide-react';
 import QuotationDocStudio from '../components/QuotationDocStudio';
 import QuotationLetterheadPreview from '../components/QuotationLetterheadPreview';
@@ -82,6 +83,27 @@ const STATUS_LABEL = { 'In Progress': 'In Progress / Balance Due', 'Completed': 
 const autoBalanceOf   = (q) => Math.max(0, toInt(q.totalAmount) - toInt(q.paidTotal));
 const isManualBalance = (q) => !!(q && q.balanceManual && q.balanceOverride != null && q.balanceOverride !== '');
 const balanceOf       = (q) => (isManualBalance(q) ? Math.max(0, toInt(q.balanceOverride)) : autoBalanceOf(q));
+
+// Discount lives ON the quotation but `totalAmount` always stays the amount the
+// client actually owes (subtotal − discount). Invoices, receipts, balance and
+// the client portal therefore keep working off one number, and the discount is
+// still visible for anyone asking "why is the total lower than the items?".
+const subtotalOf   = (q) => {
+  const items = Array.isArray(q?.items) ? q.items : [];
+  if (items.length) return items.reduce((s, i) => s + toInt(i.amount), 0);
+  return toInt(q?.totalAmount) + toInt(q?.discountAmount);   // older docs without items
+};
+const discountOf   = (q) => Math.max(0, toInt(q?.discountAmount));
+
+// Advance: the percentage is only a suggestion. When the admin types the figure
+// the client really paid (Rs. 8000 while 35% rounded to 8100) that typed value
+// wins, is flagged `advanceManual`, and the percentage stays on the doc so the
+// auto figure can always be recalculated.
+const autoAdvanceOf     = (q) => Math.round(toInt(q?.totalAmount) * toInt(q?.advancePct) / 100);
+const isManualAdvance   = (q) => !!(q && q.advanceManual);
+const advanceOf         = (q) => (isManualAdvance(q)
+  ? Math.max(0, Math.min(toInt(q?.totalAmount), toInt(q?.advanceAmount)))
+  : (toInt(q?.advanceAmount) || autoAdvanceOf(q)));
 
 // Payment kinds — derived from where the payment sits in the money timeline.
 // A first payment that clears the whole due is a final payment, not an advance.
@@ -210,51 +232,134 @@ const EMPTY_FORM = {
   quoteRows:null,
   // Screenshots shown inside the laptop / phone mockups on the letterhead
   laptopShot:'', phoneShot:'',
-  advancePct:30, validUntil:'', terms:'', paymentTerms:'', notes:'',
+  // Zoom / position of those screenshots inside the mockup screens
+  shotFit:null,
+  // Text typed directly on the letterhead in the Image Studio (subject,
+  // intro, service details, features, domain notes, terms …) — kept so the
+  // next open shows the same letterhead instead of the defaults.
+  letterhead:null,
+  // Optional discount — 'none' | 'amount' | 'percent'
+  discountMode:'none', discountValue:'',
+  // Percentage is the suggestion; advanceAmount is what is actually stored
+  // (and what the admin typed, when advanceManual is on).
+  advancePct:30, advanceAmount:'', advanceManual:false,
+  validUntil:'', terms:'', paymentTerms:'', notes:'',
 };
 const EMPTY_PAY = { amount:'', date:'', method:'Bank Transfer', reference:'', notes:'' };
 
 // Saved letterhead card. The quotation doc stores only the Storage PATH; the
 // bytes are pulled through the SDK (so storage.rules decide who sees them) and
 // shown from an in-memory blob URL. A shareable ?token= link never exists.
-function SavedLetterheadCard({ info }) {
-  const { url, busy, err } = usePrivateUrl(info?.path, !!info?.path, revOf(info?.savedAt));
+function SavedLetterheadCard({ info, onEdit }) {
+  // `retry` bumps the revision so a failed read can be attempted again without
+  // reloading the page — "photo save aana apram pakkave mudiyala" was a card
+  // that stayed empty forever after one failed fetch.
+  const [retry, setRetry] = useState(0);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  // Dev sessions keep the image in memory (blobUrl) — there is no Storage.
+  const hasBlob = !!info?.blobUrl;
+  const { url: privateUrl, busy, err } = usePrivateUrl(
+    hasBlob ? null : info?.path, !hasBlob && !!info?.path, `${revOf(info?.savedAt)}|${retry}`);
+  const url = info?.blobUrl || privateUrl;
+  const download = () => {
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(info?.path || 'quotation').split('/').slice(-2, -1)[0] || 'letterhead'}.jpg`;
+    a.click();
+  };
+
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:10, padding:9, borderRadius:10,
+    <div style={{ display:'flex', flexDirection:'column', gap:7, padding:9, borderRadius:10,
       background:'rgba(24,199,122,0.07)', border:'1px solid rgba(24,199,122,0.25)' }}>
-      {url
-        ? <img src={url} alt="Saved quotation letterhead"
-            style={{ width:44, height:62, objectFit:'cover', objectPosition:'top', borderRadius:6,
-              border:`1px solid ${C.border}`, background:'#fff' }} />
-        : <div style={{ width:44, height:62, borderRadius:6, display:'flex', alignItems:'center',
-            justifyContent:'center', border:`1px solid ${C.border}`, background:'rgba(10,24,56,0.6)',
-            color:C.muted, fontSize:9, fontWeight:700 }}>{busy ? '…' : '—'}</div>}
-      <div style={{ flex:1, minWidth:120 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:C.green }}>
-          {info?.edited ? 'Edited letterhead saved' : 'Letterhead image saved'}
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        {url
+          ? <img src={url} alt="Saved quotation letterhead"
+              style={{ width:44, height:62, objectFit:'cover', objectPosition:'top', borderRadius:6,
+                border:`1px solid ${C.border}`, background:'#fff' }} />
+          : <div style={{ width:44, height:62, borderRadius:6, display:'flex', alignItems:'center',
+              justifyContent:'center', border:`1px solid ${C.border}`, background:'rgba(10,24,56,0.6)',
+              color:C.muted, fontSize:9, fontWeight:700 }}>{busy ? '…' : '—'}</div>}
+        <div style={{ flex:1, minWidth:120 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.green }}>
+            {info?.edited ? 'Edited letterhead saved' : 'Letterhead image saved'}
+          </div>
+          <div style={{ fontSize:10, color:err ? C.red : C.muted }}>
+            {err ? `${err} The file is still on the quotation — try again.`
+              : busy ? 'Opening the saved image…'
+              : info?.edited
+                ? 'This edited copy is what gets sent to the client.'
+                : 'Ready to view, download or edit again.'}
+          </div>
         </div>
-        <div style={{ fontSize:10, color:err ? C.red : C.muted }}>
-          {err || (info?.edited
-            ? 'This edited copy is what gets sent to the client.'
-            : 'Private to this account — opened through Firebase, no public link.')}
+        <div style={{ display:'flex', gap:5, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end' }}>
+          {url && onEdit && (
+            <button type="button" onClick={onEdit}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 10px', cursor:'pointer',
+                borderRadius:7, background:'rgba(0,102,255,0.16)', border:'1px solid rgba(0,102,255,0.45)',
+                color:'#8CC2FF', fontWeight:700, fontSize:11 }}>
+              <Edit2 size={11}/> Edit
+            </button>
+          )}
+          {url && (
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{ display:'flex', alignItems:'center', gap:5, textDecoration:'none', padding:'6px 10px',
+                borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
+                color:C.green, fontWeight:700, fontSize:11 }}>
+              <ImageIcon size={11}/> Open
+            </a>
+          )}
+          {url && (
+            <button type="button" onClick={download}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 10px', cursor:'pointer',
+                borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
+                color:C.green, fontWeight:700, fontSize:11 }}>
+              <Download size={11}/> Save
+            </button>
+          )}
+          {!url && !busy && (
+            <button type="button" onClick={() => setRetry(n => n + 1)}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 10px', cursor:'pointer',
+                borderRadius:7, background:'rgba(0,102,255,0.14)', border:'1px solid rgba(0,102,255,0.45)',
+                color:'#8CC2FF', fontWeight:700, fontSize:11 }}>
+              Retry
+            </button>
+          )}
         </div>
       </div>
       {url && (
-        <a href={url} target="_blank" rel="noopener noreferrer"
-          style={{ display:'flex', alignItems:'center', gap:5, textDecoration:'none', padding:'6px 10px',
-            borderRadius:7, background:'rgba(24,199,122,0.15)', border:'1px solid rgba(24,199,122,0.35)',
-            color:C.green, fontWeight:700, fontSize:11 }}>
-          <ImageIcon size={11}/> Open
-        </a>
+        <button type="button" onClick={() => setZoomOpen(true)}
+          title="Open the saved image"
+          style={{ padding:0, border:'none', background:'none', cursor:'zoom-in', display:'block' }}>
+          <img src={url} alt="Saved quotation letterhead preview"
+            style={{ width:'100%', maxHeight:190, objectFit:'cover', objectPosition:'top', borderRadius:8,
+              border:`1px solid ${C.border}`, background:'#fff' }} />
+        </button>
+      )}
+
+      {zoomOpen && url && (
+        <div onClick={() => setZoomOpen(false)}
+          style={{ position:'fixed', inset:0, zIndex:4000, background:'rgba(3,9,22,0.9)',
+            display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <img src={url} alt="Saved quotation letterhead — full size"
+            style={{ maxWidth:'94vw', maxHeight:'92vh', borderRadius:8, background:'#fff',
+              boxShadow:'0 24px 70px rgba(0,0,0,0.55)' }} />
+          <button type="button" onClick={() => setZoomOpen(false)}
+            style={{ position:'absolute', top:16, right:18, width:34, height:34, borderRadius:10,
+              border:`1px solid ${C.border}`, background:'rgba(10,24,56,0.9)', color:C.text,
+              fontSize:16, cursor:'pointer' }}>✕</button>
+        </div>
       )}
     </div>
   );
 }
 
 export default function ERPQuotations() {
-  const { isDevSession, profile } = useAuth();
+  const { isDevSession, profile, currentUser } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
-  const adminName = profile?.name || profile?.email || 'Admin';
+  const adminName = profile?.name || profile?.email
+    || currentUser?.displayName || currentUser?.email || 'Admin';
+  const adminEmail = profile?.email || currentUser?.email || '';
   const navigate = useNavigate();
 
   const [quotes,     setQuotes]     = useState(live ? [] : DEV_QUOTES);
@@ -406,8 +511,8 @@ Your quotation ${sel.quotationNo || ''} for "${sel.projectTitle}" is ready:
 
 ${lines}
 
-💰 Total: ${formatLKR(sel.totalAmount)}
-📌 Advance (${toInt(sel.advancePct)}%): ${formatLKR(sel.advanceAmount)}
+💰 Total: ${formatLKR(sel.totalAmount)}${discountOf(sel) > 0 ? ` (after ${formatLKR(discountOf(sel))} discount)` : ''}
+📌 Advance ${isManualAdvance(sel) ? '' : `(${toInt(sel.advancePct)}%) `}: ${formatLKR(advanceOf(sel))}
 
 ${sel.renderImage?.path ? '🖼 Your quotation letterhead is attached inside your client portal (open the link below — it is private to you).\n' : ''}🔗 View & accept in your client portal: ${window.location.origin}/client-login
 
@@ -436,8 +541,17 @@ We've received your payment — thank you! 🙏
   const tplOptions = templates.filter(t => t.serviceName === form.service);
   const tplSel     = templates.find(t => t.id === form.templateId);
 
-  const total          = form.items.reduce((s,i) => s + toInt(i.amount), 0);
-  const advancePreview = Math.round(total * toInt(form.advancePct) / 100);
+  const subtotal       = form.items.reduce((s,i) => s + toInt(i.amount), 0);
+  const discountRaw    = Math.max(0, toInt(form.discountValue));
+  const discountAmount = form.discountMode === 'percent'
+    ? Math.min(subtotal, Math.round(subtotal * Math.min(100, discountRaw) / 100))
+    : form.discountMode === 'amount' ? Math.min(subtotal, discountRaw) : 0;
+  const total          = Math.max(0, subtotal - discountAmount);
+  const autoAdvance    = Math.round(total * toInt(form.advancePct) / 100);
+  // Typed amount wins; an empty box falls back to the percentage.
+  const advancePreview = form.advanceManual && String(form.advanceAmount).trim() !== ''
+    ? Math.min(total, Math.max(0, toInt(form.advanceAmount)))
+    : autoAdvance;
 
   // Unsaved form data shaped like a quotation doc, so the letterhead preview
   // and the Image Studio work before the quotation is saved.
@@ -454,12 +568,20 @@ We've received your payment — thank you! 🙏
     items: form.items.filter(i => i.label.trim() && toInt(i.amount) > 0)
       .map(i => ({ label:i.label, amount:toInt(i.amount) })),
     totalAmount: total,
+    subtotal,
+    discountAmount,
+    discountMode: form.discountMode,
+    discountValue: discountRaw,
     advanceAmount: advancePreview,
+    advanceManual: !!form.advanceManual,
+    advancePct: toInt(form.advancePct),
     validUntil: form.validUntil || '',
     createdAt: todayISO(),
     status: 'Draft',
     laptopShot: form.laptopShot || '',
     phoneShot: form.phoneShot || '',
+    shotFit: form.shotFit || null,
+    letterhead: form.letterhead || null,
     quoteRows: form.quoteRows || null,
     customFields: form.customFields.filter(f => String(f.label || '').trim())
       .map(f => ({ label:String(f.label).trim(), value:String(f.value || '').trim() })),
@@ -484,13 +606,25 @@ We've received your payment — thank you! 🙏
       items:       (q.items || []).map(b => ({ id:b.id || buid(), label:b.label, amount:String(toInt(b.amount)) })),
       customFields:(q.customFields || []).map(f => ({ id:f.id || buid(), label:f.label || '', value:f.value || '' })),
       quoteRows:   q.quoteRows || null,
+      discountMode: q.discountMode || (discountOf(q) > 0 ? 'amount' : 'none'),
+      discountValue: discountOf(q) > 0
+        ? String(q.discountMode === 'percent' && q.discountValue != null ? toInt(q.discountValue) : discountOf(q))
+        : '',
+      // A stored advance that is not the percentage figure was set by hand
+      // (that is how 8000 vs 8100 happens) — open it as manual so the edit
+      // does not silently snap it back to the rounded percentage.
       advancePct:  toInt(q.advancePct) || 30,
+      advanceAmount: toInt(q.advanceAmount) ? String(toInt(q.advanceAmount)) : '',
+      advanceManual: !!q.advanceManual
+        || (toInt(q.advanceAmount) > 0 && toInt(q.advanceAmount) !== Math.round(toInt(q.totalAmount) * (toInt(q.advancePct) || 30) / 100)),
       validUntil:  q.validUntil || '',
       terms:       q.terms || '',
       paymentTerms:q.paymentTerms || '',
       notes:       q.notes || '',
       laptopShot:  q.laptopShot || '',
       phoneShot:   q.phoneShot || '',
+      shotFit:     q.shotFit || null,
+      letterhead:  q.letterhead || null,
     });
     setFormError('');
     setView('form');
@@ -533,6 +667,14 @@ We've received your payment — thank you! 🙏
   // `edited: true` = saved from the Image Studio (manually touched), so the
   // auto-renderer must not repaint over it and Send must deliver this copy.
   const saveQuoteImage = async (id, blob, { edited = false, clientId = '' } = {}) => {
+    // Local demo session: keep the picture in memory so a saved draft can
+    // still be opened, viewed and edited — nothing leaves this tab.
+    if (!live) {
+      const blobUrl = URL.createObjectURL(blob);
+      const local = { blobUrl, edited, savedAt: Date.now() };
+      setQuotes(rows => rows.map(q => q.id === id ? { ...q, renderImage: local } : q));
+      return blobUrl;
+    }
     const path = renderPath(id, clientId);
     const r = storageRef(storage, path);
     // Same path is overwritten on every save — nothing is cached client-side
@@ -551,7 +693,6 @@ We've received your payment — thank you! 🙏
   };
 
   const handleSaveRender = async (blob) => {
-    if (!live) throw new Error('Image save needs the live database — connect Firebase first.');
     const targetId = (view === 'form' ? editId : sel?.id) || null;
     if (!targetId) throw new Error('Save the quotation first, then save its image.');
     // This IS the repaint — drop any queued automatic one so it cannot upload a
@@ -574,7 +715,7 @@ We've received your payment — thank you! 🙏
   };
 
   const autoQuoteImage = async (q, id, sendNow) => {
-    if (!live || !id || !q) return;
+    if (!id || !q) return;
     try {
       await saveQuoteImageNow(q, id);
       showToast(sendNow
@@ -734,8 +875,39 @@ We've received your payment — thank you! 🙏
       .map(i => ({ id:i.id, label:i.label.trim(), amount:toInt(i.amount) }));
     if (!items.length) { setFormError('Add at least one line item with a description and amount.'); return; }
 
-    const tot    = items.reduce((s,i) => s + i.amount, 0);
-    const advPct = toInt(form.advancePct);
+    const subtotal  = items.reduce((s,i) => s + i.amount, 0);
+    const advPct    = toInt(form.advancePct);
+    const discRaw   = Math.max(0, toInt(form.discountValue));
+    const discAmt   = form.discountMode === 'percent'
+      ? Math.min(subtotal, Math.round(subtotal * Math.min(100, discRaw) / 100))
+      : form.discountMode === 'amount' ? Math.min(subtotal, discRaw) : 0;
+    const tot       = Math.max(0, subtotal - discAmt);
+    const advManual = !!form.advanceManual && String(form.advanceAmount).trim() !== '';
+    const finalAdv  = advManual
+      ? Math.min(tot, Math.max(0, toInt(form.advanceAmount)))
+      : Math.round(tot * advPct / 100);
+    // Money audit — an edit that moves the total, the discount or the advance
+    // leaves a who/when line, exactly like a payment does.
+    const currentQuote = editId ? quotes.find(q => q.id === editId) : null;
+    const moneyLog = Array.isArray(currentQuote?.moneyLog) ? [...currentQuote.moneyLog] : [];
+    if (currentQuote) {
+      const changes = [];
+      if (toInt(currentQuote.totalAmount) !== tot) {
+        changes.push(`Total ${formatLKR(currentQuote.totalAmount)} → ${formatLKR(tot)}`
+          + (discAmt > 0 ? ` (items ${formatLKR(subtotal)} − discount ${formatLKR(discAmt)})` : ''));
+      }
+      if (toInt(currentQuote.advanceAmount) !== finalAdv) {
+        changes.push(`Advance ${formatLKR(currentQuote.advanceAmount)} → ${formatLKR(finalAdv)}`
+          + (advManual ? ' (set by hand)' : ` (${advPct}%)`));
+      }
+      if (changes.length) {
+        moneyLog.push({
+          at: new Date().toISOString(), by: adminName, kind: 'edit',
+          text: changes.join(' · '),
+        });
+      }
+    }
+
     const base = {
       clientId:     form.clientId,
       clientName:   clientSel?.name || '',
@@ -750,17 +922,27 @@ We've received your payment — thank you! 🙏
         .map(f => ({ id:f.id, label:String(f.label || '').trim(), value:String(f.value || '').trim() }))
         .filter(f => f.label),
       items,
+      subtotal,
+      discountMode: form.discountMode === 'percent' || form.discountMode === 'amount' ? form.discountMode : 'none',
+      discountValue: discRaw,
+      discountAmount: discAmt,
       totalAmount:  tot,
       advancePct:   advPct,
-      advanceAmount:Math.round(tot * advPct / 100),
+      advanceAmount: finalAdv,
+      advanceManual: advManual,
       terms:        form.terms,
       paymentTerms: form.paymentTerms,
       notes:        form.notes,
       laptopShot:   form.laptopShot || '',
       phoneShot:    form.phoneShot || '',
+      shotFit:      form.shotFit || null,
+      // Studio-typed letterhead text — preserved on every plain save so a
+      // later auto-repaint prints the same wording the owner approved.
+      ...(form.letterhead ? { letterhead: form.letterhead } : {}),
       quoteRows:    form.quoteRows || null,
       validUntil:   form.validUntil,
       updatedAt:    serverTimestamp(),
+      ...(currentQuote && moneyLog.length !== (currentQuote.moneyLog || []).length ? { moneyLog } : {}),
     };
 
     setSaving(true);
@@ -771,8 +953,8 @@ We've received your payment — thank you! 🙏
     // only holds while the save does not change what the letterhead prints:
     // keeping an edited picture across a row/screenshot edit is precisely how a
     // quotation went on showing the same old image after every change.
-    const currentQuote = editId ? quotes.find(q => q.id === editId) : null;
-    const printedSig = (o) => JSON.stringify([o?.quoteRows ?? null, o?.laptopShot ?? '', o?.phoneShot ?? '']);
+    const printedSig = (o) => JSON.stringify([o?.quoteRows ?? null, o?.laptopShot ?? '', o?.phoneShot ?? '',
+      o?.shotFit ?? null, o?.letterhead ?? null]);
     const keepEditedImage = !!(currentQuote?.renderImage?.edited && currentQuote?.renderImage?.path)
       && printedSig(currentQuote) === printedSig(form);
 
@@ -804,6 +986,7 @@ We've received your payment — thank you! 🙏
         } else {
           const localId = `QT${Date.now()}`;
           setQuotes(p => [{ id:localId, ...docData, createdAt: new Date().toISOString() }, ...p]);
+          savedId = localId;
           savedQuote = { ...docData, id: localId };
         }
       }
@@ -811,7 +994,7 @@ We've received your payment — thank you! 🙏
       closeForm();
       if (savedId) setSelected(savedId);
       // Automatic image (paint → upload → renderImage) and send when asked.
-      if (live && savedQuote) {
+      if (savedQuote) {
         if (sendNow) await sendQuoteWithImage(savedQuote, savedId, { forceRepaint: !keepEditedImage });
         else if (keepEditedImage) showToast('Saved — your edited letterhead image is kept.');
         else await autoQuoteImage(savedQuote, savedId, false);
@@ -885,8 +1068,12 @@ We've received your payment — thank you! 🙏
       items:(q.items || []).map(b => ({ id:buid(), label:b.label, amount:toInt(b.amount) })),
       customFields:(q.customFields || []).map(f => ({ id:buid(), label:f.label || '', value:f.value || '' })),
       quoteRows:q.quoteRows || null,
+      // Screenshots (and their crop) belong to the original client's project,
+      // so a duplicate starts without them.
+      subtotal: subtotalOf(q),
+      discountMode:q.discountMode || 'none', discountValue:toInt(q.discountValue), discountAmount:discountOf(q),
       totalAmount:toInt(q.totalAmount), advancePct:toInt(q.advancePct),
-      advanceAmount:toInt(q.advanceAmount),
+      advanceAmount:advanceOf(q), advanceManual:isManualAdvance(q),
       terms:q.terms || '', paymentTerms:q.paymentTerms || '', notes:q.notes || '',
       validUntil:q.validUntil || '',
       paidTotal:0, paymentsCount:0, status:'Draft', updatedAt: serverTimestamp(),
@@ -902,9 +1089,12 @@ We've received your payment — thank you! 🙏
     }
   };
 
-  // ── Delete (blocked when payments/receipts exist) ────────────────
+  // ── Delete ───────────────────────────────────────────────────────
+  // A quotation can always be removed. Saved payment receipts / paid invoices
+  // are NOT touched — they live in Invoice Centre as the money history, so
+  // deleting a quotation can never erase proof that money was received.
   const askDelete = (q) =>
-    setDelConfirm({ row:q, blocked: toInt(q.paidTotal) > 0 || toInt(q.paymentsCount) > 0 });
+    setDelConfirm({ row:q, hadPayments: toInt(q.paidTotal) > 0 || toInt(q.paymentsCount) > 0 });
 
   const handleDelete = async () => {
     const { row } = delConfirm;
@@ -920,7 +1110,13 @@ We've received your payment — thank you! 🙏
 
   // ── Record payment ───────────────────────────────────────────────
   const openPay = (q) => {
-    setPayForm({ ...EMPTY_PAY, date: todayISO() });
+    // Pre-fill the advance the quotation asks for (the exact figure, not the
+    // rounded percentage) — the admin still types over it if the client sent
+    // something different.
+    const bal = balanceOf(q);
+    const adv = advanceOf(q);
+    const suggest = toInt(q.paidTotal) === 0 && adv > 0 ? String(Math.min(adv, bal)) : '';
+    setPayForm({ ...EMPTY_PAY, date: todayISO(), amount: suggest });
     setPayError('');
     setSelected(q.id);
     setPayOpen(true);
@@ -989,7 +1185,7 @@ We've received your payment — thank you! 🙏
       receiptNo,
       kind,
       recordedBy:  adminName,
-      recordedByEmail: profile?.email || '',
+      recordedByEmail: adminEmail,
       balanceBefore: selBalance,
       balanceAfter: Math.max(0, selBalance - amt),
       createdAt:   serverTimestamp(),
@@ -1016,6 +1212,13 @@ We've received your payment — thank you! 🙏
           try { await updateDoc(doc(db, 'payments', ref.id), { invoiceNo, invoiceId: inv.id }); }
           catch (e) { console.error('payment → invoice link failed', e); }
         }
+        await syncFinanceIncome({
+          paymentId: ref.id,
+          payment: { ...pay, invoiceNo, invoiceId: inv?.id || '' },
+          adminName,
+          adminEmail: adminEmail || '',
+          live,
+        });
 
         const quotePatch = {
           paidTotal,
@@ -1038,7 +1241,9 @@ We've received your payment — thank you! 🙏
         await syncProjectStatus({ ...sel }, nextSt);
       } else {
         const pid = `pay${Date.now()}`;
-        setDevPayments(p => [{ ...pay, id:pid, createdAt: nowIso }, ...p]);
+        const devPay = { ...pay, id: pid, createdAt: nowIso };
+        setDevPayments(p => [devPay, ...p]);
+        await syncFinanceIncome({ paymentId: pid, payment: devPay, adminName, adminEmail: adminEmail || '', live });
         setQuotes(p => p.map(q => q.id === sel.id
           ? {
               ...q, paidTotal, paymentsCount:toInt(sel.paymentsCount)+1, status:nextSt,
@@ -1379,8 +1584,24 @@ We've received your payment — thank you! 🙏
                 ))}
 
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 130px 32px', gap:8, padding:'10px 4px 4px', borderTop:`1px solid ${C.border}` }}>
-                  <span style={{ fontSize:12, fontWeight:700, color:C.muted, textAlign:'right', paddingRight:8 }}>Total</span>
-                  <span style={{ fontSize:15, fontWeight:900, color:C.text, textAlign:'right', paddingRight:12 }}>
+                  <span style={{ fontSize:11, fontWeight:600, color:C.muted, textAlign:'right', paddingRight:8 }}>Items subtotal</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.subtle, textAlign:'right', paddingRight:12 }}>
+                    LKR {subtotal.toLocaleString('en-US')}
+                  </span>
+                  <span/>
+                  {discountAmount > 0 && (
+                    <>
+                      <span style={{ fontSize:11, fontWeight:600, color:C.muted, textAlign:'right', paddingRight:8 }}>
+                        Discount {form.discountMode === 'percent' ? `(${discountRaw}%)` : ''}
+                      </span>
+                      <span style={{ fontSize:12, fontWeight:700, color:C.amber, textAlign:'right', paddingRight:12 }}>
+                        − LKR {discountAmount.toLocaleString('en-US')}
+                      </span>
+                      <span/>
+                    </>
+                  )}
+                  <span style={{ fontSize:12, fontWeight:800, color:C.text, textAlign:'right', paddingRight:8, paddingTop:4 }}>Total payable</span>
+                  <span style={{ fontSize:15, fontWeight:900, color:C.text, textAlign:'right', paddingRight:12, paddingTop:2 }}>
                     LKR {total.toLocaleString('en-US')}
                   </span>
                   <span/>
@@ -1392,23 +1613,100 @@ We've received your payment — thank you! 🙏
             <ERPPanel>
               <ERPPanelHeader title="5 · Payment Terms" icon="💰"/>
               <div style={{ padding:'14px 18px', display:'flex', flexDirection:'column', gap:14 }}>
+                {/* Discount — optional, keeps the item list untouched */}
+                <div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+                    <label style={{ fontSize:11, fontWeight:600, color:C.subtle }}>Discount (optional)</label>
+                    <div style={{ display:'flex', gap:5 }}>
+                      {[
+                        { id:'none',    label:'No discount' },
+                        { id:'amount',  label:'LKR' },
+                        { id:'percent', label:'%' },
+                      ].map(d => (
+                        <button key={d.id} type="button"
+                          onClick={() => setForm(p => ({ ...p, discountMode:d.id, discountValue:d.id === 'none' ? '' : p.discountValue }))}
+                          style={{
+                            padding:'4px 10px', borderRadius:16, fontSize:10.5, fontWeight:700, cursor:'pointer',
+                            background: form.discountMode === d.id ? 'rgba(245,185,66,0.16)' : 'rgba(10,24,56,0.8)',
+                            color: form.discountMode === d.id ? C.amber : C.muted,
+                            border:`1px solid ${form.discountMode === d.id ? 'rgba(245,185,66,0.45)' : C.border}`,
+                          }}>
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {form.discountMode !== 'none' && (
+                    <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                      <input type="number" min={0} max={form.discountMode === 'percent' ? 100 : undefined}
+                        value={form.discountValue}
+                        onChange={e => setForm(p => ({ ...p, discountValue:e.target.value }))}
+                        placeholder={form.discountMode === 'percent' ? 'e.g. 5' : 'e.g. 2000'}
+                        style={{ width:120, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}`, borderRadius:8,
+                          padding:'7px 10px', color:C.text, fontSize:12, outline:'none' }}/>
+                      <span style={{ fontSize:11, color:C.muted }}>{form.discountMode === 'percent' ? '%' : 'LKR'} off</span>
+                      <span style={{ fontSize:12, fontWeight:800, color:C.amber }}>
+                        = − LKR {discountAmount.toLocaleString('en-US')}
+                      </span>
+                      <span style={{ fontSize:10.5, color:C.muted }}>Total payable LKR {total.toLocaleString('en-US')}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ height:1, background:C.border }}/>
+
                 <div>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, flexWrap:'wrap', gap:6 }}>
                     <label style={{ fontSize:11, fontWeight:600, color:C.subtle }}>Advance Payment</label>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                       <input type="number" min={0} max={100} value={form.advancePct}
-                        onChange={e => setForm(p => ({ ...p, advancePct:Math.min(100, Math.max(0, Number(e.target.value) || 0)) }))}
+                        onChange={e => setForm(p => ({ ...p, advancePct:Math.min(100, Math.max(0, Number(e.target.value) || 0)), advanceManual:false }))}
                         style={{ width:50, background:'rgba(10,24,56,0.8)', border:`1px solid ${C.border}`, borderRadius:7,
                           padding:'4px 8px', color:C.text, fontSize:12, outline:'none', textAlign:'center' }}/>
                       <span style={{ fontSize:12, color:C.muted }}>%</span>
-                      <span style={{ fontSize:13, fontWeight:800, color:C.green }}>= LKR {advancePreview.toLocaleString('en-US')}</span>
+                      <span style={{ fontSize:12, fontWeight:700, color:C.muted }}>= LKR {autoAdvance.toLocaleString('en-US')}</span>
                     </div>
                   </div>
                   <input type="range" min={0} max={100} value={form.advancePct}
-                    onChange={e => setForm(p => ({ ...p, advancePct:Number(e.target.value) }))}
+                    onChange={e => setForm(p => ({ ...p, advancePct:Number(e.target.value), advanceManual:false }))}
                     style={{ width:'100%', accentColor:C.blue }}/>
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:C.muted, marginTop:2 }}>
                     <span>0%</span><span>50%</span><span>100%</span>
+                  </div>
+
+                  {/* Exact figure the client pays — typing here wins over the % */}
+                  <div style={{ marginTop:12, padding:'10px 12px', borderRadius:10,
+                    background: form.advanceManual ? 'rgba(0,217,255,0.07)' : 'rgba(10,24,56,0.6)',
+                    border:`1px solid ${form.advanceManual ? 'rgba(0,217,255,0.35)' : C.border}` }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <label style={{ fontSize:10.5, fontWeight:600, color:C.subtle }}>
+                        Advance amount (LKR) — type the exact amount received
+                      </label>
+                      {form.advanceManual && (
+                        <button type="button"
+                          onClick={() => setForm(p => ({ ...p, advanceManual:false, advanceAmount:'' }))}
+                          style={{ background:'none', border:'none', color:C.cyan, fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                          Use {form.advancePct}% instead
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:6, flexWrap:'wrap' }}>
+                      <input type="number" min={0} max={total}
+                        value={form.advanceManual ? form.advanceAmount : String(advancePreview || '')}
+                        onChange={e => setForm(p => ({ ...p, advanceAmount:e.target.value, advanceManual:true }))}
+                        style={{ width:150, background:'rgba(10,24,56,0.8)',
+                          border:`1px solid ${form.advanceManual ? 'rgba(0,217,255,0.5)' : C.border}`, borderRadius:8,
+                          padding:'7px 10px', color:C.text, fontSize:13, fontWeight:700, outline:'none', textAlign:'right' }}/>
+                      {form.advanceManual && (
+                        <span style={{ fontSize:9.5, fontWeight:800, color:C.cyan, padding:'2px 7px', borderRadius:5,
+                          background:'rgba(0,217,255,0.12)', border:'1px solid rgba(0,217,255,0.3)' }}>
+                          SET BY HAND
+                        </span>
+                      )}
+                      <span style={{ fontSize:10.5, color:C.muted }}>
+                        Balance after advance: LKR {Math.max(0, total - advancePreview).toLocaleString('en-US')}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1455,6 +1753,15 @@ We've received your payment — thank you! 🙏
                 {editId ? 'Editing existing quotation' : 'New quotation — number is assigned on save'}
               </div>
               <QuotationLetterheadPreview quotation={formPreview} onOpen={() => setStudioOpen(true)} />
+              {editId && (editingQuote?.renderImage?.path || editingQuote?.renderImage?.blobUrl)
+                ? <SavedLetterheadCard info={editingQuote.renderImage} onEdit={() => setStudioOpen(true)}/>
+                : (
+                  <div style={{ fontSize:10, color:C.muted, lineHeight:1.5 }}>
+                    {editId
+                      ? 'No saved letterhead image yet — open the studio and press “Save to quotation”.'
+                      : 'Save the draft once, then the studio can keep its letterhead image on the quotation.'}
+                  </div>
+                )}
               <div style={{ height:1, background:C.border }}/>
               {form.clientId && (
                 <div style={{ display:'flex', gap:10, alignItems:'center' }}>
@@ -1496,10 +1803,21 @@ We've received your payment — thank you! 🙏
                     <span style={{ fontSize:13, fontWeight:800, color:C.text }}>Total</span>
                     <span style={{ fontSize:18, fontWeight:900, color:C.text }}>LKR {total.toLocaleString('en-US')}</span>
                   </div>
+                  {discountAmount > 0 && (
+                    <div style={{ display:'flex', justifyContent:'space-between', marginTop:-6, fontSize:10, color:C.muted }}>
+                      <span>Items {subtotal.toLocaleString('en-US')} · discount −{discountAmount.toLocaleString('en-US')}{form.discountMode === 'percent' ? ` (${discountRaw}%)` : ''}</span>
+                    </div>
+                  )}
                   <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 12px', borderRadius:8,
-                    background:'rgba(24,199,122,0.08)', border:'1px solid rgba(24,199,122,0.2)' }}>
-                    <span style={{ fontSize:11, color:C.muted }}>Advance ({form.advancePct}%)</span>
-                    <span style={{ fontSize:13, fontWeight:800, color:C.green }}>LKR {advancePreview.toLocaleString('en-US')}</span>
+                    background: form.advanceManual ? 'rgba(0,217,255,0.08)' : 'rgba(24,199,122,0.08)',
+                    border:`1px solid ${form.advanceManual ? 'rgba(0,217,255,0.3)' : 'rgba(24,199,122,0.2)'}` }}>
+                    <span style={{ fontSize:11, color:C.muted }}>
+                      Advance {form.advanceManual ? '· set by hand' : `(${form.advancePct}%)`}
+                      {form.advanceManual ? ` · ${form.advancePct}% would be ${autoAdvance.toLocaleString('en-US')}` : ''}
+                    </span>
+                    <span style={{ fontSize:13, fontWeight:800, color: form.advanceManual ? C.cyan : C.green }}>
+                      LKR {advancePreview.toLocaleString('en-US')}
+                    </span>
                   </div>
                 </>
               )}
@@ -1650,7 +1968,8 @@ We've received your payment — thank you! 🙏
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(85px,1fr))', gap:8 }}>
                       {[
                         { label:'Total',                          value:toInt(sel.totalAmount),   color:C.text },
-                        { label:`Advance (${toInt(sel.advancePct)}%)`, value:toInt(sel.advanceAmount), color:C.cyan },
+                        { label: isManualAdvance(sel) ? 'Advance · set' : `Advance (${toInt(sel.advancePct)}%)`,
+                          value:advanceOf(sel), color:C.cyan },
                         { label:'Paid',                           value:selPaid,                  color:C.green },
                         { label:'Balance',                        value:selBalance,               color:selBalance === 0 ? C.green : C.amber },
                       ].map(b => (
@@ -1665,6 +1984,11 @@ We've received your payment — thank you! 🙏
                         </div>
                       ))}
                     </div>
+                    {isManualAdvance(sel) && (
+                      <div style={{ fontSize:9.5, color:C.cyan, marginTop:-6 }}>
+                        Advance set by hand · {toInt(sel.advancePct)}% would be {formatLKR(autoAdvanceOf(sel))}
+                      </div>
+                    )}
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginTop:-6 }}>
                       <span style={{ fontSize:9.5, color:C.muted, lineHeight:1.4 }}>
                         {isManualBalance(sel)
@@ -1715,6 +2039,24 @@ We've received your payment — thank you! 🙏
                           <span style={{ color:C.subtle, fontWeight:600, flexShrink:0 }}>{formatLKR(it.amount)}</span>
                         </div>
                       ))}
+                      {discountOf(sel) > 0 && (
+                        <>
+                          <div style={{ display:'flex', justifyContent:'space-between', gap:8, fontSize:10.5, padding:'4px 0', borderTop:`1px dashed ${C.border}` }}>
+                            <span style={{ color:C.muted }}>Items subtotal</span>
+                            <span style={{ color:C.subtle, fontWeight:600 }}>{formatLKR(subtotalOf(sel))}</span>
+                          </div>
+                          <div style={{ display:'flex', justifyContent:'space-between', gap:8, fontSize:10.5, padding:'2px 0' }}>
+                            <span style={{ color:C.amber }}>
+                              Discount{sel.discountMode === 'percent' ? ` (${toInt(sel.discountValue)}%)` : ''}
+                            </span>
+                            <span style={{ color:C.amber, fontWeight:700 }}>− {formatLKR(discountOf(sel))}</span>
+                          </div>
+                          <div style={{ display:'flex', justifyContent:'space-between', gap:8, fontSize:11, padding:'4px 0' }}>
+                            <span style={{ color:C.text, fontWeight:700 }}>Total payable</span>
+                            <span style={{ color:C.text, fontWeight:800 }}>{formatLKR(sel.totalAmount)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Advance payment receipt photos uploaded by the client */}
@@ -1832,8 +2174,8 @@ We've received your payment — thank you! 🙏
                     {/* Saved letterhead image (from the Image Studio).
                         Read through the SDK from its Storage path — the
                         quotation doc never carries a shareable public URL. */}
-                    {sel.renderImage?.path && (
-                      <SavedLetterheadCard info={sel.renderImage} edited={sel.renderImage.edited} />
+                    {(sel.renderImage?.path || sel.renderImage?.blobUrl) && (
+                      <SavedLetterheadCard info={sel.renderImage} onEdit={() => setStudioOpen(true)} />
                     )}
 
                     {/* Actions */}
@@ -2030,31 +2372,27 @@ We've received your payment — thank you! 🙏
       <ERPModal isOpen={!!delConfirm} onClose={() => setDelConfirm(null)} title="Delete Quotation" width={440}>
         {delConfirm && (
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-            {delConfirm.blocked ? (
-              <>
-                <div style={{ display:'flex', alignItems:'center', gap:8, color:C.amber, fontSize:12, fontWeight:700 }}>
-                  <XCircle size={15}/> Cannot delete this quotation
-                </div>
-                <div style={{ fontSize:12, color:C.muted, lineHeight:1.6 }}>
-                  <b style={{ color:C.subtle }}>{delConfirm.row.quotationNo || delConfirm.row.id}</b> has payment receipt(s) recorded
-                  ({formatLKR(delConfirm.row.paidTotal)} paid). Quotations with payments cannot be deleted.
-                </div>
-                <ERPBtn variant="secondary" onClick={() => setDelConfirm(null)} style={{ justifyContent:'center' }}>Understood</ERPBtn>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize:12, color:C.muted, lineHeight:1.6 }}>
-                  Delete quotation <b style={{ color:C.text }}>{delConfirm.row.quotationNo || delConfirm.row.id}</b> for{' '}
-                  <b style={{ color:C.text }}>{delConfirm.row.clientName}</b>? This cannot be undone.
-                </div>
-                <div style={{ display:'flex', gap:10 }}>
-                  <ERPBtn variant="secondary" onClick={() => setDelConfirm(null)} style={{ flex:1, justifyContent:'center' }}>Cancel</ERPBtn>
-                  <ERPBtn variant="danger" onClick={handleDelete} style={{ flex:1, justifyContent:'center' }}>
-                    <Trash2 size={13}/> Delete
-                  </ERPBtn>
-                </div>
-              </>
+            <div style={{ fontSize:12, color:C.muted, lineHeight:1.6 }}>
+              Delete quotation <b style={{ color:C.text }}>{delConfirm.row.quotationNo || delConfirm.row.id}</b> for{' '}
+              <b style={{ color:C.text }}>{delConfirm.row.clientName}</b>? This cannot be undone.
+            </div>
+            {delConfirm.hadPayments && (
+              <div style={{ display:'flex', gap:8, alignItems:'flex-start', padding:'10px 12px', borderRadius:10,
+                background:'rgba(245,185,66,0.10)', border:'1px solid rgba(245,185,66,0.35)', color:C.amber,
+                fontSize:11, lineHeight:1.55 }}>
+                <AlertTriangle size={14} style={{ flexShrink:0, marginTop:1 }} />
+                <span>
+                  {formatLKR(delConfirm.row.paidTotal)} already paid. The saved receipt and paid invoice
+                  stay in Invoice Centre — only this quotation is removed.
+                </span>
+              </div>
             )}
+            <div style={{ display:'flex', gap:10 }}>
+              <ERPBtn variant="secondary" onClick={() => setDelConfirm(null)} style={{ flex:1, justifyContent:'center' }}>Cancel</ERPBtn>
+              <ERPBtn variant="danger" onClick={handleDelete} style={{ flex:1, justifyContent:'center' }}>
+                <Trash2 size={13}/> Delete
+              </ERPBtn>
+            </div>
           </div>
         )}
       </ERPModal>
@@ -2187,6 +2525,9 @@ We've received your payment — thank you! 🙏
         waHref={selClient?.phone ? waLink(selClient.phone, quotationWhatsApp()) : ''}
         onDocChange={handleStudioChange}
         onSaveImage={handleSaveRender}
+        saveDisabledReason={view === 'form' && !editId
+          ? 'Save the quotation first — the image is stored on the saved quotation.'
+          : ''}
       />
     </div>
   );

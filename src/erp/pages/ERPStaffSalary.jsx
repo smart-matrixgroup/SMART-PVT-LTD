@@ -12,6 +12,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar, C } from '../components/ERPui';
 import { nextNumber, thisMonthKey, monthLabel, computeNet } from '../../staff/staffUtils';
 import PayslipDoc from '../../staff/PayslipDoc';
+import { saveTablePdf } from '../utils/reportPdf';
+import { savePayslipPdf } from '../../staff/payslipPdf';
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
 import { Plus, FileText, Trash2, AlertTriangle } from 'lucide-react';
 
@@ -60,6 +62,43 @@ export default function ERPStaffSalary() {
   const paidThisMonth = monthPayments.reduce((s, p) => s + toInt(p.net), 0);
   const staffNet = s => computeNet(s.basicSalary, s.allowances, s.deductions);
   const unpaidThisMonth = staff.filter(s => !monthPayments.some(p => p.staffId === s.id));
+
+  // One staff member's payslip as a real .pdf file.
+  const payslipPdf = p => savePayslipPdf(p);
+
+  // The whole month's payroll as one register PDF.
+  const payrollRegisterPdf = () => {
+    saveTablePdf({
+      title: `PAYROLL REGISTER — ${monthLabel(monthF)}`,
+      subtitle: `${monthPayments.length} payslip${monthPayments.length === 1 ? '' : 's'} issued`,
+      columns: [
+        { label: 'PAYSLIP #', width: 14 },
+        { label: 'STAFF', width: 22, wrap: true },
+        { label: 'DESIGNATION', width: 22, wrap: true },
+        { label: 'BASIC', width: 12, align: 'right' },
+        { label: 'ALLOWANCES', width: 13, align: 'right' },
+        { label: 'DEDUCTIONS', width: 13, align: 'right' },
+        { label: 'NET PAID', width: 14, align: 'right' },
+        { label: 'PAID ON', width: 12, align: 'center' },
+        { label: 'METHOD', width: 14, align: 'center' },
+      ],
+      rows: monthPayments.map(p => [
+        p.payslipNo || '—', p.staffName || '—', p.staffRole || '—',
+        formatLKR(p.basicSalary), formatLKR(p.allowances), formatLKR(p.deductions),
+        formatLKR(p.net), fmtDate(p.paidOn) || '—', p.method || '—',
+      ]),
+      summary: [
+        { label: 'Staff paid', value: String(monthPayments.length) },
+        { label: 'Total net pay', value: formatLKR(paidThisMonth) },
+        { label: 'Awaiting payment', value: String(unpaidThisMonth.length) },
+      ],
+      footNote: unpaidThisMonth.length
+        ? `Not paid this month: ${unpaidThisMonth.map(s => s.name).join(', ')}.`
+        : 'Every staff member on the roster has a payslip for this month.',
+      fileName: `PAYROLL-REGISTER-${monthF || 'MONTH'}.pdf`,
+    });
+  };
+
 
   const openCreate = () => {
     setForm({ staffId: '', month: monthF, amount: '', paidOn: todayISO(), method: 'Bank Transfer', reference: '' });
@@ -142,7 +181,11 @@ export default function ERPStaffSalary() {
         <div style={{ width: 190 }}>
           <ERPInput label="Month" value={monthF} type="month" onChange={e => setMonthF(e.target.value)} />
         </div>
-        <ERPBtn variant="primary" onClick={openCreate} style={{ marginLeft: 'auto' }}>
+        <ERPBtn variant="secondary" onClick={payrollRegisterPdf} style={{ marginLeft: 'auto' }}
+          disabled={!monthPayments.length}>
+          <FileText size={13} /> Payroll Register PDF
+        </ERPBtn>
+        <ERPBtn variant="primary" onClick={openCreate}>
           <Plus size={13} /> Record Salary Payment
         </ERPBtn>
       </div>
@@ -250,9 +293,14 @@ export default function ERPStaffSalary() {
         {slipTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <PayslipDoc payment={slipTarget} />
-            <ERPBtn variant="primary" onClick={() => window.print()} style={{ justifyContent: 'center' }}>
-              <FileText size={13} /> Print / Save PDF
-            </ERPBtn>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <ERPBtn variant="primary" onClick={() => payslipPdf(slipTarget)} style={{ flex: 1, justifyContent: 'center' }}>
+                <FileText size={13} /> Save Payslip PDF
+              </ERPBtn>
+              <ERPBtn variant="secondary" onClick={() => window.print()} style={{ flex: 1, justifyContent: 'center' }}>
+                Print
+              </ERPBtn>
+            </div>
           </div>
         )}
       </ERPModal>

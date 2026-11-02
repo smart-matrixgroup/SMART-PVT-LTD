@@ -16,8 +16,9 @@ import {
   ERPEmpty, ERPAvatar, ERPProgress, C,
 } from '../components/ERPui';
 import { getConversationId } from '../messagingUtils';
-import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey, splitStaffByFit } from '../../staff/staffUtils';
+import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey, splitStaffByFit, loadDevStages } from '../../staff/staffUtils';
 import { fmtDate } from '../money';
+import StageReviewPanel from '../components/StageReviewPanel';
 import { Plus, Pencil, Trash2, AlertTriangle, Search, Users, MessageSquare } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
@@ -59,6 +60,8 @@ export default function ERPStaffWork() {
   const [delTarget,   setDelTarget]   = useState(null);
   const [busy,        setBusy]        = useState(false);
   const [formError,   setFormError]   = useState(null);
+  const [stages,      setStages]      = useState([]);   // staffProgress docs
+  const [view,        setView]        = useState('assignments'); // assignments | stages
 
   useEffect(() => {
     if (!live) {
@@ -66,6 +69,7 @@ export default function ERPStaffWork() {
       setStaff([]);
       setClients(DEV_CLIENTS);
       setProjects(DEV_PROJECTS);
+      setStages(loadDevStages());
       setLoading(false);
       return;
     }
@@ -82,6 +86,13 @@ export default function ERPStaffWork() {
       onSnapshot(collection(db, 'clients'),
         snap => setClients(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.status !== 'deleted')),
         err => console.error(err)),
+      onSnapshot(collection(db, 'staffProgress'),
+        snap => setStages(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+        err => {
+          console.error(err);
+          if (err?.code === 'permission-denied')
+            setLoadError('Work Stages needs the latest security rules — the owner must deploy firestore.rules (Staff → Work Progress).');
+        }),
     ];
     return () => unsubs.forEach(u => u());
   }, [live]);
@@ -93,6 +104,11 @@ export default function ERPStaffWork() {
     .filter(a => (fStatus === 'All' ? true : a.status === fStatus))
     .filter(a => (fClient === 'All' ? true : a.clientId === fClient))
     .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt) || String(a.deadline).localeCompare(String(b.deadline)));
+
+  // Staff-maintained stage list, narrowed by the same staff / client pick.
+  const shownStages = stages
+    .filter(s => (fStaff === 'All' ? true : s.staffUid === fStaff || s.staffId === fStaff))
+    .filter(s => (fClient === 'All' ? true : s.clientId === fClient));
 
   const today = todayKey();
   const stats = {
@@ -254,6 +270,7 @@ export default function ERPStaffWork() {
         </div>
       )}
 
+      {view === 'assignments' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
         {[
           { label: 'Assigned', val: stats.assigned, color: C.violet, icon: '📥' },
@@ -269,9 +286,19 @@ export default function ERPStaffWork() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Filters + create */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}` }}>
+          {[['assignments', '📋 Assignments'], ['stages', '🧩 Work Stages']].map(([k, label]) => (
+            <button key={k} onClick={() => setView(k)} style={{
+              padding: '7px 13px', borderRadius: 9, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', border: 'none',
+              background: view === k ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'transparent',
+              color: view === k ? '#fff' : C.muted,
+            }}>{label}</button>
+          ))}
+        </div>
         <div style={{ minWidth: 170 }}>
           <ERPSelect value={fStaff} onChange={e => setFStaff(e.target.value)}
             options={[{ value: 'All', label: 'All staff' }, ...staff.map(s => ({ value: s.id, label: s.name }))]} />
@@ -281,18 +308,21 @@ export default function ERPStaffWork() {
             options={[{ value: 'All', label: 'All clients' },
               ...clients.map(c => ({ value: c.id, label: c.name || c.company || c.id }))]} />
         </div>
-        {['All', ...ASSIGNMENT_STATUSES].map(f => (
-          <button key={f} onClick={() => setFStatus(f)} style={{
-            padding: '7px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: fStatus === f ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'rgba(10,24,56,0.8)',
-            color: fStatus === f ? '#fff' : C.muted, border: fStatus === f ? 'none' : `1px solid ${C.border}`,
-          }}>{f}</button>
-        ))}
-        <ERPBtn variant="primary" onClick={openCreate} style={{ marginLeft: 'auto' }}>
-          <Plus size={13} /> New Assignment
-        </ERPBtn>
+        {view === 'assignments' && (<>
+          {['All', ...ASSIGNMENT_STATUSES].map(f => (
+            <button key={f} onClick={() => setFStatus(f)} style={{
+              padding: '7px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: fStatus === f ? 'linear-gradient(135deg,#0066FF,#1787FF)' : 'rgba(10,24,56,0.8)',
+              color: fStatus === f ? '#fff' : C.muted, border: fStatus === f ? 'none' : `1px solid ${C.border}`,
+            }}>{f}</button>
+          ))}
+          <ERPBtn variant="primary" onClick={openCreate} style={{ marginLeft: 'auto' }}>
+            <Plus size={13} /> New Assignment
+          </ERPBtn>
+        </>)}
       </div>
 
+      {view === 'assignments' ? (
       <ERPPanel>
         <ERPPanelHeader title="Work Assignments" icon="📋"
           action={live ? (
@@ -385,6 +415,16 @@ export default function ERPStaffWork() {
           </div>
         )}
       </ERPPanel>
+      ) : null}
+
+      {view === 'stages' && (
+        <ERPPanel>
+          <ERPPanelHeader title="Work Stages — what staff listed for their projects" icon="🧩"
+            action={<span style={{ fontSize: 10, color: C.muted }}>{shownStages.length} stage{shownStages.length === 1 ? '' : 's'}</span>} />
+          <StageReviewPanel items={shownStages} showStaff
+            emptyText="No work stage list yet. Staff add their own stages in Staff Portal → Work Progress." />
+        </ERPPanel>
+      )}
 
       {/* Create / edit modal */}
       <ERPModal isOpen={showForm} onClose={() => setShowForm(false)}

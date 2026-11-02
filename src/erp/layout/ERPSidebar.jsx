@@ -6,7 +6,8 @@ import {
   LayoutDashboard, Bell, Users, FolderKanban,
   ClipboardList, Receipt, FileText, UserCheck,
   MessageCircle, BarChart3, Trophy, Settings,
-  LogOut, ChevronRight, Briefcase, FileStack, QrCode, ShieldCheck
+  LogOut, ChevronRight, Briefcase, FileStack, QrCode, ShieldCheck,
+  Wallet
 } from 'lucide-react';
 import { MODULE_ACCENTS, DEFAULT_ACCENT } from '../config/moduleAccents';
 
@@ -34,6 +35,7 @@ const NAV = [
       { path: '/erp/quotations',   label: 'Quotations',   icon: Receipt       },
       { path: '/erp/templates',    label: 'Templates',    icon: FileStack     },
       { path: '/erp/invoices',     label: 'Invoices',     icon: FileText      },
+      { path: '/erp/finance',      label: 'Finance',      icon: Wallet        },
       { path: '/erp/qr-services',  label: 'QR Services',  icon: QrCode        },
     ]
   },

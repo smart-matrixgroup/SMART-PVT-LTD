@@ -144,9 +144,11 @@ export function ERPStatCard({ icon, value, label, change, changeUp, color = C.bl
         backdropFilter: 'blur(12px)',
         position: 'relative', overflow: 'hidden',
         cursor: onClick ? 'pointer' : 'default',
-        transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
-        boxShadow: hovered ? '0 12px 35px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,102,255,0.2)' : '0 4px 15px rgba(0,0,0,0.2)',
-        transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+        // Glow-only hover: the card must never shift when the cursor is inside it.
+        boxShadow: hovered
+          ? `0 14px 34px rgba(0,0,0,0.42), 0 0 0 1px ${color}44, 0 0 26px ${color}2e`
+          : '0 4px 15px rgba(0,0,0,0.2)',
+        transition: 'box-shadow 0.25s ease, border-color 0.25s ease',
       }}>
       {/* Top glow */}
       <div style={{
@@ -184,7 +186,7 @@ export function ERPStatCard({ icon, value, label, change, changeUp, color = C.bl
 }
 
 // ── Button ─────────────────────────────────────────────────────────
-export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', disabled, title, style = {} }) {
+export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', disabled, title, type, style = {} }) {
   const [hovered, setHovered] = React.useState(false);
   const variants = {
     primary: {
@@ -217,6 +219,7 @@ export function ERPBtn({ children, onClick, variant = 'primary', size = 'md', di
   return (
     <button
       className="erp-btn"
+      type={type}
       onClick={onClick}
       disabled={disabled}
       title={title}
@@ -435,7 +438,9 @@ export function ERPModal({ isOpen, onClose, title, children, width=520 }) {
       position:'fixed', inset:0, zIndex:200,
       background:'rgba(0,0,0,0.75)', backdropFilter:'blur(8px)',
       display:'flex', alignItems:'center', justifyContent:'center', padding:16,
-    }} onClick={e => e.target === e.currentTarget && onClose()}>
+    // An add/edit box only closes from its own Close / Save / ✕ button —
+    // a click outside must never throw away what is being typed.
+    }}>
       <div className="erp-modal-card" style={{
         width:'100%', maxWidth:width, maxHeight:'90vh',
         background:'rgba(6,17,43,0.98)',

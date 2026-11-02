@@ -18,9 +18,10 @@ import StaffEmpty from '../components/StaffEmpty';
 import PayslipDoc from '../PayslipDoc';
 import { computeNet, monthLabel } from '../staffUtils';
 import { formatLKR, fmtDate } from '../../erp/money';
+import { savePayslipPdf } from '../payslipPdf';
 import {
   Wallet, ArrowUpCircle, ArrowDownCircle, Receipt, Eye,
-  Printer, Info, AlertCircle,
+  Printer, Info, AlertCircle, Download,
 } from 'lucide-react';
 
 // Dev-mode fixtures (never written to the DB).
@@ -39,6 +40,16 @@ export default function MySalary({ variant = 'salary' }) {
   const [loading, setLoading]   = useState(true);
   const [err, setErr]           = useState('');
   const [preview, setPreview]   = useState(null);
+
+  const savePdf = () => {
+    if (!preview) return;
+    savePayslipPdf({
+      ...preview,
+      staffName: preview.staffName || staffProfile?.name || '',
+      staffRole: preview.staffRole || staffProfile?.role || staffProfile?.designation || '',
+      staffId: preview.staffId || staffProfile?.staffCode || '',
+    });
+  };
 
   useEffect(() => {
     if (!live || !uid) {
@@ -203,9 +214,12 @@ export default function MySalary({ variant = 'salary' }) {
         title={preview?.payslipNo ? `Payslip ${preview.payslipNo}` : 'Payslip'}
         width={760}
       >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-          <ERPBtn variant="primary" onClick={() => window.print()}>
-            <Printer size={13} /> Print / Save PDF
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+          <ERPBtn variant="primary" onClick={savePdf}>
+            <Download size={13} /> Save PDF
+          </ERPBtn>
+          <ERPBtn variant="secondary" onClick={() => window.print()}>
+            <Printer size={13} /> Print
           </ERPBtn>
         </div>
         {preview && <PayslipDoc payment={preview} />}

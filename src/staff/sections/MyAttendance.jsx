@@ -250,9 +250,6 @@ export default function MyAttendance({ variant = 'attendance' }) {
             )}
           </div>
           {error && <div style={{ width: '100%', textAlign: 'center', fontSize: 11.5, color: C.red }}>{error}</div>}
-          <div style={{ width: '100%', textAlign: 'center', fontSize: 10, color: C.muted }}>
-            One check-in per day · forgot to check out? The day closes automatically at {AUTOCLOSE_TIME}.
-          </div>
         </div>
       </ERPPanel>
 

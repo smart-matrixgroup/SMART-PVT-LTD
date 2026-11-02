@@ -292,20 +292,13 @@ export default function QuoteRequestForm({ source = 'Quote Request', initialServ
 
 // ── Modal shell used by QuoteModal / ClientRequestForm ─────────────
 export function RequestModal({ isOpen, onClose, source, eyebrow, title, subtitle, initialService }) {
-  // Close on Escape — hook runs every render (never conditionally).
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
+  // No Escape key and no outside click closes this box: the form keeps every
+  // typed detail until the visitor uses ✕ or submits.
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog" aria-modal="true" aria-label={title}
     >
       <div className="relative w-full max-w-lg bg-white dark:bg-navy-900 rounded-3xl shadow-2xl border border-[#DCE6F2] dark:border-surface-border overflow-hidden max-h-[92vh] flex flex-col">
