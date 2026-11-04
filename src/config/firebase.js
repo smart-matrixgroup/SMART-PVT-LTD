@@ -2,6 +2,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 // Values come from .env (see .env.example). Never hardcode real project
 // keys here — Vite only exposes vars prefixed VITE_ to client code.
@@ -31,6 +32,17 @@ const app = getApps().length ? getApps()[0] : initializeApp(isFirebaseConfigured
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+// Cloud Functions are only reached by the weekly report mail button. The
+// handle is created lazily and pinned to the region functions/index.js
+// deploys to — httpsCallable reads the region off this handle, so the two
+// have to match or the call 404s.
+export const FUNCTIONS_REGION = 'asia-south1';
+let functionsRef = null;
+export const functionsApp = () => {
+  if (!functionsRef) functionsRef = getFunctions(app, FUNCTIONS_REGION);
+  return functionsRef;
+};
 
 // ── Staff / Client account provisioning ─────────────────────────────
 // createUserWithEmailAndPassword signs the NEW user into the CURRENT

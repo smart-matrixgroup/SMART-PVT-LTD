@@ -3,7 +3,7 @@
 //  Admins can view, search, filter, EDIT, DELETE, and PRINT staff
 //  daily work reports matching the standard SMART Pvt Ltd sheet layout.
 // ─────────────────────────────────────────────────────────────────
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, serverTimestamp
 } from 'firebase/firestore';
@@ -21,13 +21,18 @@ import {
   downloadPerformanceReport, downloadReportTemplate, prettyDate
 } from '../../staff/performanceReport';
 import { saveWorkReportPdf } from '../../staff/workReportPdf';
+import { saveDailyReportPdf } from '../utils/dailyReportPdf';
+import {
+  periodLabelOf, weekBounds, summariseWeekRuns, runStatusOf,
+  describeMailRun, mailRunProblem, fetchWeekRuns, emailWeekNow,
+} from '../weeklyReportMails';
 import { ref as storageRef, getBytes, deleteObject } from 'firebase/storage';
 import { storage } from '../../config/firebase';
 import {
   AlertTriangle, ClipboardList, Clock, Coffee, Check, Hourglass,
   Pencil, Trash2, Calendar, User, Search, Filter, RefreshCw, Printer,
   FileText, Building, Plus, X, Download, Upload, ChevronLeft, ChevronRight, Send, CheckCircle2,
-  FileSpreadsheet
+  FileSpreadsheet, Mail, Inbox
 } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
@@ -472,109 +477,14 @@ export default function ERPStaffUpdates() {
     }
   };
 
-  // Print Report Handler
-  const handlePrintSheet = (u) => {
-    const win = window.open('', '_blank');
-    if (!win) return;
-    const tasks = u.tasks || (u.items ? u.items.map((item, i) => ({ no: i + 1, start: u.startTime || '09:00', end: u.endTime || '18:00', hours: u.totalHours || '—', description: item, status: u.status || 'Completed' })) : []);
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>SMART Pvt Ltd — Daily Work Report (${u.date})</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 24px; color: #040D1F; }
-            .sheet { border: 2px solid #0E3A73; border-radius: 8px; overflow: hidden; max-width: 900px; margin: 0 auto; }
-            .header { background: #0E3A73; color: #fff; padding: 12px; text-align: center; font-size: 16px; font-weight: 800; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #CBD5E1; padding: 8px 10px; }
-            .meta-label { background: #F1F5F9; font-weight: 700; width: 15%; color: #1E293B; }
-            .meta-val { width: 35%; font-weight: 600; }
-            .time-th { background: #E2E8F0; font-weight: 700; text-align: center; }
-            .time-td { text-align: center; font-weight: 700; background: #F8FAFC; }
-            .total-td { background: #E8F5E9; color: #166534; font-weight: 800; font-size: 13px; text-align: center; }
-            .task-th { background: #1B4D89; color: #fff; font-weight: 700; text-align: center; }
-            .remarks-box { padding: 10px 12px; background: #F8FAFC; border-top: 1px solid #CBD5E1; font-size: 12px; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="header">SMART PVT LTD • DAILY WORK REPORT - ${u.date} (${u.day || getDayName(u.date)})</div>
-            <table>
-              <tr>
-                <td class="meta-label">NAME :</td>
-                <td class="meta-val">${u.name || u.staffName}</td>
-                <td class="meta-label">DATE :</td>
-                <td class="meta-val">${u.date}</td>
-              </tr>
-              <tr>
-                <td class="meta-label">POSITION :</td>
-                <td class="meta-val">${u.position || 'Staff'}</td>
-                <td class="meta-label">DAY :</td>
-                <td class="meta-val">${u.day || getDayName(u.date)}</td>
-              </tr>
-              <tr>
-                <td class="meta-label">LOCATION :</td>
-                <td class="meta-val">${u.location || 'Trincomalee'}</td>
-                <td class="meta-label">WORK MODE :</td>
-                <td class="meta-val">${u.workMode || 'On-Site'}</td>
-              </tr>
-            </table>
-
-            <table>
-              <tr>
-                <td class="time-th">ARRIVAL</td>
-                <td class="time-th">LUNCH START</td>
-                <td class="time-th">LUNCH END</td>
-                <td class="time-th">LUNCH DURATION</td>
-                <td class="time-th">DEPARTURE</td>
-                <td class="time-th">TOTAL WORK HRS</td>
-              </tr>
-              <tr>
-                <td class="time-td">${u.arrival || u.startTime || '—'}</td>
-                <td class="time-td">${u.lunchStart || '—'}</td>
-                <td class="time-td">${u.lunchEnd || '—'}</td>
-                <td class="time-td">${u.lunchDuration || u.lunchBreak || '—'}</td>
-                <td class="time-td">${u.departure || u.endTime || '—'}</td>
-                <td class="total-td">${u.totalWorkHours || u.totalHours || '—'}</td>
-              </tr>
-            </table>
-
-            <table>
-              <tr>
-                <th class="task-th" style="width: 40px;">NO</th>
-                <th class="task-th" style="width: 80px;">START</th>
-                <th class="task-th" style="width: 80px;">END</th>
-                <th class="task-th" style="width: 80px;">HOURS</th>
-                <th class="task-th">WORK / DESCRIPTION</th>
-                <th class="task-th" style="width: 110px;">STATUS</th>
-              </tr>
-              ${tasks.map((t, idx) => `
-                <tr>
-                  <td style="text-align: center; font-weight: 700;">${t.no || idx + 1}</td>
-                  <td style="text-align: center;">${t.start || '—'}</td>
-                  <td style="text-align: center;">${t.end || '—'}</td>
-                  <td style="text-align: center; font-weight: 700; color: #0284C7;">${t.hours || '—'}</td>
-                  <td>${t.description || '—'}</td>
-                  <td style="text-align: center; font-weight: 700;">${t.status || 'Completed'}</td>
-                </tr>
-              `).join('')}
-            </table>
-
-            <div class="remarks-box">
-              <strong>REMARKS:</strong> ${u.remarks || u.notes || 'None'}
-            </div>
-            ${u.planTomorrow ? `<div class="remarks-box" style="background:#F3EEFF;border-top:1px solid #DDD0FA;"><strong>PLAN FOR TOMORROW:</strong> ${u.planTomorrow}</div>` : ''}
-          </div>
-          <script>
-            window.onload = function() { window.print(); };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+  // One staff day as a real PDF — the same document the staff portal saves.
+  const handleSheetPdf = (u) => {
+    try {
+      saveDailyReportPdf({ ...u, day: u.day || getDayName(u.date) }, { generatedBy: adminName });
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ kind: "err", text: `PDF export failed - ${err.message || err}` });
+    }
   };
 
   // Filtered List
@@ -1106,62 +1016,8 @@ export default function ERPStaffUpdates() {
   };
 
 
-  // ── Print range sheet (all staff, selected week or month) ──
-  const handlePrintWeek = () => {
-    const rangeNoun = rangeMode === 'day' ? 'DAILY' : rangeMode === 'week' ? 'WEEKLY' : 'MONTHLY';
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>SMART Pvt Ltd — ${rangeTitle} Work Report (${rangeLabel})</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 24px; color: #040D1F; }
-            .sheet { border: 2px solid #0E3A73; border-radius: 8px; overflow: hidden; max-width: 960px; margin: 0 auto 20px; }
-            .header { background: #0E3A73; color: #fff; padding: 12px; text-align: center; font-size: 15px; font-weight: 800; }
-            .staff-name { background: #1B4D89; color: #fff; padding: 8px 12px; font-size: 13px; font-weight: 800; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { border: 1px solid #CBD5E1; padding: 6px 8px; }
-            th { background: #E2E8F0; text-align: center; }
-            .center { text-align: center; font-weight: 700; }
-            .total-row td { background: #E8F5E9; font-weight: 800; color: #166534; }
-            @media print { body { padding: 0; } .page-break { page-break-before: always; } }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="header">SMART PVT LTD • ${rangeNoun} WORK REPORT — ${rangeLabel}</div>
-            ${rangeStaff.map(([name, reps]) => {
-              const hrs = reps.reduce((t, u) => t + (parseFloat(u.totalWorkHours || u.totalHours) || 0), 0);
-              return `
-                <div class="staff-name">${name} — ${reps[0]?.position || 'Staff'} (${reps.length} days • ${hrs.toFixed(1)} hrs)</div>
-                <table>
-                  <tr><th>DAY</th><th>DATE</th><th>ARRIVAL</th><th>DEPARTURE</th><th>TOTAL HRS</th><th>WORK / DESCRIPTION</th><th>REMARKS</th></tr>
-                  ${reps.map(r => `
-                    <tr>
-                      <td class="center">${r.day || getDayName(r.date)}</td>
-                      <td class="center">${r.date}</td>
-                      <td class="center">${r.arrival || r.startTime || '—'}</td>
-                      <td class="center">${r.departure || r.endTime || '—'}</td>
-                      <td class="center">${r.totalWorkHours || r.totalHours || '—'}</td>
-                      <td>${r.workDescription || (r.tasks || []).map(t => t.description).join(' | ') || '—'}</td>
-                      <td>${r.remarks || r.notes || '—'}</td>
-                    </tr>
-                  `).join('')}
-                  <tr class="total-row"><td colspan="4" style="text-align:right;">${rangeMode === 'day' ? 'DAY' : rangeMode === 'week' ? 'WEEK' : 'MONTH'} TOTAL</td><td class="center">${hrs.toFixed(1)} hrs</td><td colspan="2"></td></tr>
-                </table>
-              `;
-            }).join('')}
-          </div>
-          <script>
-            window.onload = function() { window.print(); };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
+  // The range views export as real PDFs (exportPdf / exportRangePdf) — the
+  // old browser-print tab is gone, so every report leaves as a file.
 
   if (loading) {
     return <div style={{ padding: 60, textAlign: 'center', color: C.muted, fontSize: 13 }}>Loading staff daily reports…</div>;
@@ -1523,17 +1379,6 @@ export default function ERPStaffUpdates() {
                   }}
                 >
                   <Download size={12} /> Export {rangeTitle} PDF
-                </button>
-                <button
-                  onClick={handlePrintWeek}
-                  disabled={rangeReports.length === 0}
-                  style={{
-                    padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                    background: 'rgba(255,255,255,0.08)', color: '#fff', border: `1px solid ${C.border}`,
-                    display: 'flex', alignItems: 'center', gap: 5, opacity: rangeReports.length === 0 ? 0.5 : 1,
-                  }}
-                >
-                  <Printer size={12} /> Print {rangeTitle}
                 </button>
               </div>
             }
@@ -2023,14 +1868,14 @@ export default function ERPStaffUpdates() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button
-                        onClick={() => handlePrintSheet(u)}
+                        onClick={() => handleSheetPdf(u)}
                         style={{
                           background: 'rgba(255,255,255,0.08)', border: `1px solid ${C.border}`,
                           borderRadius: 6, color: '#fff', padding: '4px 10px', fontSize: 11, cursor: 'pointer',
                           display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700
                         }}
                       >
-                        <Printer size={12} /> Print Sheet
+                        <Printer size={12} /> Sheet PDF
                       </button>
                       <button
                         onClick={() => handleOpenEdit(u)}
@@ -2155,6 +2000,13 @@ export default function ERPStaffUpdates() {
         )}
       </ERPPanel>
       )}
+
+      <WeekEndMailsPanel
+        weekOf={weekStart}
+        live={live}
+        staffCount={staff.length}
+        devPreview={!live}
+      />
 
       {/* ── Admin Edit Modal ────────────────────────────────────── */}
       {editingLog && (
@@ -2447,5 +2299,213 @@ export default function ERPStaffUpdates() {
       </ERPModal>
 
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Week end report mails — the admin's view of functions/index.js.
+//
+//  Sunday 23:30 the backend mails one PDF per staff member to the owner.
+//  This panel is the receipt: it reads that week's `weeklyReportRuns`
+//  ledger (who was mailed, who filed nothing, what failed) and can run the
+//  same job now through the sendWeeklyReportsNow callable. Two steps for
+//  the manual run because it really sends mail.
+// ─────────────────────────────────────────────────────────────────
+const TONE_COLOR = {
+  green: { color: C.green, bg: 'rgba(24,199,122,0.12)', border: 'rgba(24,199,122,0.3)' },
+  red:   { color: C.red,   bg: 'rgba(240,90,103,0.12)', border: 'rgba(240,90,103,0.3)' },
+  amber: { color: C.amber, bg: 'rgba(245,185,66,0.12)', border: 'rgba(245,185,66,0.3)' },
+  muted: { color: C.muted, bg: 'rgba(145,160,188,0.1)', border: 'rgba(145,160,188,0.3)' },
+};
+
+const ranAt = iso => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? ''
+    : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+// Dev preview rows (same role as DEV_UPDATES / DEV_STAFF above): the ledger
+// is a live-Firestore collection, so without these the panel cannot be laid
+// out or reviewed at all outside a real week end run. Never shown as real —
+// the header carries a "dev preview" flag while isDevSession is on.
+const DEV_WEEK_RUNS = [
+  { id: 'd1', staffUid: 'dev-staff-001', staffName: 'Ashan Perera', staffId: 'STF-0000', status: 'Sent',
+    to: 'matrixgroup.smart@gmail.com', daysLogged: 5, tasks: 14, pages: 2, trigger: 'schedule',
+    fileName: 'WEEKLY-WORK-REPORT-Ashan-Perera-W45-Mon-02-Nov-2026-to-Sun-08-Nov-2026.pdf', runAt: '2026-11-08T18:00:00Z' },
+  { id: 'd2', staffUid: 'dev-staff-002', staffName: 'Kavitha Raj', staffId: 'STF-0001', status: 'No reports filed',
+    to: 'matrixgroup.smart@gmail.com', trigger: 'schedule', runAt: '2026-11-08T18:00:00Z' },
+  { id: 'd3', staffUid: 'dev-staff-003', staffName: 'Ruwan Silva', staffId: 'STF-0002', status: 'Failed',
+    to: 'matrixgroup.smart@gmail.com', trigger: 'admin', runAt: '2026-11-08T18:04:00Z',
+    error: 'GMAIL_APP_PASSWORD is not set. Run: npx firebase functions:secrets:set GMAIL_APP_PASSWORD' },
+];
+
+function WeekEndMailsPanel({ weekOf, live, staffCount = 0, devPreview = false }) {
+  const [runs, setRuns] = useState(devPreview ? DEV_WEEK_RUNS : []);
+  const [state, setState] = useState(live ? 'loading' : 'ready');   // loading | ready | error
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [armed, setArmed] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!live) { setRuns(DEV_WEEK_RUNS); setState('ready'); return; }
+    setState('loading');
+    setError('');
+    try {
+      setRuns(await fetchWeekRuns(weekOf));
+      setState('ready');
+    } catch (err) {
+      setRuns([]);
+      setError(mailRunProblem(err));
+      setState('error');
+    }
+  }, [live, weekOf]);
+
+  useEffect(() => { setArmed(false); load(); }, [load]);
+
+  const sendNow = async () => {
+    setBusy(true); setArmed(false); setError(''); setNotice('');
+    try {
+      const result = await emailWeekNow(weekOf);
+      setNotice(describeMailRun(result));
+      setRuns(await fetchWeekRuns(weekOf));
+      setState('ready');
+    } catch (err) {
+      setError(mailRunProblem(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const summary = summariseWeekRuns(runs);
+  const bounds = weekBounds(weekOf);
+  const sentTo = runs.find(r => r.to)?.to || '';
+
+  return (
+    <ERPPanel>
+      <ERPPanelHeader
+        title="Week End Report Mails"
+        icon={<Mail size={15} style={{ color: C.cyan }} />}
+        action={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <ERPBtn size="sm" variant="ghost" onClick={load} disabled={busy || !live} title="Reload this week's ledger">
+              <RefreshCw size={12} />
+            </ERPBtn>
+            {!armed
+              ? <ERPBtn size="sm" variant="primary" onClick={() => setArmed(true)} disabled={!live || busy}>
+                  <Send size={12} /> Email this week now
+                </ERPBtn>
+              : <>
+                  <ERPBtn size="sm" variant="success" onClick={sendNow} disabled={busy}>
+                    {busy ? <RefreshCw size={12} /> : <Mail size={12} />}
+                    {busy ? 'Mailing…' : `Confirm — mail ${staffCount || 'all'} staff PDFs`}
+                  </ERPBtn>
+                  <ERPBtn size="sm" variant="ghost" onClick={() => setArmed(false)} disabled={busy}>Cancel</ERPBtn>
+                </>}
+          </div>
+        }
+      />
+
+      <div style={{ padding: '14px 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5 }}>
+          <span style={{ fontWeight: 800, color: C.cyan }}>{periodLabelOf(weekOf)}</span>
+          <span style={{ color: C.muted }}>{bounds.from} → {bounds.to}</span>
+          {sentTo && <span style={{ color: C.subtle }}>to <strong>{sentTo}</strong></span>}
+          <span style={{ color: C.muted }}>auto: Sunday 23:30</span>
+          {devPreview && (
+            <span style={{
+              padding: '2px 9px', borderRadius: 20, fontSize: 9.5, fontWeight: 800,
+              color: C.amber, background: 'rgba(245,185,66,0.12)', border: '1px solid rgba(245,185,66,0.3)',
+            }}>sample rows — dev session</span>
+          )}
+        </div>
+
+        {state === 'loading' && (
+          <div style={{ fontSize: 11.5, color: C.muted }}><RefreshCw size={12} style={{ verticalAlign: -2 }} /> Reading this week's ledger…</div>
+        )}
+
+        {error && (
+          <div style={{
+            fontSize: 11.5, lineHeight: 1.55, padding: '9px 12px', borderRadius: 9,
+            background: 'rgba(240,90,103,0.1)', border: '1px solid rgba(240,90,103,0.35)', color: C.red,
+          }}>{error}</div>
+        )}
+
+        {notice && (
+          <div style={{
+            fontSize: 11.5, lineHeight: 1.55, padding: '9px 12px', borderRadius: 9,
+            background: 'rgba(24,199,122,0.1)', border: '1px solid rgba(24,199,122,0.35)', color: C.green,
+          }}>{notice}</div>
+        )}
+
+        {(state === 'ready' || state === 'error') && runs.length === 0 && !error && (
+          <div style={{ fontSize: 11.5, color: C.muted }}>
+            Nothing has been mailed for this week yet — {periodLabelOf(weekOf)} is waiting for Sunday 23:30,
+            or press “Email this week now”.
+          </div>
+        )}
+
+        {runs.length > 0 && (
+          <>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Mailed', value: summary.sent, tone: 'green' },
+                { label: 'Nothing filed', value: summary.empty, tone: 'amber' },
+                { label: 'Failed', value: summary.failed, tone: 'red' },
+                { label: 'Tasks mailed', value: summary.tasks, tone: 'muted' },
+              ].map(x => {
+                const t = TONE_COLOR[x.tone];
+                return (
+                  <span key={x.label} style={{
+                    display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 9,
+                    background: t.bg, border: `1px solid ${t.border}`, fontSize: 11, color: t.color, fontWeight: 800,
+                  }}>
+                    {x.label}
+                    <strong style={{ fontSize: 13 }}>{x.value}</strong>
+                  </span>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {summary.rows.map((r, i) => {
+                const s = runStatusOf(r);
+                const t = TONE_COLOR[s.tone];
+                return (
+                  <div key={r.id || i} style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0', flexWrap: 'wrap',
+                    borderTop: i > 0 ? `1px solid ${C.border}25` : 'none',
+                  }}>
+                    <div style={{ flex: '1 1 200px', minWidth: 160 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{r.staffName || '—'}</div>
+                      <div style={{ fontSize: 10.5, color: C.muted, marginTop: 2 }}>
+                        {[r.staffId, ranAt(r.runAt) && `ran ${ranAt(r.runAt)}`, r.trigger === 'admin' ? 'manual run' : '']
+                          .filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',
+                      color: t.color, background: t.bg, border: `1px solid ${t.border}`,
+                    }}>{s.label}</span>
+                    <div style={{ flex: '1 1 240px', minWidth: 200, fontSize: 11, color: C.subtle }}>
+                      {r.status === 'Sent'
+                        ? <>
+                            <Inbox size={11} style={{ verticalAlign: -2, color: C.green }} />{' '}
+                            {r.daysLogged || 0} of 7 days · {r.tasks || 0} tasks · {r.pages || 1} page PDF
+                            <div style={{ fontSize: 10, color: C.muted, marginTop: 2, wordBreak: 'break-all' }}>{r.fileName}</div>
+                          </>
+                        : r.status === 'Failed'
+                          ? <span style={{ color: C.red }}>{r.error || 'The mail did not go out.'}</span>
+                          : <span style={{ color: C.amber }}>No daily sheet was filed for {periodLabelOf(r.weekOf || weekOf)}.</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </ERPPanel>
   );
 }

@@ -7,6 +7,7 @@
 //  payment overwrites rather than duplicates.
 // ─────────────────────────────────────────────────────────────────
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { isRulesDenied, rulesNotice } from '../rulesNotice.js';
 
 export const DEV_FINANCE_INCOME = [];
 export const DEV_FINANCE_EXPENSES = [];
@@ -37,13 +38,13 @@ export function expenseTotal({ quantity = 0, unitPrice = 0, amount = 0 }) {
 }
 
 // Firestore hands back a raw code; an admin needs the reason in one line.
-export const RULES_DEPLOY_CMD = 'npx firebase deploy --only firestore:rules';
-
+// The full "what is still not deployed" list lives in Settings → Rules
+// Status, so this message only names the feature and points there.
 export function financeErrorText(err) {
   const code = String(err?.code || '');
   const msg = String(err?.message || '');
-  if (code === 'permission-denied' || /insufficient permissions/i.test(msg)) {
-    return `Firestore blocked the write — the Finance rules are not deployed on this project yet. Run: ${RULES_DEPLOY_CMD}`;
+  if (isRulesDenied(err)) {
+    return rulesNotice('Finance records');
   }
   if (code === 'unavailable' || /offline|network|Failed to fetch/i.test(msg)) {
     return 'No connection to Firestore right now — check the network and save again.';

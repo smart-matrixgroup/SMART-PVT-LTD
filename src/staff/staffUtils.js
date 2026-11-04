@@ -366,6 +366,86 @@ export function getDayName(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'long' });
 }
 
+// ── Attendance / report periods ──────────────────────────────────────
+// Week, month, year or the whole history, resolved from one anchor date the
+// admin picked (a day input, a month input or a year). Shared by the admin
+// attendance statement and the daily work reports so "this week" means the
+// same thing on every page.
+export const PERIOD_MODES = ['week', 'month', 'year', 'all'];
+
+/** 'yyyy-mm-dd' shifted by n days (local-safe: noon avoids DST jumps). */
+export function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + n);
+  const p = k => String(k).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Monday of the week holding 'yyyy-mm-dd'. */
+export function mondayOf(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  const shift = (d.getDay() + 6) % 7;   // Sun=6, Mon=0 … Sat=5
+  return addDaysIso(iso, -shift);
+}
+
+/** '2026-09-28' → '28-Sep-2026' (the format the owner reads off sheets). */
+export function dayLabel(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso || '';
+  const p = n => String(n).padStart(2, '0');
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  return `${p(d.getDate())}-${mo}-${d.getFullYear()}`;
+}
+
+/**
+ * {from, to, label} for a period. `anchor` is a day (week), 'yyyy-mm'
+ * (month), a 4-digit year, or anything for 'all'. Empty from/to means
+ * "no bound", so a filter can use them straight away.
+ */
+export function periodRange(mode, anchor) {
+  const today = todayKey();
+  if (mode === 'all') return { from: '', to: '', label: 'All records' };
+
+  if (mode === 'year') {
+    const y = String(anchor || today).slice(0, 4);
+    return { from: `${y}-01-01`, to: `${y}-12-31`, label: `Year ${y}` };
+  }
+
+  if (mode === 'month') {
+    const key = String(anchor || today).slice(0, 7);            // 'yyyy-mm'
+    const last = new Date(`${key}-01T12:00:00`);
+    const end = Number.isNaN(last.getTime())
+      ? today
+      : `${key}-${String(new Date(last.getFullYear(), last.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+    return { from: `${key}-01`, to: end, label: monthLabel(key) };
+  }
+
+  const mon = mondayOf(String(anchor || today).slice(0, 10));
+  const sun = addDaysIso(mon, 6);
+  return { from: mon, to: sun, label: `${dayLabel(mon)} → ${dayLabel(sun)}` };
+}
+
+/**
+ * Expected working days (Mon–Sat; the head office is closed on Sunday)
+ * inside a range, as 'yyyy-mm-dd' keys. An open-ended range returns []
+ * so a "full history" statement never claims days were missed.
+ */
+export function expectedWorkdays(from, to) {
+  if (!from || !to) return [];
+  const out = [];
+  let cur = from;
+  let guard = 0;
+  while (cur <= to && guard < 400) {
+    const d = new Date(`${cur}T12:00:00`).getDay();  // 0 = Sunday
+    if (d !== 0) out.push(cur);
+    cur = addDaysIso(cur, 1);
+    guard += 1;
+  }
+  return out;
+}
+
 // ── Google Sheet / Excel cell readers ──────────────────────────────────
 // Anything pasted or exported out of a sheet arrives in whatever shape the
 // author's locale produced. These three turn that into ERP fields, and the

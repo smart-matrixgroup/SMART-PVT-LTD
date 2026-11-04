@@ -8,9 +8,9 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../config/firebase';
 
 // ─── DEV MOCK ACCOUNTS ───────────────────────────────────────────
-// These only work in development (import.meta.env.DEV).
-// Remove or leave as-is in production — they are ignored when
-// isFirebaseConfigured is true AND we are NOT in dev mode.
+// These only work in development (import.meta.env.DEV) — the login path
+// below refuses them in a production build, so a typed password can never
+// open the ERP shell without a real Firebase session.
 const DEV_ACCOUNTS = [
   {
     email:    'testclient@smart.com',
@@ -28,6 +28,22 @@ const DEV_ACCOUNTS = [
     },
   },
   {
+    email:    'devstaff@smart.com',
+    password: 'dev123',
+    role:     'staff',
+    profile: {
+      id:          'dev-staff-001',
+      staffId:     'STF-0000',
+      name:        'Dev Staff',
+      role:        'Software Developer Associate I',
+      department:  'Engineering',
+      email:       'devstaff@smart.com',
+      phone:       '+94 77 000 0000',
+      joinedDate:  'October 2026',
+      status:      'active',
+    },
+  },
+  {
     email:    'admin@smart.com',
     password: 'admin123',
     role:     'admin',
@@ -36,6 +52,13 @@ const DEV_ACCOUNTS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────
+
+// The two emails firestore.rules / storage.rules → isAdmin() accept without an
+// admins/{uid} document. The role lookup here must accept exactly the same
+// list, otherwise a real admin signs in fine but the app drops them to no
+// role (and the ERP looks broken). Keep all three files in step.
+const ADMIN_EMAILS = ['admin@smart.com', 'admin@findmysmart.com'];
+const isAdminEmail = email => ADMIN_EMAILS.includes(String(email || '').toLowerCase());
 
 const AuthContext = createContext(null);
 
@@ -176,7 +199,7 @@ export function AuthProvider({ children }) {
       // Only fetch role from Firestore on page refresh (loading=true means fresh load)
       try {
         const adminSnap = await getDoc(doc(db, 'admins', user.uid));
-        if (adminSnap.exists() || user.email === 'admin@smart.com') {
+        if (adminSnap.exists() || isAdminEmail(user.email)) {
           setRole('admin');
           setClientProfile(null);
           setStaffProfile(null);
@@ -252,7 +275,7 @@ export function AuthProvider({ children }) {
         setSessionExpiredMsg('');
 
         const adminSnap = await getDoc(doc(db, 'admins', uid));
-        if (adminSnap.exists() || credential.user.email === 'admin@smart.com') {
+        if (adminSnap.exists() || isAdminEmail(credential.user.email)) {
           // Set state immediately so ProtectedRoute sees role before redirect
           setCurrentUser(credential.user);
           setRole('admin');
@@ -295,7 +318,11 @@ export function AuthProvider({ children }) {
 
         if (!isAuthError) throw err; // re-throw non-auth errors (network, permission etc.)
 
-        // Firebase auth failed — try dev mock as fallback
+        // Firebase auth failed — the dev mock fallback is DEV-BUILD ONLY.
+        // In a production bundle these credentials must never open a shell,
+        // otherwise anyone could reach the ERP layout by typing admin123.
+        if (!import.meta.env.DEV) throw new Error('Invalid email or password. Please try again.');
+
         const devAccount = DEV_ACCOUNTS.find(
           a => a.email.toLowerCase() === trimmedEmail && a.password === password
         );

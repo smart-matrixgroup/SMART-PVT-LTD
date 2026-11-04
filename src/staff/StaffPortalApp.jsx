@@ -23,6 +23,7 @@ import MyWork       from './sections/MyWork';
 import MyProgress   from './sections/MyProgress';
 import DailyUpdate  from './sections/DailyUpdate';
 import MyAttendance from './sections/MyAttendance';
+import MyLeave      from './sections/MyLeave';
 import MyProfile, { MyDocuments } from './sections/MyProfile';
 import MySalary     from './sections/MySalary';
 import StaffMessages from './sections/StaffMessages';
@@ -30,7 +31,7 @@ import StaffClientProjects from './sections/StaffClientProjects';
 import WorkSheets   from './sections/WorkSheets';
 import {
   LayoutDashboard, Briefcase, ClipboardList, Activity, Timer,
-  CalendarCheck, User, IdCard, Award, Wallet, Receipt, MessageSquare,
+  CalendarCheck, CalendarOff, User, IdCard, Award, Wallet, Receipt, MessageSquare,
   LogOut, Menu, FolderKanban, Lock, ShieldAlert, FileText
 } from 'lucide-react';
 
@@ -48,6 +49,7 @@ const MENU = [
   { group: 'Time', items: [
     { id: 'checkout',     label: 'Check-in / Check-out', icon: Timer, ruleKey: 'allowStaffAttendance' },
     { id: 'attendance',   label: 'Attendance',           icon: CalendarCheck, ruleKey: 'allowStaffAttendance' },
+    { id: 'leave',        label: 'Leave Application',    icon: CalendarOff, ruleKey: 'allowStaffLeave' },
   ]},
   { group: 'Personal', items: [
     { id: 'profile',      label: 'Profile',              icon: User, ruleKey: null },
@@ -119,6 +121,7 @@ function Section({ page, onNavigate, isAllowed }) {
     case 'client_projects': return <StaffClientProjects isRestricted={false} />;
     case 'checkout':        return <MyAttendance variant="checkout" />;
     case 'attendance':      return <MyAttendance variant="attendance" />;
+    case 'leave':           return <MyLeave />;
     case 'profile':         return <MyProfile />;
     case 'kyc':             return <MyDocuments category="kyc" icon={IdCard} />;
     case 'certificates':    return <MyDocuments category="certificate" icon={Award} />;

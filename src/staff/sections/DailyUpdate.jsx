@@ -7,7 +7,12 @@
 //  • Routine Task Table: No, Start, End, Hours (auto), Work / Description,
 //    Status (Completed / In Progress / Pending / On Hold).
 //  • Remarks / Notes section.
-//  • Printable / PDF preview matching the sheet layout.
+//  • Every sheet downloads as a real branded PDF (dailyReportPdf.js) — the
+//    browser print dialog is never opened.
+//
+//  On a phone the task breakdown turns into stacked cards: the seven-column
+//  table cannot fit a 520 px screen, and the STATUS + remove column used to
+//  sit past the right edge, unreachable.
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useEffect } from 'react';
 import {
@@ -16,7 +21,9 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { ERPPanel, ERPPanelHeader, ERPBtn, C } from '../../erp/components/ERPui';
+import { staffRulesNotice } from '../../erp/rulesNotice';
+import { ERPPanel, ERPPanelHeader, ERPBtn, ERPModal, C } from '../../erp/components/ERPui';
+import { saveDailyReportPdf, dailyReportTasksOf } from '../../erp/utils/dailyReportPdf';
 import StaffEmpty from '../components/StaffEmpty';
 import {
   toMs, todayKey, calculateTaskDuration, calculateAttendanceHours, getDayName
@@ -30,6 +37,24 @@ import {
 const WORK_MODES = ['On-Site / Office', 'Remote / WFH', 'Hybrid'];
 const TASK_STATUSES = ['Completed', 'In Progress', 'Pending', 'On Hold'];
 
+// One task per row on a laptop: NO · START · END · HOURS · WORK · STATUS · remove.
+const TASK_GRID = '40px minmax(84px, 1fr) minmax(84px, 1fr) 70px minmax(170px, 2.4fr) 132px 36px';
+
+const cellField = { display: 'block', minWidth: 0 };
+const cellLabel = { display: 'block', fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 4, minHeight: 12 };
+const cellInput = {
+  width: '100%', boxSizing: 'border-box', background: 'rgba(4,13,31,0.8)',
+  border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 9px',
+  color: C.text, fontSize: 11.5, outline: 'none',
+};
+
+// One task: a sheet row on a laptop, a wrapping card on a phone.
+const rowBox = { display: 'grid', gridTemplateColumns: TASK_GRID, gap: 8, alignItems: 'center', padding: '8px 12px', minWidth: 620 };
+const cardBox = {
+  display: 'flex', flexWrap: 'wrap', gap: 10, padding: '14px 12px',
+  background: 'rgba(10,24,56,0.35)', borderRadius: 10,
+};
+
 const INITIAL_TASK_ROW = {
   no: 1,
   start: '09:00',
@@ -40,6 +65,18 @@ const INITIAL_TASK_ROW = {
 };
 
 const DEV_REPORTS = [];
+
+/** The portal is opened on phones as much as on laptops. */
+const useNarrow = (px = 780) => {
+  const read = () => (typeof window === 'undefined' ? false : window.innerWidth <= px);
+  const [narrow, setNarrow] = useState(read);
+  useEffect(() => {
+    const onResize = () => setNarrow(read());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return narrow;
+};
 
 // Exact submission stamp (server time) shown on each saved report, so the
 // staff member can see the date AND time their update reached the admin.
@@ -55,10 +92,17 @@ export default function DailyUpdate() {
   const { staffProfile, isFirebaseConfigured, isDevSession } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
   const uid = staffProfile?.id || '';
+  const narrow = useNarrow();
 
   const [reports,   setReports]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [loadError, setLoadError] = useState(null);
+
+  // Deleting one filed report (a test entry) — its own confirm box, never
+  // the browser's window.confirm.
+  const [delTarget, setDelTarget] = useState(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState('');
 
   // Form Fields
   const [editingId, setEditingId] = useState(null);
@@ -258,132 +302,40 @@ export default function DailyUpdate() {
     }
   };
 
-  const handleDelete = async (reportId) => {
-    if (!window.confirm('Are you sure you want to delete this daily work report?')) return;
+  const handleDelete = async () => {
+    if (!delTarget) return;
+    setDelBusy(true);
+    setDelErr('');
     try {
-      if (!live) {
-        setReports(prev => prev.filter(r => r.id !== reportId));
-      } else {
-        await deleteDoc(doc(db, 'dailyUpdates', reportId));
-      }
-      if (editingId === reportId) handleResetForm();
+      if (live) await deleteDoc(doc(db, 'dailyUpdates', delTarget.id));
+      setReports(prev => prev.filter(r => r.id !== delTarget.id));
+      if (editingId === delTarget.id) handleResetForm();
+      setDelTarget(null);
     } catch (err) {
-      alert('Delete failed: ' + (err.message || err));
+      console.error(err);
+      setDelErr(err?.code === 'permission-denied'
+        ? staffRulesNotice('This deletion')
+        : (err.message || 'Could not delete the report.'));
+    } finally {
+      setDelBusy(false);
     }
   };
 
-  // Print Report Handler
-  const handlePrintReport = (r) => {
+  // The sheet as a real PDF document — the same branded layout every ERP
+  // report uses. No browser tab and no printer dialog is ever opened.
+  const handleReportPdf = (r) => {
     const rep = r || {
       name, position, location, date, day: dayName, workMode,
       arrival, lunchStart, lunchEnd, lunchDuration, departure, totalWorkHours,
       tasks: tasks.filter(t => t.description.trim().length > 0), remarks, planTomorrow
     };
-
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>SMART Pvt Ltd — Daily Work Report (${rep.date})</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 24px; color: #040D1F; }
-            .sheet { border: 2px solid #0E3A73; border-radius: 8px; overflow: hidden; max-width: 900px; margin: 0 auto; }
-            .header { background: #0E3A73; color: #fff; padding: 12px; text-align: center; font-size: 16px; font-weight: 800; letter-spacing: 0.5px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #CBD5E1; padding: 8px 10px; }
-            .meta-label { background: #F1F5F9; font-weight: 700; width: 15%; color: #1E293B; }
-            .meta-val { width: 35%; font-weight: 600; }
-            .time-th { background: #E2E8F0; font-weight: 700; text-align: center; color: #0F172A; }
-            .time-td { text-align: center; font-weight: 700; background: #F8FAFC; }
-            .total-td { background: #E8F5E9; color: #166534; font-weight: 800; font-size: 13px; text-align: center; }
-            .task-th { background: #1B4D89; color: #fff; font-weight: 700; text-align: center; }
-            .status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; }
-            .status-Completed { background: #DCFCE7; color: #15803D; }
-            .status-InProgress { background: #FEF3C7; color: #B45309; }
-            .remarks-box { padding: 10px 12px; background: #F8FAFC; border-top: 1px solid #CBD5E1; font-size: 12px; }
-            @media print { body { padding: 0; } .no-print { display: none; } }
-          </style>
-        </head>
-        <body>
-          <div class="sheet">
-            <div class="header">SMART PVT LTD • DAILY WORK REPORT - ${rep.date} (${rep.day || 'Day'})</div>
-            <table>
-              <tr>
-                <td class="meta-label">NAME :</td>
-                <td class="meta-val">${rep.name}</td>
-                <td class="meta-label">DATE :</td>
-                <td class="meta-val">${rep.date}</td>
-              </tr>
-              <tr>
-                <td class="meta-label">POSITION :</td>
-                <td class="meta-val">${rep.position}</td>
-                <td class="meta-label">DAY :</td>
-                <td class="meta-val">${rep.day || '—'}</td>
-              </tr>
-              <tr>
-                <td class="meta-label">LOCATION :</td>
-                <td class="meta-val">${rep.location}</td>
-                <td class="meta-label">WORK MODE :</td>
-                <td class="meta-val">${rep.workMode}</td>
-              </tr>
-            </table>
-
-            <table>
-              <tr>
-                <td class="time-th">ARRIVAL</td>
-                <td class="time-th">LUNCH START</td>
-                <td class="time-th">LUNCH END</td>
-                <td class="time-th">LUNCH DURATION</td>
-                <td class="time-th">DEPARTURE</td>
-                <td class="time-th">TOTAL WORK HRS</td>
-              </tr>
-              <tr>
-                <td class="time-td">${rep.arrival || '—'}</td>
-                <td class="time-td">${rep.lunchStart || '—'}</td>
-                <td class="time-td">${rep.lunchEnd || '—'}</td>
-                <td class="time-td">${rep.lunchDuration || '—'}</td>
-                <td class="time-td">${rep.departure || '—'}</td>
-                <td class="total-td">${rep.totalWorkHours || '—'}</td>
-              </tr>
-            </table>
-
-            <table>
-              <tr>
-                <th class="task-th" style="width: 40px;">NO</th>
-                <th class="task-th" style="width: 80px;">START</th>
-                <th class="task-th" style="width: 80px;">END</th>
-                <th class="task-th" style="width: 80px;">HOURS</th>
-                <th class="task-th">WORK / DESCRIPTION</th>
-                <th class="task-th" style="width: 110px;">STATUS</th>
-              </tr>
-              ${(rep.tasks || []).map((t, idx) => `
-                <tr>
-                  <td style="text-align: center; font-weight: 700;">${t.no || idx + 1}</td>
-                  <td style="text-align: center;">${t.start || '—'}</td>
-                  <td style="text-align: center;">${t.end || '—'}</td>
-                  <td style="text-align: center; font-weight: 700; color: #0284C7;">${t.hours || '—'}</td>
-                  <td>${t.description || '—'}</td>
-                  <td style="text-align: center;">
-                    <span class="status-badge status-${(t.status || 'Completed').replace(/\s/g, '')}">${t.status || 'Completed'}</span>
-                  </td>
-                </tr>
-              `).join('')}
-            </table>
-
-            <div class="remarks-box">
-              <strong>REMARKS:</strong> ${rep.remarks || 'None'}
-            </div>
-            ${rep.planTomorrow ? `<div class="remarks-box" style="background:#F3EEFF;border-top:1px solid #DDD0FA;"><strong>PLAN FOR TOMORROW:</strong> ${rep.planTomorrow}</div>` : ''}
-          </div>
-          <script>
-            window.onload = function() { window.print(); };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+    try {
+      saveDailyReportPdf({ ...rep, day: rep.day || getDayName(rep.date || "") },
+        { generatedBy: rep.name || name });
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || "Could not create the PDF.");
+    }
   };
 
   const history = [...reports]
@@ -439,14 +391,14 @@ export default function DailyUpdate() {
             )}
             <button
               type="button"
-              onClick={() => handlePrintReport()}
+              onClick={() => handleReportPdf()}
               style={{
                 background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)',
                 borderRadius: 8, color: '#fff', padding: '5px 12px', fontSize: 11, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700
               }}
             >
-              <Printer size={12} /> Print Sheet
+              <Printer size={12} /> Sheet PDF
             </button>
             {editingId && (
               <button
@@ -653,116 +605,127 @@ export default function DailyUpdate() {
             </div>
           </div>
 
-          {/* ── Routine Task Breakdown Table ── */}
+          {/* ── Routine Task Breakdown ──
+              On a laptop this is the printed sheet: one row per task under its
+              column heads. On a phone the same fields stack as cards, because a
+              seven-column row cannot fit 520 px and the STATUS / remove column
+              used to fall off the right edge. */}
           <div style={{ borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
             <div style={{
               background: 'rgba(10,24,56,0.9)', padding: '10px 14px', borderBottom: `1px solid ${C.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap'
             }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: C.text, letterSpacing: 0.5 }}>
                 DAILY ROUTINE WORK BREAKDOWN
               </span>
-              <button
-                type="button"
-                onClick={handleAddTaskRow}
-                style={{
-                  background: 'rgba(0,102,255,0.15)', border: `1px solid ${C.borderHi}`, borderRadius: 6,
-                  color: C.cyan, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 4
-                }}
-              >
+              <ERPBtn type="button" size="sm" variant="secondary" onClick={handleAddTaskRow}>
                 <Plus size={12} /> Add Task Row
-              </button>
+              </ERPBtn>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: 'rgba(14,35,80,0.6)', color: C.muted, fontSize: 10.5, textTransform: 'uppercase' }}>
-                    <th style={{ padding: '8px 10px', width: 45, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>NO</th>
-                    <th style={{ padding: '8px 10px', width: 95, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>START</th>
-                    <th style={{ padding: '8px 10px', width: 95, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>END</th>
-                    <th style={{ padding: '8px 10px', width: 85, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>HOURS</th>
-                    <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: `1px solid ${C.border}` }}>WORK / DESCRIPTION</th>
-                    <th style={{ padding: '8px 10px', width: 140, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}>STATUS</th>
-                    <th style={{ padding: '8px 10px', width: 40, textAlign: 'center', borderBottom: `1px solid ${C.border}` }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((task, idx) => (
-                    <tr key={idx} style={{ borderBottom: `1px solid ${C.border}20` }}>
-                      <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: C.muted }}>
-                        {task.no || idx + 1}
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input
-                          type="time"
-                          value={task.start}
-                          onChange={e => handleTaskChange(idx, 'start', e.target.value)}
-                          style={{
-                            width: '100%', background: 'rgba(4,13,31,0.8)', border: `1px solid ${C.border}`,
-                            borderRadius: 6, padding: '6px 8px', color: C.text, fontSize: 11.5, outline: 'none'
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input
-                          type="time"
-                          value={task.end}
-                          onChange={e => handleTaskChange(idx, 'end', e.target.value)}
-                          style={{
-                            width: '100%', background: 'rgba(4,13,31,0.8)', border: `1px solid ${C.border}`,
-                            borderRadius: 6, padding: '6px 8px', color: C.text, fontSize: 11.5, outline: 'none'
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: C.cyan }}>
-                        {task.hours || '—'}
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <input
-                          type="text"
-                          required
-                          value={task.description}
-                          onChange={e => handleTaskChange(idx, 'description', e.target.value)}
-                          placeholder="Type routine work performed..."
-                          style={{
-                            width: '100%', boxSizing: 'border-box', background: 'rgba(4,13,31,0.8)', border: `1px solid ${C.border}`,
-                            borderRadius: 6, padding: '6px 10px', color: C.text, fontSize: 12, outline: 'none'
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '6px 8px' }}>
-                        <select
-                          value={task.status}
-                          onChange={e => handleTaskChange(idx, 'status', e.target.value)}
-                          style={{
-                            width: '100%', background: 'rgba(4,13,31,0.8)',
-                            border: `1px solid ${task.status === 'Completed' ? 'rgba(24,199,122,0.4)' : C.border}`,
-                            borderRadius: 6, padding: '6px 8px',
-                            color: task.status === 'Completed' ? C.green : C.amber,
-                            fontSize: 11, fontWeight: 700, outline: 'none', cursor: 'pointer'
-                          }}
-                        >
-                          {TASK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                        {tasks.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTaskRow(idx)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: 3 }}
-                            title="Remove row"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={narrow ? null : { overflowX: 'auto' }}>
+            {!narrow && (
+              <div style={{
+                display: 'grid', gridTemplateColumns: TASK_GRID, gap: 8, alignItems: 'center',
+                minWidth: 620,
+                padding: '8px 12px', background: 'rgba(14,35,80,0.6)',
+                borderBottom: `1px solid ${C.border}`, fontSize: 10.5, fontWeight: 800,
+                color: C.muted, textTransform: 'uppercase',
+              }}>
+                <span style={{ textAlign: 'center' }}>NO</span>
+                <span>START</span>
+                <span>END</span>
+                <span style={{ textAlign: 'center' }}>HOURS</span>
+                <span>WORK / DESCRIPTION</span>
+                <span>STATUS</span>
+                <span />
+              </div>
+            )}
+
+            {tasks.map((task, idx) => (
+              <div key={idx} style={{
+                ...(narrow ? cardBox : rowBox),
+                borderBottom: idx < tasks.length - 1 ? `1px solid ${C.border}20` : 'none',
+              }}>
+                <div style={{ fontWeight: 800, color: C.muted, fontSize: 12, textAlign: narrow ? 'left' : 'center' }}>
+                  {narrow ? `Task ${task.no || idx + 1}` : (task.no || idx + 1)}
+                </div>
+
+                {narrow && (
+                  <>
+                    <div style={{ fontWeight: 800, color: C.cyan, fontSize: 12, marginLeft: 'auto' }}>
+                      {task.hours || '—'}
+                    </div>
+                    {/* line break: the two times get their own row below */}
+                    <div style={{ flexBasis: '100%', height: 0 }} />
+                  </>
+                )}
+
+                <label style={{ ...cellField, ...(narrow ? { flex: '1 1 42%' } : null) }}>
+                  {narrow && <span style={cellLabel}>START</span>}
+                  <input
+                    type="time"
+                    value={task.start}
+                    onChange={e => handleTaskChange(idx, 'start', e.target.value)}
+                    style={cellInput}
+                  />
+                </label>
+
+                <label style={{ ...cellField, ...(narrow ? { flex: '1 1 42%' } : null) }}>
+                  {narrow && <span style={cellLabel}>END</span>}
+                  <input
+                    type="time"
+                    value={task.end}
+                    onChange={e => handleTaskChange(idx, 'end', e.target.value)}
+                    style={cellInput}
+                  />
+                </label>
+
+                {!narrow && (
+                  <div style={{ textAlign: 'center', fontWeight: 700, color: C.cyan, fontSize: 12 }}>
+                    {task.hours || '—'}
+                  </div>
+                )}
+
+                <label style={{ ...cellField, ...(narrow ? { flex: '1 1 100%' } : null) }}>
+                  <span style={cellLabel}>{narrow ? 'WORK / DESCRIPTION' : ''}</span>
+                  <input
+                    type="text"
+                    required
+                    value={task.description}
+                    onChange={e => handleTaskChange(idx, 'description', e.target.value)}
+                    placeholder="Type routine work performed..."
+                    style={cellInput}
+                  />
+                </label>
+
+                <label style={{ ...cellField, ...(narrow ? { flex: '1 1 55%' } : null) }}>
+                  {narrow && <span style={cellLabel}>STATUS</span>}
+                  <select
+                    value={task.status}
+                    onChange={e => handleTaskChange(idx, 'status', e.target.value)}
+                    style={{
+                      ...cellInput,
+                      border: `1px solid ${task.status === 'Completed' ? 'rgba(24,199,122,0.4)' : C.border}`,
+                      color: task.status === 'Completed' ? C.green : C.amber,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {TASK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+
+                <div style={narrow
+                  ? { flex: '0 0 auto', marginLeft: 'auto', alignSelf: 'flex-end' }
+                  : { textAlign: 'center' }}>
+                  {tasks.length > 1 && (
+                    <ERPBtn type="button" size="sm" variant="danger" onClick={() => handleRemoveTaskRow(idx)}>
+                      <Trash2 size={12} />{narrow ? ' Remove' : ''}
+                    </ERPBtn>
+                  )}
+                </div>
+              </div>
+            ))}
             </div>
           </div>
 
@@ -827,21 +790,18 @@ export default function DailyUpdate() {
               type="submit"
               variant="primary"
               disabled={busy}
-              style={{ minWidth: 220, justifyContent: 'center' }}
+              style={{ flex: narrow ? '1 1 100%' : '0 0 auto', minWidth: narrow ? undefined : 220, justifyContent: 'center' }}
             >
               <Send size={13} /> {editingId ? 'Update Work Report' : 'Submit Daily Work Report'}
             </ERPBtn>
-            <button
+            <ERPBtn
               type="button"
-              onClick={() => handlePrintReport()}
-              style={{
-                background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 10,
-                color: C.cyan, padding: '9px 16px', fontSize: 12, cursor: 'pointer', display: 'flex',
-                alignItems: 'center', gap: 6, fontWeight: 700
-              }}
+              variant="secondary"
+              onClick={() => handleReportPdf()}
+              style={{ flex: narrow ? '1 1 auto' : '0 0 auto', justifyContent: 'center' }}
             >
-              <Printer size={13} /> Print / Save Sheet
-            </button>
+              <Printer size={13} /> Sheet PDF
+            </ERPBtn>
             {editingId && (
               <ERPBtn type="button" variant="secondary" onClick={handleResetForm}>
                 Cancel Edit
@@ -857,7 +817,11 @@ export default function DailyUpdate() {
         <ERPPanelHeader
           title="My Submitted Daily Work Reports"
           icon="🗂️"
-          action={<span style={{ fontSize: 11, color: C.muted }}>{history.length} records</span>}
+          action={(
+            <span style={{ fontSize: 11, color: C.muted }}>
+              {reports.length} total{history.length < reports.length ? ` · last ${history.length} shown` : ''}
+            </span>
+          )}
         />
 
         {history.length === 0 ? (
@@ -925,48 +889,30 @@ export default function DailyUpdate() {
                       }}>
                         {r.totalWorkHours || '—'}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintReport(r)}
-                        style={{
-                          background: 'rgba(0,102,255,0.1)', border: `1px solid ${C.borderHi}`,
-                          borderRadius: 6, color: C.cyan, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: 4
-                        }}
-                      >
-                        <Printer size={11} /> Print
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleEditInit(r)}
-                        style={{
-                          background: 'rgba(0,102,255,0.1)', border: `1px solid ${C.borderHi}`,
-                          borderRadius: 6, color: C.cyan, padding: '4px 8px', fontSize: 11, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: 4
-                        }}
-                      >
+                      <ERPBtn type="button" size="sm" variant="secondary" onClick={() => handleReportPdf(r)}>
+                        <Printer size={11} /> PDF
+                      </ERPBtn>
+                      <ERPBtn type="button" size="sm" variant="secondary" onClick={() => handleEditInit(r)}>
                         <Edit3 size={11} /> Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(r.id)}
-                        style={{
-                          background: 'rgba(240,90,103,0.1)', border: '1px solid rgba(240,90,103,0.25)',
-                          borderRadius: 6, color: C.red, padding: '4px 8px', fontSize: 11, cursor: 'pointer'
-                        }}
-                      >
+                      </ERPBtn>
+                      <ERPBtn type="button" size="sm" variant="danger" onClick={() => { setDelTarget(r); setDelErr(''); }}>
                         <Trash2 size={11} />
-                      </button>
+                      </ERPBtn>
                     </div>
                   </div>
 
-                  {/* Summary of tasks */}
-                  {r.tasks && r.tasks.length > 0 && (
+                  {/* Summary of tasks — only the rows that actually hold work;
+                      an empty pre-dated block from the sheet import is noise. */}
+                  {dailyReportTasksOf(r).length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 4 }}>
-                      {r.tasks.map((t, tIdx) => (
-                        <div key={tIdx} style={{ fontSize: 11.5, color: C.subtle, display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span style={{ color: C.cyan, fontWeight: 700, width: 85 }}>{t.start}–{t.end}</span>
-                          <span style={{ flex: 1 }}>{t.description}</span>
+                      {dailyReportTasksOf(r).map((t, tIdx) => (
+                        <div key={tIdx} style={{ fontSize: 11.5, color: C.subtle, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          {(t.start || t.end) && (
+                            <span style={{ color: C.cyan, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                              {t.start || '—'} to {t.end || '—'}
+                            </span>
+                          )}
+                          <span style={{ flex: 1, minWidth: 140 }}>{t.description}</span>
                           <span style={{
                             fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
                             background: t.status === 'Completed' ? 'rgba(24,199,122,0.1)' : 'rgba(245,185,66,0.1)',
@@ -1003,6 +949,37 @@ export default function DailyUpdate() {
         )}
       </ERPPanel>
 
+      {/* ── Delete one filed report ── */}
+      <ERPModal isOpen={!!delTarget} onClose={() => setDelTarget(null)}
+        title="Delete this work report?" width={420}>
+        {delTarget && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            <div style={{ fontSize: 12, color: C.subtle, lineHeight: 1.6 }}>
+              <strong style={{ color: C.text }}>{delTarget.date} ({delTarget.day || getDayName(delTarget.date)})</strong><br />
+              {delTarget.totalWorkHours || '—'} · {String(delTarget.workMode || 'On-Site')} ·{' '}
+              {dailyReportTasksOf(delTarget).length} tasks
+            </div>
+            <div style={{ padding: '10px 12px', borderRadius: 10, fontSize: 11.5, lineHeight: 1.55,
+              background: 'rgba(240,90,103,0.1)', border: '1px solid rgba(240,90,103,0.35)', color: C.red }}>
+              The report goes out of the admin view, the attendance statement and every work report.
+            </div>
+
+            {delErr && (
+              <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(245,185,66,0.1)',
+                border: '1px solid rgba(245,185,66,0.35)', fontSize: 11, color: C.amber, lineHeight: 1.5 }}>
+                {delErr}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <ERPBtn variant="secondary" onClick={() => setDelTarget(null)} style={{ flex: 1, justifyContent: 'center' }}>Keep it</ERPBtn>
+              <ERPBtn variant="danger" disabled={delBusy} onClick={handleDelete} style={{ flex: 1, justifyContent: 'center' }}>
+                <Trash2 size={12} /> {delBusy ? 'Deleting…' : 'Delete'}
+              </ERPBtn>
+            </div>
+          </div>
+        )}
+      </ERPModal>
     </div>
   );
 }

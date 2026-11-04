@@ -11,13 +11,17 @@ import {
   ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
+import { rulesMissingBlockNotice, rulesNotAdminNotice } from '../rulesNotice';
 import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
 import { nextNumber } from '../../staff/staffUtils';
+import { CLIENT_KINDS, previewClientCode, allocateClientCode } from '../clientCode';
+import { useStaffDirectory } from '../useStaffDirectory';
+import StaffAssignPicker from '../components/StaffAssignPicker';
 import { saveClientStatementPdf, saveClientsRosterPdf } from '../utils/clientReportPdf';
 import {
   Search, Plus, Mail, Phone, Calendar, FolderKanban, FileText, Pencil, Trash2,
   Key, Shield, CheckCircle2, RotateCcw, MapPin, ListChecks, History,
-  Link2, Copy, ExternalLink, Inbox, Send, UserPlus, Download
+  Link2, Copy, ExternalLink, Inbox, Send, UserPlus, Download, Hash
 } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
@@ -73,12 +77,12 @@ const DEV_WORK = {
   ],
 };
 
-const EMPTY_FORM = { name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'',
+const EMPTY_FORM = { kind:'individual', name:'', company:'', email:'', phone:'', address:'', clientSince:'', createAccount:true, password:'',
   // Optional first project — the client and their project are created together,
   // so a brand-new client is never left with an empty project list.
   projTitle:'', projService:'', projStatus:'requirements_pending' };
 
-const EMPTY_PROJECT = { title:'', serviceType:'', status:'requirements_pending' };
+const EMPTY_PROJECT = { title:'', serviceType:'', status:'requirements_pending', assignedStaff:[] };
 const PROJECT_STATUS = [
   { value:'requirements_pending', label:'Requirements Pending' },
   { value:'quotation_sent',       label:'Quotation Sent' },
@@ -162,6 +166,7 @@ export default function ERPClients() {
   const [delError,  setDelError]  = useState('');
   const [delBusy,   setDelBusy]   = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [codeBusy,  setCodeBusy]  = useState(false); // back-filling an old client's code
   const [notice,    setNotice]    = useState(null); // { kind:'ok'|'error', msg }
   const [pwModal,   setPwModal]   = useState(null); // { client, password, busy, error }
   // Work tracker: a manual done / pending list per client, with who-marked-what history
@@ -194,14 +199,25 @@ export default function ERPClients() {
   const [projOpen,   setProjOpen]   = useState(false);
   const [projForm,   setProjForm]   = useState(EMPTY_PROJECT);
   const [projErr,    setProjErr]    = useState('');
+  // Staff directory for the "Assigned Staff" pick on new projects.
+  const { staff: staffDir } = useStaffDirectory();
   const converting = useRef(new Set());
   // The auto-conversion effect must not retry a failing request in a loop: if
   // the reset-to-'new' write echoes back, the same id would run again forever.
   const autoTried = useRef(new Set());
+  // Did any other admin-only read go through? The Clients list and the
+  // portfolio links are guarded by the same isAdmin(), so if clients load,
+  // the account is a valid admin and the only thing missing is the
+  // portfolioLinks block in the deployed rules.
+  const adminReadOk = useRef(false);
+  const linkDeniedText = () => (adminReadOk.current
+    ? rulesMissingBlockNotice('Saved portfolio links')
+    : rulesNotAdminNotice('Saved portfolio links'));
 
   useEffect(() => {
     if (!live) return;
     const unsubC = onSnapshot(collection(db, 'clients'), snap => {
+      adminReadOk.current = true;
       const rows = snap.docs.map(d => ({ id:d.id, ...d.data() }))
         .filter(c => c.status !== 'deleted');
       setClients(rows);
@@ -216,7 +232,16 @@ export default function ERPClients() {
     const unsubL = onSnapshot(collection(db, 'portfolioLinks'), snap => {
       setLinks(snap.docs.map(d => ({ id:d.id, ...d.data() }))
         .sort((a, b) => String(b.createdAt?.seconds || 0).localeCompare(String(a.createdAt?.seconds || 0))));
-    }, err => console.error('Portfolio links listener error', err));
+      setLinkErr('');
+    }, err => {
+      console.error('Portfolio links listener error', err);
+      // The link list lives in its own collection — when the deployed rules
+      // don't know portfolioLinks yet, the modal would otherwise show up
+      // empty with no reason. Say it once, where the admin is looking.
+      if (err.code === 'permission-denied') {
+        setLinkErr(linkDeniedText());
+      }
+    });
     const unsubR = onSnapshot(collection(db, 'portfolioRequests'), snap => {
       setReqs(snap.docs.map(d => ({ id:d.id, ...d.data() }))
         .sort((a, b) => String(b.createdAt?.seconds || 0).localeCompare(String(a.createdAt?.seconds || 0))));
@@ -246,10 +271,33 @@ export default function ERPClients() {
     setShowForm(true);
   };
 
+  // Clients recorded before the code series existed get their number here —
+  // the same allocator the Add form uses, so a back-filled code can never
+  // collide with one already handed out.
+  const assignCodeToSelected = async () => {
+    if (!selected || codeBusy) return;
+    setCodeBusy(true);
+    try {
+      const kind = selected.kind || (selected.company ? 'company' : 'individual');
+      const code = await allocateClientCode(kind, clients);
+      const patch = { code, kind, updatedAt: serverTimestamp() };
+      setClients(p => p.map(c => c.id === selected.id ? { ...c, ...patch } : c));
+      setSelected(s => (s ? { ...s, ...patch } : s));
+      if (live) await updateDoc(doc(db, 'clients', selected.id), patch);
+      setNotice({ kind: 'ok', msg: `${selected.name} is now ${code}.` });
+    } catch (err) {
+      console.error(err);
+      setNotice({ kind: 'error', msg: err?.message || "Couldn't assign the code." });
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
   const openEdit = (c, e) => {
     if (e) e.stopPropagation();
     setEditId(c.id);
     setForm({
+      kind: c.kind || (c.company ? 'company' : 'individual'),
       name: c.name || '',
       company: c.company || '',
       email: c.loginEmail || c.email || '',
@@ -293,6 +341,7 @@ export default function ERPClients() {
     setSaveError('');
     setSaving(true);
     const payload = {
+      kind: form.kind === 'company' ? 'company' : 'individual',
       name: form.name.trim(),
       company: form.company.trim(),
       email: form.email.trim(),
@@ -303,6 +352,11 @@ export default function ERPClients() {
       status: 'active',
     };
     try {
+      // A new client always takes the next number of their series
+      // (person SM/2026/111…, company SM/2026/1111…); an edit keeps the
+      // code the client already has.
+      const code = editId ? null : await allocateClientCode(payload.kind, clients);
+      if (code) payload.code = code;
       if (editId) {
         setClients(p => p.map(c => c.id === editId ? { ...c, ...payload } : c));
         if (selected?.id === editId) setSelected(s => ({ ...s, ...payload }));
@@ -326,7 +380,7 @@ export default function ERPClients() {
           if (form.projTitle.trim()) {
             await addProjectFor(uid, payload.name, payload.company, form);
           }
-          setNotice({ kind: 'ok', msg: `Client ${form.name} created with portal login account (${form.email}).${form.projTitle.trim() ? ' Their project was added too.' : ''}` });
+          setNotice({ kind: 'ok', msg: `Client ${form.name} (${code}) created with portal login account (${form.email}).${form.projTitle.trim() ? ' Their project was added too.' : ''}` });
         } else {
           const local = { id: `C${Date.now()}`, projects: 0, invoices: 0, hasPortalAccount: false, ...payload };
           if (live) {
@@ -347,8 +401,8 @@ export default function ERPClients() {
           setNotice({
             kind: 'ok',
             msg: form.createAccount && !form.email.trim()
-              ? `Client ${form.name} saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''} — no portal login yet (add an email later to create one).`
-              : `Client ${form.name} saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''}.`,
+              ? `Client ${form.name} (${code}) saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''} — no portal login yet (add an email later to create one).`
+              : `Client ${form.name} (${code}) saved${form.projTitle.trim() ? ` with project "${form.projTitle.trim()}"` : ''}.`,
           });
         }
       }
@@ -528,7 +582,9 @@ export default function ERPClients() {
       console.error(e);
       setLinkErr(
         e.code === 'permission-denied'
-          ? "Permission denied — the live Firestore rules don't allow portfolioLinks for this account yet. Deploy them (firebase deploy --only firestore:rules) and sign in as an admin."
+          ? (adminReadOk.current
+              ? rulesMissingBlockNotice('Portfolio link creation')
+              : rulesNotAdminNotice('Portfolio link creation'))
           : (e.message || 'Could not create the link.')
       );
     } finally {
@@ -563,7 +619,11 @@ export default function ERPClients() {
     converting.current.add(r.id);
     try {
       if (live) await updateDoc(doc(db, 'portfolioRequests', r.id), { status:'converting', updatedAt: serverTimestamp() });
+      const kind = r.company ? 'company' : 'individual';
       const clientData = {
+        kind,
+        // Auto series number, same rule as the Add Client form.
+        code: await allocateClientCode(kind, clients),
         name: r.name || 'Client',
         company: r.company || '',
         email: r.email || '',
@@ -676,6 +736,9 @@ export default function ERPClients() {
   const addProjectFor = async (clientId, clientName, clientCompany, src = projForm) => {
     const title = (src.projTitle ?? src.title ?? '').trim();
     if (!title || !clientId) return null;
+    // Team picked on the form (ids + the names that go with them, so the
+    // project card still reads well if a staff record is later removed).
+    const team = Array.isArray(src.assignedStaff) ? src.assignedStaff : [];
     const data = {
       projectCode: live
         ? await nextNumber('projects', 'PR')
@@ -688,6 +751,8 @@ export default function ERPClients() {
       status: src.projStatus ?? src.status ?? 'requirements_pending',
       completion: 0,
       milestones: [],
+      assignedStaff: team,
+      assignedStaffNames: team.map(id => staffDir.find(s => s.id === id)?.name || id),
       createdAt: serverTimestamp(),
     };
     if (live) {
@@ -1047,7 +1112,12 @@ export default function ERPClients() {
                 <ERPAvatar name={c.name} color={COLORS[i%COLORS.length]} size={32} />
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:12, fontWeight:700, color:C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.name}</div>
-                  <div style={{ fontSize:10, color:C.muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.company}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                    {c.code && (
+                      <span style={{ fontSize:9.5, fontFamily:'monospace', color:C.violet, flexShrink:0 }}>{c.code}</span>
+                    )}
+                    <span style={{ fontSize:10, color:C.muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.company}</span>
+                  </div>
                 </div>
                 <ERPBadge status={c.status||'active'} size="sm" />
               </div>
@@ -1072,16 +1142,27 @@ export default function ERPClients() {
 
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {[
+                  { icon:<Hash size={12}/>,     label:'Code',    val:selected.code,       color:C.violet },
                   { icon:<Mail size={12}/>,     label:'Email',   val:selected.email,      color:C.cyan  },
                   { icon:<Phone size={12}/>,    label:'Phone',   val:selected.phone,      color:C.green },
                   { icon:<Calendar size={12}/>, label:'Client since', val:selected.clientSince, color:C.muted },
-                ].map(({ icon, label, val, color }) => (
+                ].filter(r => r.val).map(({ icon, label, val, color }) => (
                   <div key={label} style={{ display:'flex', gap:10, alignItems:'center' }}>
                     <span style={{ color, flexShrink:0 }}>{icon}</span>
                     <span style={{ fontSize:11, color:C.muted, width:80, flexShrink:0 }}>{label}</span>
-                    <span style={{ fontSize:11, color:C.subtle, fontWeight:600 }}>{val}</span>
+                    <span style={{ fontSize:11, color:C.subtle, fontWeight:600, fontFamily: label === 'Code' ? 'monospace' : undefined }}>{val}</span>
                   </div>
                 ))}
+                {!selected.code && (
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:2 }}>
+                    <ERPBtn size="sm" variant="secondary" onClick={assignCodeToSelected} disabled={codeBusy}>
+                      <Hash size={11} /> {codeBusy ? 'Assigning…' : 'Assign client code'}
+                    </ERPBtn>
+                    <span style={{ fontSize:10.5, color:C.muted }}>
+                      Next free: {previewClientCode(selected.kind || (selected.company ? 'company' : 'individual'), clients)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {selected.address && (
@@ -1265,6 +1346,33 @@ export default function ERPClients() {
 
       <ERPModal isOpen={showForm} onClose={()=>{setShowForm(false);setEditId(null);}} title={editId ? 'Update Client' : 'Add New Client'} width={460}>
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <span style={{ fontSize:10.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px' }}>Client type</span>
+            <div style={{ display:'flex', gap:8 }}>
+              {CLIENT_KINDS.map(k => {
+                const on = form.kind === k.value;
+                return (
+                  <button key={k.value} type="button" onClick={()=>setForm(p=>({...p,kind:k.value}))} style={{
+                    flex:1, padding:'9px 10px', borderRadius:10, cursor:'pointer', fontSize:12, fontWeight:700,
+                    color: on ? C.text : C.muted,
+                    background: on ? 'rgba(0,102,255,0.14)' : 'transparent',
+                    border: `1px solid ${on ? C.cyan : C.border}`,
+                  }}>{k.label}</button>
+                );
+              })}
+            </div>
+            <div style={{
+              display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:9,
+              background:'rgba(0,217,255,0.06)', border:`1px solid ${C.border}`,
+            }}>
+              <span style={{ fontSize:10.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.6px' }}>Client code</span>
+              <span style={{ fontSize:12.5, fontWeight:800, color:C.cyan, fontFamily:'monospace', marginLeft:'auto' }}>
+                {editId
+                  ? (clients.find(c => c.id === editId)?.code || '—')
+                  : previewClientCode(form.kind, clients)}
+              </span>
+            </div>
+          </div>
           <ERPInput label="Full Name" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} required placeholder="e.g. John Perera" />
           <ERPInput label="Company" value={form.company} onChange={e=>setForm(p=>({...p,company:e.target.value}))} placeholder="e.g. Perera Holdings Pvt Ltd" />
           <ERPInput label="Email" value={form.email} type="email" onChange={e=>setForm(p=>({...p,email:e.target.value}))} placeholder="john@company.com" />
@@ -1391,6 +1499,10 @@ export default function ERPClients() {
           <ERPSelect label="Status" value={projForm.status}
             onChange={e=>setProjForm(p=>({ ...p, status:e.target.value }))}
             options={PROJECT_STATUS} />
+          <StaffAssignPicker
+            staff={staffDir}
+            value={projForm.assignedStaff}
+            onChange={ids=>setProjForm(p=>({ ...p, assignedStaff: ids }))} />
           {projErr && (
             <div style={{ padding:'10px 12px', borderRadius:10, background:'rgba(245,185,66,0.1)', border:'1px solid rgba(245,185,66,0.35)', fontSize:11, color:C.amber, lineHeight:1.5 }}>
               {projErr}

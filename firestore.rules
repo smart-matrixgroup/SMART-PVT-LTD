@@ -205,6 +205,13 @@ service cloud.firestore {
     // `deleted: true` blocks portal login (see AuthContext.jsx) — a
     // soft delete, never a hard removal when attendance/salary records
     // exist.
+    //
+    // Login email change (src/staff/loginEmail.js): the admin stages
+    // pendingLoginEmail, then the signed-in owner applies it. Firebase only
+    // lets a user move their OWN auth email and there is no Admin SDK here,
+    // so the write is split the same way. This branch accepts nothing but
+    // the address already staged by the admin — a staff member still cannot
+    // rename themselves to anything they choose.
     match /staff/{uid} {
       allow read: if isAdmin() ||
         (request.auth != null && request.auth.uid == uid);
@@ -212,7 +219,13 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (request.auth != null && request.auth.uid == uid &&
          request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['docs', 'updatedAt']));
+           .hasOnly(['docs', 'updatedAt'])) ||
+        (request.auth != null && request.auth.uid == uid &&
+         'pendingLoginEmail' in resource.data &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['loginEmail', 'email', 'pendingLoginEmail', 'pendingLoginEmailAt', 'emailChangeLog', 'updatedAt']) &&
+         resource.data.pendingLoginEmail == request.resource.data.loginEmail &&
+         request.resource.data.loginEmail == request.resource.data.email);
     }
 
     // Work assignments. Staff read their own (authUid field) and may ONLY
@@ -331,6 +344,40 @@ service cloud.firestore {
            .hasOnly(['status', 'returnedPath', 'returnedName', 'returnedSize', 'returnedAt', 'updatedAt']));
     }
 
+    // Leave applications. A staff member files their own letter from the
+    // portal (staff-docs/{uid}/leave_….png holds the painted paper); the
+    // admin reviews and decides. The decision is APPENDED to `history`, so
+    // nobody rewrites an application after the fact:
+    //   • staff create only their own, always starting as Pending;
+    //   • staff may edit their own only while it is still Pending, and never
+    //     touch the decision fields;
+    //   • only the admin sets status / adminNote / reviewedBy / reviewedAt.
+    match /leaves/{leaveId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.staffUid == request.auth.uid);
+
+      allow create: if request.auth != null &&
+        (isAdmin() || request.resource.data.staffUid == request.auth.uid) &&
+        request.resource.data.status == 'Pending';
+
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+         resource.data.staffUid == request.auth.uid &&
+         request.resource.data.staffUid == resource.data.staffUid &&
+         resource.data.status == 'Pending' &&
+         request.resource.data.status == 'Pending' &&
+         !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['status', 'adminNote', 'reviewedBy', 'reviewedAt', 'staffUid', 'staffName']));
+
+      allow delete: if isAdmin() ||
+        // A staff member may withdraw — and remove — an application that is
+        // still Pending, so a test record they filed can be cleaned up from
+        // their own portal. Once the admin has decided, only the admin deletes.
+        (request.auth != null &&
+         resource.data.staffUid == request.auth.uid &&
+         resource.data.status == 'Pending');
+    }
+
     // Finance module — income and expenses (admin only by default).
     // NOTE: Rules must be deployed manually for these collections to work live.
     match /financeIncome/{docId} {
@@ -340,6 +387,28 @@ service cloud.firestore {
     match /financeExpenses/{docId} {
       allow read: if isAdmin();
       allow write: if isAdmin();
+    }
+
+    // Weekly report email ledger. The Cloud Function (Admin SDK) writes these
+    // rows; the ERP only reads them to show what was sent, to whom, and who
+    // filed nothing. Nobody but an admin can see or change the post.
+    match /weeklyReportRuns/{runId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Optional retarget for the weekly mails — { to, from, cc, enabled }.
+    // Admin edits it in the ERP; the function reads it with Admin SDK.
+    // The Gmail app password is NOT stored here (it lives in Functions
+    // Secrets Manager), so this doc can never leak the SMTP key.
+    match /reportEmailConfig/{configId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Job offer letters. Admin-only: each letter carries a candidate's
+    // salary and personal address, and only the admin drafts/edits them.
+    match /offerLetters/{letterId} {
+      allow read, write: if isAdmin();
     }
 
     // System Settings & Access Control Rules

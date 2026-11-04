@@ -10,8 +10,10 @@ import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn,
   ERPModal, ERPInput, ERPEmpty, ERPAvatar, C
 } from '../components/ERPui';
+import { rulesNotice } from '../rulesNotice';
 import { formatWhen, toMillis } from '../formatWhen';
 import { nextNumber } from '../../staff/staffUtils';
+import { allocateClientCode } from '../clientCode';
 import { passwordError, generateStrongPassword, PASSWORD_HINT } from '../passwordPolicy';
 import { CheckCircle2, XCircle, Trash2, MessageSquare, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -87,7 +89,7 @@ export default function ERPLeads() {
         console.error('Leads listener error', err);
         setLoadError(
           err.code === 'permission-denied'
-            ? "Permission denied — deploy the updated Firestore rules and make sure you're signed in as an admin."
+            ? rulesNotice('The leads inbox')
             : (err.message || "Couldn't load leads. Click Refresh to retry.")
         );
       }
@@ -149,8 +151,10 @@ export default function ERPLeads() {
         uid = await createStaffAuthAccount(accForm.email, accForm.password);
 
         // Client doc: id = uid (role resolution in AuthContext depends on it)
+        const kind = accForm.company ? 'company' : 'individual';
         await setDoc(doc(db, 'clients', uid), {
-          uid, name: accForm.name, company: accForm.company,
+          uid, kind, code: await allocateClientCode(kind, []),
+          name: accForm.name, company: accForm.company,
           email: accForm.email, phone: selected.whatsapp || selected.phone || '',
           address: selected.address || '',
           clientSince: new Date().toLocaleDateString('en-US', { month:'long', year:'numeric' }),

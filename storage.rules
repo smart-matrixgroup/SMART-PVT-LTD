@@ -36,7 +36,13 @@ service firebase.storage {
         (request.resource.contentType.matches('image/.*') ||
          request.resource.contentType.matches('application/pdf'));
 
-      allow delete: if isAdmin();
+      // Admins clean up anything in a staff folder. The staff member may
+      // delete only their own leave letter / attachment (leave_, leaveatt_),
+      // so withdrawing a Pending application from the portal also removes
+      // the paper it drew — nothing else in HR/KYC is theirs to remove.
+      allow delete: if isAdmin() ||
+        (request.auth != null && request.auth.uid == authUid &&
+         fileName.matches('leave(att)?_.*'));
     }
 
     // Client requirement-form uploads (bank statements, reference files

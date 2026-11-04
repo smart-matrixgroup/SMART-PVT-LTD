@@ -43,6 +43,7 @@ const NAV = [
     section: 'Team',
     items: [
       { path: '/erp/staff',        label: 'Staff',        icon: UserCheck   },
+      { path: '/erp/offer-letters', label: 'Offer Letters', icon: Briefcase  },
       { path: '/erp/access-rules', label: 'Access Rules', icon: ShieldCheck },
       { path: '/erp/messages',     label: 'Messages',     icon: MessageCircle, badge: 'messages' },
     ]

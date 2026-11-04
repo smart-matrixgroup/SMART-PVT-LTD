@@ -3,11 +3,13 @@
 //
 //  Every account this app creates (staff, client, lead→client, and the
 //  admin's own password change) is checked here before it reaches
-//  Firebase. The old "min 6 characters" rule let through smart123 /
-//  password / 111111, so the policy now requires real variety:
-//  length 8+, upper case, lower case, a digit and a symbol — and it
-//  rejects the common weak passwords and anything that is just the
-//  company name with numbers bolted on.
+//  Firebase. The rule is deliberately short — length 8+, one capital, one
+//  small letter, one number, one symbol — and nothing else. The old extra
+//  check that refused any password containing the account's own name or
+//  email prefix is gone: it rejected passwords that were already strong
+//  (Thilak@2026x for thilak@…) and only pushed people to write them down.
+//  The common weak passwords (smart123 / password / 111111) are still
+//  blocked by name.
 // ─────────────────────────────────────────────────────────────────
 
 const MIN_LENGTH = 8;
@@ -36,11 +38,9 @@ export const PASSWORD_HINT =
 
 /**
  * @param {string} password  the raw value typed by the admin
- * @param {string} [context] optional email/name — a password that simply
- *   contains the account's own name or email prefix is rejected
  * @returns {string} '' when the password passes, otherwise the message to show
  */
-export function passwordError(password, context = '') {
+export function passwordError(password) {
   const p = String(password || '');
   if (!p.trim()) return 'Password is required.';
   if (p.length < MIN_LENGTH) return `Password is too short — use at least ${MIN_LENGTH} characters.`;
@@ -52,14 +52,6 @@ export function passwordError(password, context = '') {
     && lower.startsWith(w)
     && /^[@#$%&*_\-.,!?\s]*\d+$/.test(lower.slice(w.length)));
   if (weakBase) return 'That password is too easy to guess. Mix capitals, numbers and a symbol.';
-
-  const ctx = String(context || '').toLowerCase();
-  if (ctx) {
-    const name = ctx.split('@')[0].replace(/[^a-z]/g, '');
-    if (name.length >= 4 && lower.includes(name)) {
-      return 'The password cannot contain the account name or email.';
-    }
-  }
 
   const missing = REQUIREMENTS.filter(r => !r.test(p)).map(r => r.label);
   if (missing.length) return `Password needs ${missing.join(', ')}.`;

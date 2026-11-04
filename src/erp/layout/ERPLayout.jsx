@@ -54,8 +54,10 @@ export default function ERPLayout() {
   const [notifications, setNotifications] = useState(DEV_NOTIFICATIONS);
   // Live website/QR request notifications (bell dropdown)
   const [liveNotifs, setLiveNotifs] = useState([]);
+  const [leaveNotifs, setLeaveNotifs] = useState([]);
   const [readIds,    setReadIds]    = useState([]);
   const seededNotifs = useRef(false);
+  const seededLeaves = useRef(false);
   const contentRef   = useRef(null);
 
   const meta = PAGE_META[location.pathname] || { title: 'ERP', subtitle: '' };
@@ -151,11 +153,39 @@ export default function ERPLayout() {
     });
   }, [isDevSession]);
 
+  // ── Leave applications filed by staff ────────────────────────────
+  // A staff member's leave letter lands in `leaves` as Pending; the newest
+  // ones sit at the top of the bell so the admin is pinged the moment one
+  // arrives and jumps straight to Staff → Attendance → Leave Requests.
+  // Already-pending requests when ERP first opens start as read, so only NEW
+  // submissions show the unread dot (same rule as the leads bell).
+  useEffect(() => {
+    if (!isFirebaseConfigured || isDevSession) return;
+    const q = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'), limit(8));
+    return onSnapshot(q, snap => {
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(L => (L.status || 'Pending') === 'Pending')
+        .map(L => ({
+          id:   `leave-${L.id}`,
+          icon: '🏖',
+          text: `Leave application: ${L.staffName || 'Staff'} — ${L.days || 1} day${L.days === 1 ? '' : 's'} ${L.type || 'leave'} (${String(L.from || '').slice(0, 10)} → ${String(L.to || '').slice(0, 10)})`,
+          time: relTime(L.createdAt),
+          link: '/erp/staff?tab=attendance',
+        }));
+      setLeaveNotifs(items);
+      if (!seededLeaves.current) {
+        seededLeaves.current = true;
+        setReadIds(prev => Array.from(new Set([...prev, ...items.map(i => i.id)])));
+      }
+    }, () => setLeaveNotifs([]));
+  }, [isDevSession]);
+
   const useLiveNotifs = isFirebaseConfigured && !isDevSession;
   const bellNotifications = useLiveNotifs
-    ? liveNotifs.map(n => ({ ...n, read: readIds.includes(n.id) }))
+    ? [...leaveNotifs, ...liveNotifs].map(n => ({ ...n, read: readIds.includes(n.id) }))
     : DEV_NOTIFICATIONS;
-  const markAllNotifsRead = () => setReadIds(liveNotifs.map(n => n.id));
+  const markAllNotifsRead = () => setReadIds(Array.from(new Set([...liveNotifs, ...leaveNotifs].map(n => n.id))));
 
   // Bell click → mark that one read + jump to the page it points to
   const openNotif = (n) => {

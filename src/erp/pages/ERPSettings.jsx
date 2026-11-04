@@ -9,6 +9,7 @@ import { db, auth, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { company } from '../../config/company';
 import ERPAccessRules from './ERPAccessRules';
+import ERPRulesStatus from './ERPRulesStatus';
 import { passwordError, PASSWORD_HINT } from '../passwordPolicy';
 
 const SECTIONS = [
@@ -17,6 +18,7 @@ const SECTIONS = [
   {id:'security', label:'Security',         icon:<Lock size={14}/>     },
   {id:'bank',     label:'Bank Details',     icon:<Landmark size={14}/> },
   {id:'rules',    label:'Access Rules',     icon:<ShieldCheck size={14}/> },
+  {id:'deploy',   label:'Rules Status',     icon:<Shield size={14}/>   },
   {id:'notify',   label:'Notifications',    icon:<Bell size={14}/>     },
 ];
 
@@ -290,6 +292,11 @@ export default function ERPSettings() {
         {/* ── Access Rules & Restrictions ── */}
         {section==='rules' && (
           <ERPAccessRules />
+        )}
+
+        {/* ── Rules Status (one list of everything still to deploy) ── */}
+        {section==='deploy' && (
+          <ERPRulesStatus />
         )}
 
         {/* ── Bank Details ── */}

@@ -25,6 +25,7 @@ import {
   ERPPanel, ERPPanelHeader, ERPBtn, ERPModal, ERPInput, ERPTextarea, ERPSelect, ERPProgress, C,
 } from '../../erp/components/ERPui';
 import PrivateFileLink from '../../erp/components/PrivateFileLink';
+import { staffRulesNotice } from '../../erp/rulesNotice';
 import StaffEmpty from '../components/StaffEmpty';
 import {
   compressImage, todayKey, toMs, STAGE_STATUSES, stageStatusOf, stageReviewOf, stageStats,
@@ -168,7 +169,7 @@ export default function MyProgress() {
       err => {
         console.error('staffProgress listener failed', err);
         setLoadError(err?.code === 'permission-denied'
-          ? 'Work Progress needs the latest security rules (Staff → Work Progress). Ask your admin to deploy them.'
+          ? staffRulesNotice('Work Progress')
           : `Could not load your work list — ${err.message}`);
         setLoading(false);
       },
@@ -255,7 +256,7 @@ export default function MyProgress() {
     } catch (e) {
       console.error(e);
       setFormErr(e?.code === 'storage/unauthorized' || e?.code === 'permission-denied'
-        ? 'Firebase blocked this save. Deploy the latest staffProgress + storage rules, then try again.'
+        ? staffRulesNotice('This stage')
         : (e.message || 'Could not save this stage.'));
     } finally { setBusy(false); }
   };
@@ -273,7 +274,7 @@ export default function MyProgress() {
       setNotice({
         kind: 'error',
         msg: e?.code === 'permission-denied'
-          ? 'Firebase blocked this update — the latest staffProgress security rules are not deployed yet.'
+          ? staffRulesNotice('This stage update')
           : (e.message || 'Could not update this stage.'),
       });
       return false;
@@ -343,7 +344,7 @@ export default function MyProgress() {
     } catch (e) {
       console.error(e);
       setNotice({ kind: 'error', msg: e?.code === 'storage/unauthorized'
-        ? 'Storage rules blocked the upload — deploy the latest staff-progress rules.'
+        ? staffRulesNotice('The proof upload')
         : (e.message || 'Upload failed.') });
     } finally { setBusy(false); }
   };

@@ -15,6 +15,7 @@ import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect,
   ERPEmpty, ERPAvatar, ERPProgress, C,
 } from '../components/ERPui';
+import { rulesNotice } from '../rulesNotice';
 import { getConversationId } from '../messagingUtils';
 import { PRIORITIES, ASSIGNMENT_STATUSES, toMs, dateKeyOf, todayKey, splitStaffByFit, loadDevStages } from '../../staff/staffUtils';
 import { fmtDate } from '../money';
@@ -91,7 +92,7 @@ export default function ERPStaffWork() {
         err => {
           console.error(err);
           if (err?.code === 'permission-denied')
-            setLoadError('Work Stages needs the latest security rules — the owner must deploy firestore.rules (Staff → Work Progress).');
+            setLoadError(rulesNotice('Work Stages'));
         }),
     ];
     return () => unsubs.forEach(u => u());

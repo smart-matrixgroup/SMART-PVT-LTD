@@ -430,10 +430,15 @@ test('Password Policy - missing character classes are reported', () => {
   assert.equal(passwordError(''),           'Password is required.');
 });
 
-test('Password Policy - strong passwords pass, account email cannot be reused', () => {
+test('Password Policy - strong passwords pass, the account name is allowed inside', () => {
   assert.equal(passwordError('Smart@Tech99'), '');
   assert.equal(passwordError('Kandy#Client24'), '');
-  assert.match(passwordError('Thilak@2026x', 'thilak@trholdings.lk'), /cannot contain the account name/);
+  // The old extra rule refused these even though they were already strong.
+  assert.equal(passwordError('Thilak@2026x', 'thilak@trholdings.lk'), '');
+  assert.equal(passwordError('paththima#2026A', 'paththima@smart.com'), '');
+  // Only the well-known easy passwords stay blocked.
+  assert.notEqual(passwordError('smart123'), '');
+  assert.notEqual(passwordError('admin123'), '');
 });
 
 test('Password Policy - generated one-time passwords satisfy the policy', () => {
@@ -451,7 +456,7 @@ test('Password Policy - generated one-time passwords satisfy the policy', () => 
 
 const { buildFinanceIncomePayload, syncFinanceIncome,
         DEV_FINANCE_INCOME, defaultExpenseCategories,
-        expenseTotal, financeErrorText, RULES_DEPLOY_CMD } =
+        expenseTotal, financeErrorText } =
   await import('../src/erp/finance/financeSync.js');
 
 test('Finance income - advance then final cover the total exactly once', async () => {
@@ -547,8 +552,9 @@ test('Finance expense total - quantity × unit price, lone unit price, typed amo
 
 test('Finance errors - Firestore codes become an actionable line', () => {
   const denied = financeErrorText({ code: 'permission-denied', message: 'Missing or insufficient permissions.' });
-  assert.match(denied, /rules are not deployed/i);
-  assert.ok(denied.includes(RULES_DEPLOY_CMD), 'the deploy command is quoted back');
+  assert.match(denied, /blocked by the live security rules/i);
+  assert.match(denied, /Settings → Rules Status/, 'the admin is sent to the one pending-rules list');
+  assert.equal(/npx firebase deploy/.test(denied), false, 'the command lives on the checklist, not here');
   assert.match(financeErrorText({ code: 'unavailable' }), /connection/i);
   assert.equal(financeErrorText(new Error('boom')), 'boom', 'unknown errors keep the original text');
 });
@@ -970,4 +976,673 @@ test('Full period export - From/To filtering keeps the daily list and the report
   assert.match(src, /\.filter\(u => \(toF \? String\(u\.date\) <= toF : true\)\)/, 'and To');
   assert.ok(src.indexOf('const filtered =') < src.indexOf('const exportPdf'), 'the exports read the filtered list');
   assert.match(src, /rangeLabel: dailyLabel/, 'the PDF header carries the chosen period');
+});
+
+// ── Attendance statement periods + the leave application flow ─────────
+test('Statement periods - week/month/year resolve to real date bounds', async () => {
+  const { periodRange, expectedWorkdays, mondayOf } = await import('../src/staff/staffUtils.js');
+  const wed = periodRange('week', '2026-11-04');           // Wed of that week
+  assert.equal(wed.from, '2026-11-02', 'the week starts on Monday');
+  assert.equal(wed.to, '2026-11-08', 'and ends on Sunday');
+  assert.equal(mondayOf('2026-11-08'), '2026-11-02', 'Sunday belongs to the week before');
+  const mo = periodRange('month', '2026-02');
+  assert.equal(mo.from, '2026-02-01');
+  assert.equal(mo.to, '2026-02-28', 'a non-leap February ends on the 28th');
+  const yr = periodRange('year', '2026');
+  assert.equal(`${yr.from}|${yr.to}`, '2026-01-01|2026-12-31');
+  assert.deepEqual(periodRange('all', 'anything'), { from: '', to: '', label: 'All records' },
+    'the full record is deliberately unbounded');
+  const days = expectedWorkdays('2026-11-02', '2026-11-08');
+  assert.deepEqual(days, ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07'],
+    'Mon–Sat only — the office is shut on Sunday');
+  assert.deepEqual(expectedWorkdays('', ''), [], 'an open range claims no missing days');
+});
+
+test('Leave dates - the day count and the covered days match the letter', async () => {
+  const { leaveDays, leaveDateList, letterDate } = await import('../src/staff/leaveLetter.js');
+  assert.equal(leaveDays('2026-11-04', '2026-11-04'), 1, 'same day is one day');
+  assert.equal(leaveDays('2026-11-04', '2026-11-06'), 3, 'inclusive');
+  assert.equal(leaveDays('2026-11-06', '2026-11-04'), 0, 'an end before the start is no leave');
+  assert.deepEqual(leaveDateList('2026-10-30', '2026-11-02'),
+    ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'], 'a leave crossing a month still lists every day');
+  assert.deepEqual(leaveDateList('2026-11-06', '2026-11-04'), []);
+  assert.equal(letterDate('2026-11-02'), '02-Nov-2026');
+});
+
+test('Staff portal leave section - files a Pending application with a private letter path', () => {
+  const src = fs.readFileSync(new URL('../src/staff/sections/MyLeave.jsx', import.meta.url), 'utf8');
+  assert.match(src, /status: 'Pending'/, 'a fresh application always starts Pending');
+  assert.match(src, /staff-docs\/\$\{uid\}\/leave_/, 'the letter lives in the staff member\'s own private folder');
+  assert.doesNotMatch(src, /getDownloadURL/, 'no public download token anywhere in the leave flow');
+  assert.match(src, /await leaveLetterBlob\(letterData\(\)\)/, 'the sent image is re-drawn from the live form');
+  assert.match(src, /where\('staffUid', '==', uid\)/, 'a staff member reads only their own requests');
+  assert.match(src, /permission-denied/, 'an undeployed rules block is explained, not shown as a blank page');
+});
+
+test('Leave rules - staff cannot decide their own leave, admin appends to history', () => {
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const block = rules.slice(rules.indexOf('match /leaves/{leaveId}'), rules.indexOf('match /financeIncome'));
+  assert.ok(block.length > 40, 'the leaves collection has its own rules block');
+  assert.match(block, /request\.resource\.data\.staffUid == request\.auth\.uid/, 'a staff member files only their own');
+  assert.match(block, /request\.resource\.data\.status == 'Pending'/, 'and only as Pending');
+  assert.match(block, /hasAny\(\['status', 'adminNote', 'reviewedBy', 'reviewedAt'/,
+    'the decision fields are out of reach for staff');
+  assert.match(block, /allow delete: if isAdmin\(\) \|\|[\s\S]*resource\.data\.status == 'Pending'/,
+    'the admin removes any application; the staff member only a still-Pending one');
+
+  const admin = fs.readFileSync(new URL('../src/erp/pages/ERPStaffAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(admin, /history: \[\.\.\.\(Array\.isArray\(lvTarget\.history\) \? lvTarget\.history : \[\]\), entry\]/,
+    'the decision is appended to the history, never rewritten');
+  assert.match(admin, /doc\(db, 'leaves', lvTarget\.id\)/, 'the review writes back to the same document');
+  assert.match(admin, /leaveDateList\(l\.from, l\.to\)/, 'approved leave covers the statement days');
+  assert.match(admin, /'Approved leave'/, 'and reads as approved leave instead of Not recorded');
+});
+
+test('Leave entry is a real portal page and a real permission rule', () => {
+  const portal = fs.readFileSync(new URL('../src/staff/StaffPortalApp.jsx', import.meta.url), 'utf8');
+  assert.match(portal, /id: 'leave'[\s\S]{0,120}ruleKey: 'allowStaffLeave'/, 'the menu item is rule-guarded');
+  assert.match(portal, /case 'leave':\s*return <MyLeave \/>;/, 'and opens the leave section');
+  const defs = fs.readFileSync(new URL('../src/config/accessRules.js', import.meta.url), 'utf8');
+  assert.match(defs, /allowStaffLeave: true/, 'default access rules grant it');
+  assert.match(defs, /key: 'allowStaffLeave'/, 'and the admin can switch it per member');
+});
+
+test('Admin bell - a new leave application notifies and jumps to the review', () => {
+  const layout = fs.readFileSync(new URL('../src/erp/layout/ERPLayout.jsx', import.meta.url), 'utf8');
+  assert.match(layout, /collection\(db, 'leaves'\)/, 'the bell listens to leave applications');
+  assert.match(layout, /=== 'Pending'\)/, 'only un-reviewed ones are listed');
+  assert.match(layout, /link: '\/erp\/staff\?tab=attendance'/, 'clicking opens Staff → Attendance');
+  assert.match(layout, /\[\.\.\.leaveNotifs, \.\.\.liveNotifs\]/, 'leave pings merge into the same dropdown');
+  assert.match(layout, /seededLeaves\.current/, 'old pending requests do not arrive as unread spam');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. RULES STATUS — one list instead of twelve "deploy the rules" banners
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Rules checklist - every collection the ERP listens to is listed once', async () => {
+  const { RULES_BLOCKS, DEPLOY_COMMAND, pendingBlocks } = await import('../src/erp/rulesBlocks.js');
+  assert.ok(RULES_BLOCKS.length >= 20, 'the list covers the whole app, not just the newest page');
+  const seen = new Set();
+  RULES_BLOCKS.forEach(b => {
+    assert.ok(b.coll && b.name && b.page && b.since, `${b.coll} entry is complete`);
+    assert.equal(seen.has(b.coll), false, `${b.coll} is listed only once`);
+    seen.add(b.coll);
+  });
+  ['clients', 'staff', 'staffProgress', 'leaves', 'portfolioLinks', 'financeIncome', 'settings']
+    .forEach(c => assert.ok(seen.has(c), `${c} must be on the checklist`));
+  assert.match(DEPLOY_COMMAND, /firebase deploy --only firestore:rules/, 'the board carries the deploy command');
+
+  assert.deepEqual(pendingBlocks({ staff: 'live', leaves: 'blocked' }).map(b => b.coll).filter(c => c === 'leaves'), ['leaves']);
+  assert.deepEqual(pendingBlocks({ staff: 'live' }).filter(b => b.coll === 'staff'), []);
+  assert.equal(pendingBlocks(null).length, 0, 'no results yet means nothing is claimed as pending');
+});
+
+test('Rules status page - probes live, shows the pending list, and is reachable from Settings', () => {
+  const page = fs.readFileSync(new URL('../src/erp/pages/ERPRulesStatus.jsx', import.meta.url), 'utf8');
+  assert.match(page, /probeRulesBlocks/, 'the board reads the real deployed rules');
+  assert.match(page, /pendingBlocks\(states\)/, 'and marks only the blocked ones');
+  assert.match(page, /DEPLOY_COMMAND/, 'the command is copyable from here');
+  assert.match(page, /Check now/, 'one button re-checks everything');
+
+  const settings = fs.readFileSync(new URL('../src/erp/pages/ERPSettings.jsx', import.meta.url), 'utf8');
+  assert.match(settings, /\{id:'deploy',\s*label:'Rules Status'/, 'Settings has the Rules Status entry');
+  assert.match(settings, /\{section==='deploy' && \(/, 'and it renders the panel');
+});
+
+test('Rules banners - pages point at the one list instead of repeating commands', async () => {
+  const {
+    rulesNotice, staffRulesNotice, rulesMissingBlockNotice, rulesNotAdminNotice, RULES_PAGE,
+  } = await import('../src/erp/rulesNotice.js');
+  assert.equal(rulesNotice('Work Progress'), `Work Progress is blocked by the live security rules — check ${RULES_PAGE}.`);
+  assert.match(staffRulesNotice('Leave applications'), /ask your admin/);
+  assert.equal(RULES_PAGE, 'Settings → Rules Status');
+
+  // A refusal after other admin lists loaded means only this block is missing;
+  // a refusal with nothing loaded means the account is not admin. The two
+  // sentences must stay distinguishable or the admin fixes the wrong thing.
+  assert.match(rulesMissingBlockNotice('Saved portfolio links'), /missing this collection's block/);
+  assert.match(rulesNotAdminNotice('Saved portfolio links'), /not an admin on the live rules/);
+  assert.notEqual(rulesMissingBlockNotice('x'), rulesNotAdminNotice('x'));
+
+  // No firebase deploy command may be pasted into a page error any more —
+  // the checklist is the only place that shows it.
+  const files = [
+    '../src/erp/pages/ERPDashboard.jsx', '../src/erp/pages/ERPLeads.jsx',
+    '../src/erp/pages/ERPProjects.jsx', '../src/erp/pages/ERPClients.jsx',
+    '../src/erp/pages/ERPStaffWork.jsx', '../src/erp/pages/ERPStaffAttendance.jsx',
+    '../src/erp/components/StageReviewPanel.jsx', '../src/erp/useStaffDirectory.js',
+    '../src/erp/finance/financeSync.js', '../src/staff/sections/MyProgress.jsx',
+    '../src/staff/sections/MyLeave.jsx',
+  ];
+  files.forEach(f => {
+    const src = fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+    assert.equal(/npx firebase deploy/.test(src), false, `${f} must not print its own deploy command`);
+  });
+  const clientsSrc = fs.readFileSync(new URL('../src/erp/pages/ERPClients.jsx', import.meta.url), 'utf8');
+  assert.match(clientsSrc, /rulesMissingBlockNotice\('Saved portfolio links'\)/, 'the portfolio-links banner uses the precise cause');
+  assert.match(clientsSrc, /adminReadOk\.current = true/, 'a successful clients read proves the account is admin');
+  assert.match(clientsSrc, /rulesNotAdminNotice\('Saved portfolio links'\)/, 'and a total refusal names the non-admin account');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. CLIENT CODE SERIES — people SM/2026/111…, companies SM/2026/1111…
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Y = 2026;
+const code = (n) => `SM/${Y}/${n}`;
+
+test('Client code - a person starts at 111 and counts up one by one', async () => {
+  const { nextClientCodeValue, previewClientCode, makeClientCode } = await import('../src/erp/clientCode.js');
+  assert.equal(makeClientCode('individual', 111, Y), 'SM/2026/111');
+  // Nothing saved yet → the very first number of the series.
+  assert.equal(nextClientCodeValue('individual', [], Y), 111);
+  assert.equal(nextClientCodeValue('individual', [{ code: code(111) }], Y), 112);
+  assert.equal(nextClientCodeValue('individual', [{ code: code(111) }, { code: code(115) }], Y), 116);
+  assert.equal(previewClientCode('individual', [{ code: code(112) }], Y), 'SM/2026/113');
+});
+
+test('Client code - a company starts at 1111 on its own series', async () => {
+  const { nextClientCodeValue, previewClientCode } = await import('../src/erp/clientCode.js');
+  assert.equal(nextClientCodeValue('company', [], Y), 1111);
+  assert.equal(nextClientCodeValue('company', [{ code: code(1111) }], Y), 1112);
+  assert.equal(previewClientCode('company', [{ code: code(1113) }], Y), 'SM/2026/1114');
+  // A person's 111 is a different number from a company's 1111, so the
+  // company series still opens at its own starting value.
+  assert.equal(nextClientCodeValue('company', [{ code: code(111) }], Y), 1111);
+  // but a company that already holds 1111 pushes the next one to 1112.
+  assert.equal(nextClientCodeValue('company', [{ code: code(111) }, { code: code(1111) }], Y), 1112);
+});
+
+test('Client code - a used number is never handed out twice', async () => {
+  const { nextClientCodeValue, highestCodeInUse } = await import('../src/erp/clientCode.js');
+  const clients = [{ code: code(111) }, { code: code(1111) }, { code: 'SM/2025/999' }, { name: 'no code yet' }];
+  assert.equal(highestCodeInUse(clients, Y), 1111, 'last year and codeless clients are ignored');
+  // Counter lost / reset: the scan of the list still outranks it.
+  assert.equal(nextClientCodeValue('individual', clients, Y, 3), 1112);
+  // Counter ahead of the list (a client page that never refreshed): the counter wins.
+  assert.equal(nextClientCodeValue('individual', [{ code: code(111) }], Y, 400), 401);
+  assert.equal(nextClientCodeValue('individual', [], Y, 0), 111);
+});
+
+test('Client code - the Add Client form shows the next number before saving', () => {
+  const src = fs.readFileSync(new URL('../src/erp/pages/ERPClients.jsx', import.meta.url), 'utf8');
+  assert.match(src, /previewClientCode\(form\.kind, clients\)/, 'the modal previews the code');
+  assert.match(src, /await allocateClientCode\(payload\.kind, clients\)/, 'and the save allocates it');
+  assert.match(src, /CLIENT_KINDS\.map/, 'person / company is a real choice in the form');
+  assert.match(src, /assignCodeToSelected/, 'old clients without a code can be back-filled');
+  const leads = fs.readFileSync(new URL('../src/erp/pages/ERPLeads.jsx', import.meta.url), 'utf8');
+  assert.match(leads, /code: await allocateClientCode\(kind, \[\]\)/, 'a lead converted to a client also gets a code');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. DELETING TEST RECORDS — the admin and the staff member can undo what
+//     they filed by mistake (leave applications + attendance punches).
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Delete rules - the owner may withdraw a Pending leave and its letter', () => {
+  const fsRules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const leavesBlock = fsRules.match(/match \/leaves\/\{leaveId\}\s*\{[\s\S]*?\n\s{4}\}/);
+  assert.ok(leavesBlock, 'the leaves block exists');
+  assert.match(leavesBlock[0], /allow delete: if isAdmin\(\) \|\|[\s\S]*resource\.data\.staffUid == request\.auth\.uid[\s\S]*resource\.data\.status == 'Pending'/,
+    'staff can delete only their own undecided application');
+  assert.doesNotMatch(leavesBlock[0], /allow delete: if true/, 'deleting a leave is not open to everyone');
+
+  const stRules = fs.readFileSync(new URL('../storage.rules', import.meta.url), 'utf8');
+  const docsBlock = stRules.match(/match \/staff-docs\/\{authUid\}\/\{fileName\}\s*\{[\s\S]*?\n\s{4}\}/);
+  assert.ok(docsBlock, 'the staff-docs block exists');
+  assert.match(docsBlock[0], /allow delete: if isAdmin\(\) \|\|[\s\S]*request\.auth\.uid == authUid[\s\S]*fileName\.matches\('leave\(att\)\?_\.\*'\)/,
+    'the staff member can remove only their own leave letter / attachment');
+});
+
+test('Admin leave panel - delete removes the letter files and the document', () => {
+  const src = fs.readFileSync(new URL('../src/erp/pages/ERPStaffAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(src, /const removeLeave = async \(\) =>/, 'the delete handler exists');
+  assert.match(src, /deleteDoc\(doc\(db, 'leaves', lvDel\.id\)\)/, 'it removes the Firestore document');
+  assert.match(src, /deleteObject\(storageRef\(storage, p\)\)/, 'and the private letter files with it');
+  assert.match(src, /title="Delete Leave Application\?"/, 'behind its own confirm box');
+  assert.match(src, /rulesNotice\('This delete'\)/, 'a blocked delete points at the Rules Status list');
+});
+
+test('Admin attendance - a wrong or test punch can be deleted from the fix box', () => {
+  const src = fs.readFileSync(new URL('../src/erp/pages/ERPStaffAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(src, /const removeAttendance = async \(\) =>/, 'the delete handler exists');
+  assert.match(src, /deleteDoc\(doc\(db, 'attendance', attDel\.id\)\)/, 'it removes the punch document');
+  assert.match(src, /setRecords\(p => p\.filter\(r => r\.id !== attDel\.id\)\)/, 'and drops it from the list at once');
+  assert.match(src, /title="Delete Attendance Record\?"/, 'behind its own confirm box');
+  assert.match(src, /Delete this record/, 'the editor offers the delete');
+});
+
+test('Staff portal leave - only a Pending application can be withdrawn', () => {
+  const src = fs.readFileSync(new URL('../src/staff/sections/MyLeave.jsx', import.meta.url), 'utf8');
+  assert.match(src, /const withdrawLeave = async \(\) =>/, 'the withdraw handler exists');
+  assert.match(src, /deleteDoc\(doc\(db, 'leaves', delTarget\.id\)\)/, 'it removes the application');
+  assert.match(src, /\{st === 'Pending' && \(/, 'the button only shows while nothing is decided');
+  assert.match(src, /title="Withdraw this application\?"/, 'behind its own confirm box');
+  assert.match(src, /staffRulesNotice\('This withdrawal'\)/, 'a blocked withdrawal points the staff member at the admin');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. DAILY WORK REPORT — one real PDF, readable on a phone
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Daily report rows - empty blocks never print and item-only docs still do', async () => {
+  const { dailyReportRows, reportTasksOf, periodReportRows, hoursNumber } = await import('../src/erp/utils/dailyReportPdf.js');
+
+  const tasks = [
+    { no: 1, start: '09:00', end: '11:00', hours: '2.0 hrs', description: 'Built the invoice screen', status: 'Completed' },
+    { no: 2, start: '', end: '', hours: '', description: '   ', status: 'Completed' },
+    { no: 3, start: '14:00', end: '', hours: '', description: 'Ticket triage', status: 'In Progress' },
+  ];
+  const rows = dailyReportRows(tasks);
+  assert.equal(rows.length, 2, 'the blank pre-dated block is dropped');
+  assert.deepEqual(rows[0], ['1', '09:00', '11:00', '2.0 hrs', 'Built the invoice screen', 'Completed']);
+  assert.deepEqual([rows[1][2], rows[1][3]], ['\u2014', '\u2014'], 'a missing time prints as a dash, not an empty cell');
+
+  // The older flat shape the Excel import wrote (items + one pair of times).
+  const flat = reportTasksOf({ items: ['Support calls', 'Docs update'], startTime: '09:00', endTime: '17:00', totalHours: '8.0 hrs', status: 'Completed' });
+  assert.equal(flat.length, 2, 'items become task rows');
+  assert.equal(flat[1].description, 'Docs update');
+  assert.equal(flat[1].start, '09:00', 'the sheet times carry onto every item');
+  assert.deepEqual(dailyReportRows(flat).map(r => r[4]), ['Support calls', 'Docs update']);
+
+  const period = periodReportRows([
+    { date: '2026-11-03', tasks: [{ description: 'Later day', start: '09:00', end: '10:00', hours: '1.0 hrs' }] },
+    { date: '2026-11-01', tasks: [{ description: 'Earlier day', start: '11:00', end: '12:00', hours: '1.0 hrs' }] },
+  ]);
+  assert.deepEqual(period.map(r => r[0]), ['2026-11-01', '2026-11-03'], 'a week reads in date order');
+  assert.equal(hoursNumber('8.5 hrs'), 8.5);
+  assert.equal(hoursNumber('—'), 0);
+});
+
+test('Daily report - the staff sheet saves as a PDF, no print dialog anywhere', () => {
+  const staff = fs.readFileSync(new URL('../src/staff/sections/DailyUpdate.jsx', import.meta.url), 'utf8');
+  const admin = fs.readFileSync(new URL('../src/erp/pages/ERPStaffUpdates.jsx', import.meta.url), 'utf8');
+  for (const [where, src] of [['staff portal', staff], ['admin daily reports', admin]]) {
+    assert.doesNotMatch(src, /window\.print\(\)/, `${where} never opens the printer`);
+    assert.doesNotMatch(src, /window\.open\('',\s*'_blank'\)/, `${where} never opens a blank print tab`);
+  }
+  assert.match(staff, /saveDailyReportPdf\(/, 'the staff sheet goes through the PDF builder');
+  assert.match(admin, /saveDailyReportPdf\(/, 'and so does the admin copy of it');
+  assert.match(admin, /handleSheetPdf\(u\)/, 'the row button is wired to the PDF');
+  assert.doesNotMatch(admin, /handlePrintWeek/, 'the duplicate print-range button is gone (Export PDF already exists)');
+});
+
+test('Daily report on a phone - tasks stack as cards instead of running off screen', () => {
+  const staff = fs.readFileSync(new URL('../src/staff/sections/DailyUpdate.jsx', import.meta.url), 'utf8');
+  assert.match(staff, /const useNarrow = /, 'the sheet knows the screen width');
+  assert.match(staff, /const narrow = useNarrow\(\)/, 'and reads it');
+  assert.match(staff, /narrow \? cardBox : rowBox/, 'one task = a wrapping card on a phone, a row on a laptop');
+  assert.match(staff, /const TASK_GRID = /, 'the laptop row keeps the printed sheet columns');
+  assert.doesNotMatch(staff, /<table/, 'no wide HTML table that a 520 px screen cannot hold');
+  assert.match(staff, /overflowX: 'auto'/, 'a laptop row that cannot fit scrolls inside its own box');
+  assert.match(staff, /const \[delTarget, setDelTarget\] = useState\(null\)/, 'deleting a report uses the shared confirm box');
+  assert.doesNotMatch(staff, /window\.confirm\(/, 'not the browser dialog');
+});
+
+
+
+// ── 14. Login email change (same person, new address) ─────────────
+test('Email checks - the login address is validated before Firebase sees it', async () => {
+  const { emailError, sameEmail, loginMailOf } = await import('../src/erp/emailPolicy.js');
+  assert.equal(emailError('kasun@smart.com'), '', 'a normal address passes');
+  assert.match(emailError(''), /required/i, 'empty is refused');
+  assert.match(emailError('kasun'), /valid email/i, 'no @ / no domain');
+  assert.match(emailError('ka sun@smart.com'), /spaces/i, 'a space is refused');
+  assert.match(emailError('kasun@smart'), /valid email/i, 'a domain without a dot is refused');
+  assert.ok(sameEmail('Kasun@Smart.COM ', 'kasun@smart.com'), 'login emails are case and space insensitive');
+  assert.ok(!sameEmail('a@x.com', 'b@x.com'), 'a different address is a different login');
+  assert.equal(loginMailOf({ email: 'fallback@x.com' }), 'fallback@x.com', 'the old email field still counts');
+  assert.equal(loginMailOf({ loginEmail: 'main@x.com', email: 'old@x.com' }), 'main@x.com', 'loginEmail wins');
+});
+
+test('Login email - the admin stages the new address, never rewrites the live one', () => {
+  const staff = fs.readFileSync(new URL('../src/erp/pages/ERPStaff.jsx', import.meta.url), 'utf8');
+  assert.match(staff, /import \{ emailError, sameEmail, loginMailOf \} from '\.\.\/emailPolicy';/,
+    'the page shares one email check with the portal');
+  assert.match(staff, /const mailErr = emailError\(form\.email\);/, 'typed address is validated on save');
+  assert.match(staff, /disabled=\{busy \|\| !form\.name\.trim\(\) \|\| !!emailError\(form\.email\)/,
+    'and the Save button stays shut while it is invalid');
+
+  const edit = staff.slice(staff.indexOf('if (editId) {'), staff.indexOf('// Photo handling: new file'));
+  assert.ok(edit.length > 60, 'the edit branch was found');
+  assert.match(edit, /pendingLoginEmail: nextMail/, 'a changed address is staged');
+  assert.match(edit, /emailChangeLog: arrayUnion\(\.\.\.log\)/, 'and appended to who/when history');
+  assert.match(edit, /state: 'Requested'/, 'the log says it is only requested');
+  assert.match(edit, /state: 'Replaced'/, 'an older waiting request is marked replaced');
+  assert.doesNotMatch(edit, /loginEmail: nextMail/, 'the working login is not rewritten by the admin');
+
+  assert.match(staff, /const handleCancelMailChange = async \(s\) =>/, 'the admin can withdraw the request');
+  assert.match(staff, /pendingLoginEmail: null,\s*\n\s*pendingLoginEmailAt: null,/, 'clearing the staged address');
+  assert.match(staff, /state: 'Cancelled'/, 'and recording that too');
+  assert.match(staff, /Cancel this email change\?/, 'behind its own confirm box');
+  assert.match(staff, /Change Login Email/, 'reachable from the staff profile panel');
+  assert.match(staff, /waiting for \{s\.pendingLoginEmail\}/, 'the staff list marks the row while it waits');
+});
+
+test('Login email - only the signed-in owner can move the account, with their password', async () => {
+  const flow = fs.readFileSync(new URL('../src/staff/loginEmail.js', import.meta.url), 'utf8');
+  assert.match(flow, /reauthenticateWithCredential\(/, 'the current password is verified first');
+  assert.match(flow, /updateEmail\(user, to\)/, 'then the account itself is moved');
+  assert.match(flow, /auth\/email-already-in-use/, 'an address taken by somebody else is refused');
+  assert.match(flow, /auth\/wrong-password|auth\/invalid-credential/, 'a wrong password reads as a wrong password');
+  assert.match(flow, /before\.pendingLoginEmail/, 'the staged address is re-read before writing');
+  assert.match(flow, /if \(!sameEmail\(staged, to\)\) throw/, 'and a mismatch is rejected, not applied');
+  assert.match(flow, /loginEmail: to,\s*\n\s*email: to,/, 'the staff record then carries the new address');
+  assert.match(flow, /state: 'Applied'/, 'the history shows it landed');
+  assert.doesNotMatch(flow, /collection\(db, 'staff'\)/, 'a staff member never touches another record');
+  assert.doesNotMatch(flow, /getDownloadURL|deleteDoc/, 'no file links, no deletions in this flow');
+
+  const profile = fs.readFileSync(new URL('../src/staff/sections/MyProfile.jsx', import.meta.url), 'utf8');
+  assert.match(profile, /function LoginEmailMove\(\)/, 'the portal shows a confirm panel');
+  assert.match(profile, /applyLoginEmailChange\(\{ uid: staffProfile\.id, newEmail: to, password: pwd \}\)/,
+    'using the signed-in person\'s own record');
+  assert.match(profile, /label="Current Password" value=\{pwd\} type="password"/, 'asking the password');
+  assert.match(profile, /disabled=\{busy \|\| !pwd\}/, 'and refusing to run without it');
+  assert.match(profile, /if \(!to\) \{\s*\n\s*if \(!done\) return null;/, 'the panel only exists while a change waits');
+});
+
+test('Login email rules - the self-update branch accepts only the staged address', () => {
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const block = rules.slice(rules.indexOf('match /staff/{uid}'), rules.indexOf('match /workAssignments/'));
+  assert.ok(block.length > 60, 'the staff block was found');
+  assert.match(block, /hasOnly\(\['docs', 'updatedAt'\]\)/, 'the KYC upload branch is unchanged');
+  assert.match(block, /'pendingLoginEmail' in resource\.data/, 'an email write needs a staged request');
+  assert.match(block, /resource\.data\.pendingLoginEmail == request\.resource\.data\.loginEmail/,
+    'and only that exact address is accepted');
+  assert.match(block, /request\.resource\.data\.loginEmail == request\.resource\.data\.email/,
+    'both copies of the address must move together');
+  assert.match(block, /hasOnly\(\['loginEmail', 'email', 'pendingLoginEmail', 'pendingLoginEmailAt', 'emailChangeLog', 'updatedAt'\]\)/,
+    'nothing else on the record can change in the same write');
+});
+
+// ── 15. Week end report mails (Cloud Function + Gmail) ────────────
+test('Week maths - the ERP and the scheduler cut the week at the same Monday', async () => {
+  const { weekBounds, periodLabelOf, isoWeekNumber } = await import('../src/erp/weeklyReportMails.js');
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const server = req('../functions/weekUtils.js');
+
+  // 2026-11-02 is a Monday and the Wednesday belongs to the same week.
+  const mon = weekBounds('2026-11-04');
+  assert.equal(mon.from, '2026-11-02', 'Monday is the first day');
+  assert.equal(mon.to, '2026-11-08', 'Sunday closes it');
+  assert.equal(mon.number, 45, 'and the ISO week number is 45');
+  assert.match(periodLabelOf('2026-11-04'), /^W45 - Mon 02 Nov 2026 to Sun 08 Nov 2026$/,
+    'one label for the subject, the PDF heading and the ledger');
+
+  ['2026-11-02', '2026-11-08', '2026-01-01', '2025-12-29', '2026-06-17'].forEach(d => {
+    assert.deepEqual(weekBounds(d), server.weekBounds(d), `${d} resolves the same way on both sides`);
+  });
+  assert.equal(isoWeekNumber('2025-12-29'), 1, 'the Monday before New Year is still week 1');
+});
+
+test('Week end ledger - mailed, silent and failed staff are counted per person', async () => {
+  const { summariseWeekRuns, runStatusOf } = await import('../src/erp/weeklyReportMails.js');
+  const rows = [
+    { staffUid: 'b', staffName: 'Zara', status: 'Sent', runAt: '2026-11-08T18:00:00Z', daysLogged: 5, tasks: 12, pages: 2 },
+    { staffUid: 'a', staffName: 'Amal', status: 'No reports filed', runAt: '2026-11-08T18:00:00Z' },
+    // An older manual run for Zara that the Sunday scheduler overtook.
+    { staffUid: 'b', staffName: 'Zara', status: 'Failed', runAt: '2026-11-08T09:00:00Z', error: 'smtp down' },
+  ];
+  const s = summariseWeekRuns(rows);
+  assert.equal(s.rows.length, 2, 'one row per staff member, newest run kept');
+  assert.equal(s.rows[0].staffName, 'Amal', 'sorted by name');
+  assert.equal(s.rows[1].status, 'Sent', 'the newer run wins');
+  assert.equal(s.sent, 1);
+  assert.equal(s.empty, 1, 'a person who filed nothing is counted, not hidden');
+  assert.equal(s.failed, 0, 'and the superseded failure is gone');
+  assert.equal(s.tasks, 12);
+  assert.equal(runStatusOf({ status: 'No reports filed' }).tone, 'amber',
+    'nothing filed is amber (the run worked), not red');
+  assert.equal(runStatusOf({ status: 'Sent' }).tone, 'green');
+  assert.equal(runStatusOf({ status: 'Whatever' }).tone, 'muted');
+});
+
+test('Week end mail wording - every failure names the command to run', async () => {
+  const { mailRunProblem, describeMailRun } = await import('../src/erp/weeklyReportMails.js');
+  assert.match(mailRunProblem({ code: 'permission-denied' }), /weeklyReportRuns rules block is not deployed/);
+  assert.match(mailRunProblem({ code: 'permission-denied' }), /npx firebase deploy --only firestore:rules,storage/);
+  assert.match(mailRunProblem({ message: 'functions/not-found' }), /npx firebase deploy --only functions/);
+  assert.match(mailRunProblem({ message: 'GMAIL_APP_PASSWORD is not set' }), /functions:secrets:set GMAIL_APP_PASSWORD/);
+  assert.match(mailRunProblem({ message: 'Please upgrade to the Blaze plan' }), /Blaze plan/);
+  assert.match(mailRunProblem({ message: 'offline' }), /No network/);
+  // A callable that dies server-side only reports 'internal'; the admin has to
+  // be pointed at the log instead of being shown the word back.
+  assert.match(mailRunProblem({ code: 'internal', message: 'internal [0]' }), /Functions → Logs/);
+  assert.ok(!/^internal/.test(mailRunProblem({ code: 'internal', message: 'internal [0]' })),
+    'the raw code is never the whole message');
+  assert.equal(mailRunProblem({ code: 'unauthenticated', message: 'functions/unauthenticated: Viewer' }),
+    'The mail run did not finish: Viewer', 'the SDK prefix is stripped, the reason is kept');
+  assert.equal(mailRunProblem({ code: 'resource-exhausted', message: '[0]' }),
+    'The mail run did not finish — check the Cloud Functions logs.', 'junk alone still gets a sentence');
+
+  const line = describeMailRun({
+    weekStart: '2026-11-02', to: 'matrixgroup.smart@gmail.com',
+    sent: [{}, {}, {}], skipped: [{}], failed: [{}],
+  });
+  assert.match(line, /^W45 - Mon 02 Nov 2026 to Sun 08 Nov 2026 → matrixgroup\.smart@gmail\.com: 3 PDFs mailed/);
+  assert.match(line, /1 staff filed no sheet/);
+  assert.match(line, /1 failed/);
+});
+
+test('Weekly PDF - the server builds one real file per staff member', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const { buildWeeklyReportPdf } = req('../functions/weeklyReportPdf.js');
+  const { jsPDF } = req('jspdf');
+
+  const built = buildWeeklyReportPdf({
+    Doc: jsPDF,
+    staffName: 'Zara Nimesha',
+    staffId: 'STF-00012',
+    periodLabel: 'W45 - Mon 02 Nov 2026 to Sun 08 Nov 2026',
+    sentTo: 'matrixgroup.smart@gmail.com',
+    generatedBy: 'SMART weekly scheduler',
+    reports: [
+      { date: '2026-11-02', totalWorkHours: '8.5', tasks: [
+        { start: '09:00', end: '11:30', hours: '2.5', description: 'Built the client quotation letterhead', status: 'Completed' },
+        { start: '12:00', end: '18:00', hours: '6', description: 'https://findmysmart.com/portfolio/smart-folio-ai-dashboard-redesign', status: 'In Progress' },
+      ] },
+      { date: '2026-11-04', totalWorkHours: '9', items: ['ERP rules checklist', 'Staff portal weekly mail panel'] },
+    ],
+  });
+  const bytes = Buffer.from(built.buffer);
+  assert.equal(bytes.subarray(0, 8).toString(), '%PDF-1.3', 'a real PDF, not a print tab');
+  assert.ok(bytes.length > 3000, `the file has body (${bytes.length} bytes)`);
+  assert.match(built.fileName, /^WEEKLY-WORK-REPORT-Zara-Nimesha-W45/, 'named per person per week');
+  assert.equal(built.rows, 4, 'every task from both days is on the sheet');
+  assert.ok(built.pages >= 1);
+
+  // A week with sheets but no described work still produces a file.
+  const empty = buildWeeklyReportPdf({ Doc: jsPDF, staffName: 'Amal', periodLabel: 'W45', reports: [{ date: '2026-11-03', tasks: [] }] });
+  assert.equal(empty.rows, 0);
+  assert.ok(Buffer.from(empty.buffer).length > 2000, 'and it is not an empty shell');
+});
+
+test('Scheduler wiring - Sunday night, roster-only, one mail per person, ledger for every outcome', () => {
+  const src = fs.readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  assert.match(src, /const WEEK_CRON = '30 23 \* \* 0'/, 'runs at 23:30 on Sunday');
+  assert.match(src, /const TIME_ZONE = 'Asia\/Colombo'/, 'office time zone');
+  assert.match(src, /onSchedule\(WEEK_CRON, \{ timeZone: TIME_ZONE \}/, 'the cron is attached to the scheduler');
+  assert.match(src, /exports\.sendWeeklyReportsNow = onCall/, 'and an admin can run it on demand');
+  assert.match(src, /Only the administrator can trigger the report mails/, 'the callable refuses other callers');
+  assert.match(src, /s\.deleted === true\) return/, 'a deleted staff member is not mailed');
+  assert.match(src, /for \(const \[uid, person\] of Object\.entries\(roster\)\)/, 'one pass per staff member');
+  assert.match(src, /attachments: \[\{ filename: built\.fileName/, 'one PDF attachment per mail');
+  assert.match(src, /status: 'No reports filed'/, 'whoever filed nothing is recorded');
+  assert.match(src, /buildWeeklyReportPdf\(\{ Doc: jsPDF/, 'drawn by the shared server builder');
+  assert.match(src, /alias\[String\(s\.staffId\)\.trim\(\)\.toLowerCase\(\)\] = d\.id/, 'the printed STF code maps to the same person');
+  assert.match(src, /resolveUid\(r\.authUid \|\| r\.staffId\)/, 'so an imported sheet row is not mailed as former staff');
+
+  // The SMTP key is only ever read from Functions secrets.
+  assert.match(src, /process\.env\.GMAIL_APP_PASSWORD/, 'the password comes from a Function secret');
+  assert.ok(!/pass: '[^']/.test(src), 'and is never hardcoded in the source');
+  assert.ok(!/base\s*=\s*\{[\s\S]{0,400}?pass/i.test(src), 'the ledger template carries no credentials');
+  assert.ok(!/ledRef\.set\([\s\S]{0,80}?smtpPass/.test(src), 'and no ledger row is written with the password');
+});
+
+test('Week end mails rules, list and client - admin-only ledger, listed once, button wired', async () => {
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const block = rules.slice(rules.indexOf('match /weeklyReportRuns/{runId}'), rules.indexOf('match /settings/{settingId}'));
+  assert.ok(block.length > 80, 'the ledger block exists');
+  assert.match(block, /allow read, write: if isAdmin\(\);/, 'only the admin reads the ledger');
+  assert.match(block, /match \/reportEmailConfig\/\{configId\} \{[\s\S]*allow write: if isAdmin\(\);/, 'the mail config is admin-only');
+
+  const { RULES_BLOCKS, pendingBlocks } = await import('../src/erp/rulesBlocks.js');
+  const names = RULES_BLOCKS.map(b => b.coll);
+  assert.ok(names.includes('weeklyReportRuns') && names.includes('reportEmailConfig'), 'both are on the deploy list');
+  assert.equal(new Set(names).size, names.length, 'and nothing is listed twice');
+  assert.equal(pendingBlocks({ weeklyReportRuns: 'blocked' })[0].coll, 'weeklyReportRuns');
+  assert.ok(RULES_BLOCKS.some(b => b.coll === 'staff' && b.changed),
+    'the rewritten staff block is flagged for a redeploy');
+
+  const cfg = JSON.parse(fs.readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'));
+  const fn = (cfg.functions || [])[0];
+  assert.equal(fn.source, 'functions', 'firebase.json points at the functions folder');
+  assert.ok(fn.ignore.includes('node_modules'), 'node_modules is not uploaded');
+
+  const page = fs.readFileSync(new URL('../src/erp/pages/ERPStaffUpdates.jsx', import.meta.url), 'utf8');
+  assert.match(page, /<WeekEndMailsPanel/, 'the Daily Updates page shows the ledger');
+  assert.match(page, /await fetchWeekRuns\(weekOf\)/, 'reads this week from Firestore');
+  assert.match(page, /await emailWeekNow\(weekOf\)/, 'and can trigger the run');
+  assert.match(page, /Confirm . mail \$\{staffCount/, 'sending mail needs a second click');
+  assert.match(page, /onClick=\{\(\) => setArmed\(false\)\}/, 'and that arm can be cancelled');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16. OFFER LETTERS — filled from the staff record, editable, real PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('Offer letter - staff details fill the letter, salary sums correctly', async () => {
+  const m = await import('../src/erp/offerLetters/offerLetterModel.js');
+  const staff = {
+    id: 'u1', staffId: 'SMART-001', name: 'Ashan Rifkan', position: 'Software Engineer',
+    department: 'Software', email: 'ashan@smart.com', phone: '+94 76 202 4545',
+    address: 'Main Street, Kalmunai', joinedDate: '2026-01-05',
+    basicSalary: 85000, allowances: 15000, deductions: 5000,
+  };
+  const f = m.offerFromStaff(staff, { refNo: 'SMART/HR/OL/2026/001', date: '2026-11-04' });
+  assert.equal(f.staffName, 'Ashan Rifkan');
+  assert.equal(f.staffId, 'u1');
+  assert.equal(f.staffCode, 'SMART-001');
+  assert.equal(f.position, 'Software Engineer');
+  assert.equal(f.department, 'Software');
+  assert.equal(f.startDate, '2026-01-05', 'joining date comes from the staff record');
+  assert.equal(m.netSalary(f), 95000, 'basic + allowances - deductions');
+  assert.equal(m.offerSummary(f), 'LKR 95,000 / month');
+
+  const worse = { ...f, basicSalary: '1000', allowances: '', deductions: '5000' };
+  assert.equal(m.netSalary(worse), 0, 'deductions never make a negative salary');
+  assert.equal(m.offerProblem(worse), 'Deductions are larger than the salary — check the figures.');
+
+  assert.equal(m.offerProblem({ ...f, staffName: '' }), 'Choose the staff member this letter is for.');
+  assert.equal(m.offerProblem({ ...f, basicSalary: 0 }), 'Enter the basic salary.');
+  assert.equal(m.offerProblem(f), '', 'a filled letter is complete');
+});
+
+test('Offer letter - salary in words, reference series and dates', async () => {
+  const m = await import('../src/erp/offerLetters/offerLetterModel.js');
+  assert.equal(m.amountInWords(95000), 'Ninety-Five Thousand Rupees Only');
+  assert.equal(m.amountInWords(105000), 'One Hundred and Five Thousand Rupees Only');
+  assert.equal(m.amountInWords(1500.5), 'One Thousand Five Hundred Rupees and Fifty Cents Only');
+  assert.equal(m.amountInWords(0), '');
+
+  assert.equal(m.makeRefNo(1, new Date('2026-11-04T12:00:00Z')), 'SMART/HR/OL/2026/001');
+  assert.equal(m.makeRefNo(12, new Date('2026-11-04T12:00:00Z')), 'SMART/HR/OL/2026/012');
+  assert.equal(m.nextSequence([
+    { refNo: 'SMART/HR/OL/2026/001' }, { refNo: 'SMART/HR/OL/2026/007' }, { refNo: '' },
+  ]), 8);
+
+  assert.equal(m.prettyDate('2026-11-04'), '04 November 2026');
+  assert.equal(m.prettyDate(''), '');
+  assert.match(m.todayIso(new Date('2026-03-09T10:00:00')), /^2026-03-09$/);
+});
+
+test('Offer letter - standard terms carry no money, edits keep a who/when history', async () => {
+  const m = await import('../src/erp/offerLetters/offerLetterModel.js');
+  const terms = m.defaultTerms({ probationMonths: '3' });
+  assert.ok(terms.length >= 6, 'a full set of terms is offered');
+  assert.ok(terms.every(t => t.title && t.text), 'every term has a heading and text');
+  assert.ok(terms.every(t => !/LKR|Rs\.?\s*\d/.test(t.text)), 'salary is read from the fields, never frozen into a term');
+  assert.match(terms[0].text, /3 months/);
+
+  const auto = m.resolvedOpening({ staffName: 'Ashan Rifkan', position: 'Software Engineer', department: 'Software' });
+  assert.match(auto, /^Dear Ashan Rifkan,/);
+  assert.match(auto, /Software Engineer in the Software Department/);
+  assert.match(m.resolvedClosing({ staffName: 'Ashan Rifkan' }), /^We look forward to welcoming Ashan/);
+  // A typed paragraph always wins over the auto one.
+  assert.equal(m.resolvedOpening({ staffName: 'X', opening: 'Custom words.' }), 'Custom words.');
+
+  const diff = m.diffOffer(
+    { basicSalary: 85000, position: 'Engineer', status: 'Draft' },
+    { basicSalary: '95000', position: 'Engineer', status: 'Issued' },
+    'admin@smart.com',
+  );
+  assert.equal(diff.length, 2, 'only the changed values are logged');
+  assert.deepEqual(diff.map(d => d.field), ['Basic salary', 'Status']);
+  assert.equal(diff[0].from, '85000');
+  assert.equal(diff[0].to, '95000');
+  assert.equal(diff[0].by, 'admin@smart.com');
+});
+
+test('Offer letter - the PDF is a real A4 file, not a print dialog', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const { jsPDF } = req('jspdf');
+  const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  // jsPDF needs a DOM-ish global only for saving; building the doc is pure.
+  const { buildOfferLetterPdf, offerPdfFileName } = await import('../src/erp/offerLetters/offerLetterPdf.js');
+  const m = await import('../src/erp/offerLetters/offerLetterModel.js');
+  const base = m.offerFromStaff({
+    name: 'Ashan Rifkan', staffId: 'SMART-001', position: 'Software Engineer',
+    department: 'Software', email: 'ashan@smart.com', phone: '+94 76 202 4545',
+    address: 'Main Street, Kalmunai', joinedDate: '2026-01-05',
+    basicSalary: 85000, allowances: 15000, deductions: 5000,
+  }, { refNo: 'SMART/HR/OL/2026/001', date: '2026-11-04' });
+
+  const doc = buildOfferLetterPdf(base, { logoDataUrl: logo });
+  const out = doc.output();
+  assert.ok(out.startsWith('%PDF-'), 'a real PDF stream');
+  assert.ok(out.length > 12000, 'the letter has real content');
+  assert.equal(doc.internal.pageSize.getWidth(), 595.28, 'A4 width');
+  assert.equal(doc.internal.pageSize.getHeight(), 841.89, 'A4 height');
+  assert.equal(typeof jsPDF, 'function', 'built on jsPDF');
+
+  // A very long letter must paginate instead of running off the paper.
+  const long = {
+    ...base,
+    notes: 'Long note. '.repeat(120),
+    terms: Array.from({ length: 12 }, (_, i) => ({ title: `Extra term ${i + 1}`, text: 'Word '.repeat(90) })),
+  };
+  const big = buildOfferLetterPdf(long, {});
+  assert.ok(big.internal.getNumberOfPages() >= 3, `long letters continue onto more pages (got ${big.internal.getNumberOfPages()})`);
+  assert.ok(big.output().startsWith('%PDF-'));
+
+  assert.equal(offerPdfFileName(base), 'OFFER-LETTER-ASHAN-RIFKAN-SMART-HR-OL-2026-001.pdf');
+});
+
+test('Offer letters page - route, sidebar, rules block and deploy list', async () => {
+  const app = fs.readFileSync(new URL('../src/erp/ERPApp.jsx', import.meta.url), 'utf8');
+  assert.match(app, /const ERPOfferLetters = lazy\(\(\) => import\('\.\/pages\/ERPOfferLetters'\)\)/);
+  assert.match(app, /<Route path="offer-letters"\s+element=\{<Suspense[\s\S]{0,60}?<ERPOfferLetters \/><\/Suspense>\}/);
+
+  const nav = fs.readFileSync(new URL('../src/erp/layout/ERPSidebar.jsx', import.meta.url), 'utf8');
+  assert.match(nav, /\{ path: '\/erp\/offer-letters',\s*label: 'Offer Letters',\s*icon: Briefcase\s*\}/);
+
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/offerLetters\/\{letterId\} \{\s*allow read, write: if isAdmin\(\);\s*\}/,
+    'offer letters are admin-only');
+
+  const { RULES_BLOCKS, pendingBlocks } = await import('../src/erp/rulesBlocks.js');
+  assert.ok(RULES_BLOCKS.some(b => b.coll === 'offerLetters'), 'the new collection is on the deploy checklist');
+  assert.equal(pendingBlocks({ offerLetters: 'blocked' })[0].coll, 'offerLetters');
+
+  const page = fs.readFileSync(new URL('../src/erp/pages/ERPOfferLetters.jsx', import.meta.url), 'utf8');
+  assert.match(page, /offerFromStaff\(s, \{/, 'picking a staff member fills the form');
+  assert.match(page, /saveOfferLetterPdf\(saved, \{ logoDataUrl: logo \}\)/, 'Save & PDF downloads the real file');
+  assert.ok(!/window\.print|printDialog/.test(page), 'never the browser print dialog');
+  assert.match(page, /diffOffer\(editing, payload, adminName\)/, 'money edits keep a history entry');
+  assert.match(page, /rulesNotice\('Offer letters'\)/, 'a blocked list points at Rules Status');
 });

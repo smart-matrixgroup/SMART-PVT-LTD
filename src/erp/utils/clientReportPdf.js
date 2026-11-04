@@ -105,19 +105,21 @@ export function saveClientsRosterPdf({ clients = [], projectCountOf = () => 0, w
     title: 'CLIENTS REPORT',
     subtitle: `${list.length} client${list.length === 1 ? '' : 's'} in the ERP`,
     columns: [
-      { label: 'CLIENT', width: 20, wrap: true },
-      { label: 'COMPANY', width: 20, wrap: true },
-      { label: 'EMAIL', width: 22, wrap: true },
-      { label: 'PHONE', width: 14 },
-      { label: 'SINCE', width: 12 },
+      { label: 'CODE', width: 12 },
+      { label: 'CLIENT', width: 18, wrap: true },
+      { label: 'COMPANY', width: 18, wrap: true },
+      { label: 'EMAIL', width: 20, wrap: true },
+      { label: 'PHONE', width: 13 },
+      { label: 'SINCE', width: 10 },
       { label: 'PROJECTS', width: 8, align: 'center' },
-      { label: 'WORK DONE', width: 10, align: 'center' },
-      { label: 'STATUS', width: 10, align: 'center' },
+      { label: 'WORK DONE', width: 9, align: 'center' },
+      { label: 'STATUS', width: 9, align: 'center' },
     ],
     rows: list.map(c => {
       const work = workOf(c).filter(w => !w.removed);
       const done = work.filter(w => w.status === 'done').length;
       return [
+        text(c.code) || '—',
         text(c.name) || '—',
         text(c.company) || '—',
         text(c.loginEmail || c.email) || '—',
@@ -128,7 +130,7 @@ export function saveClientsRosterPdf({ clients = [], projectCountOf = () => 0, w
         String(c.status || 'active'),
       ];
     }),
-    statusCol: 7,
+    statusCol: 8,
     summary: [
       { label: 'Total clients', value: String(list.length) },
       { label: 'Active', value: String(active) },

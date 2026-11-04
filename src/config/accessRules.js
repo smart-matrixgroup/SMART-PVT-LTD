@@ -12,6 +12,7 @@ export const DEFAULT_ACCESS_RULES = {
   allowStaffDailyLog: true,
   allowStaffWork: true,
   allowStaffAttendance: true,
+  allowStaffLeave: true,
   allowStaffSalary: true,
   allowStaffDocuments: true,
   allowStaffMessages: true,
@@ -56,6 +57,12 @@ export const STAFF_PERMISSION_DEFINITIONS = [
     label: 'Attendance Check-in / Check-out',
     category: 'Time & Attendance',
     description: 'Allow staff to record daily check-in, check-out, and view attendance logs.',
+  },
+  {
+    key: 'allowStaffLeave',
+    label: 'Leave Application',
+    category: 'Time & Attendance',
+    description: 'Allow staff to draw and send a leave application to the admin, and to view its approval status.',
   },
   {
     key: 'allowStaffSalary',

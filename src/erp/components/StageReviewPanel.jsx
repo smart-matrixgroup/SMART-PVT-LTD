@@ -17,6 +17,7 @@ import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPBtn, ERPModal, ERPTextarea, ERPProgress, C } from '../components/ERPui';
 import PrivateFileLink from '../components/PrivateFileLink';
+import { rulesNotice } from '../rulesNotice';
 import {
   groupStagesByProject, stageStatusOf, stageReviewOf, stageHistoryEntry, toMs,
   saveDevStages,
@@ -89,7 +90,7 @@ export default function StageReviewPanel({
       await updateDoc(doc(db, 'staffProgress', item.id), { ...payload, updatedAt: serverTimestamp() });
     } catch (e) {
       setError(e?.code === 'permission-denied'
-        ? 'Firebase blocked this approval — deploy the latest staffProgress security rules, then try again.'
+        ? rulesNotice('This stage approval')
         : (e?.message || 'Could not record this review.'));
     } finally { setBusyId(null); }
   };

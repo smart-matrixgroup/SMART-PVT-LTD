@@ -19,6 +19,8 @@ import {
   ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect,
   ERPEmpty, ERPAvatar, ERPStatCard, ERPProgress, C,
 } from '../components/ERPui';
+import { RULES_PAGE, rulesNotice } from '../rulesNotice';
+import { emailError, sameEmail, loginMailOf } from '../emailPolicy';
 import {
   nextNumber, DOC_CATEGORIES, STAFF_STATUSES, computeNet, compressImage, todayKey, getDayName,
   calculateTaskDuration, toMs, fmtHours, dateKeyOf,
@@ -34,7 +36,7 @@ import {
   ShieldCheck, AlertTriangle, CheckCircle2, Camera, Clock, Calendar,
   Coffee, Check, Hourglass, Search, ChevronDown, ChevronUp, User,
   Briefcase, DollarSign, Activity, Sparkles, FolderKanban, CheckSquare,
-  X, RefreshCw, MapPin, ListChecks
+  X, RefreshCw, MapPin, ListChecks, Mail, MailX
 } from 'lucide-react';
 import ERPStaffWork        from './ERPStaffWork';
 import ERPStaffAttendance  from './ERPStaffAttendance';
@@ -147,7 +149,7 @@ export default function ERPStaff() {
 //  STAFF TAB — profile CRUD + documents + login accounts
 // ═════════════════════════════════════════════════════════════════
 function StaffTab() {
-  const { isFirebaseConfigured, isDevSession } = useAuth();
+  const { isFirebaseConfigured, isDevSession, currentUser } = useAuth();
   const live = isFirebaseConfigured && !isDevSession;
 
   const [staff,     setStaff]     = useState([]);
@@ -315,7 +317,7 @@ function StaffTab() {
   const permErr = (err, fallback) => {
     const code = String(err?.code || '');
     if (code === 'storage/unauthorized' || code === 'permission-denied' || err?.status === 403) {
-      return 'Permission denied by Firebase security rules. Sign in with an admin account whose email is listed in storage.rules → isAdmin() (or create its admins/{uid} document), then redeploy: npx firebase deploy --only firestore:rules,storage';
+      return `Permission denied by Firebase security rules. Sign in with an admin account whose email is listed in storage.rules → isAdmin() (or create its admins/{uid} document), then check ${RULES_PAGE} for the blocks still to deploy.`;
     }
     return err?.message || fallback;
   };
@@ -366,7 +368,11 @@ function StaffTab() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.email.trim()) return;
+    if (!form.name.trim()) return;
+    // The login address is checked here as well as in the form, so a typed
+    // typo never reaches Firebase as somebody's new sign-in name.
+    const mailErr = emailError(form.email);
+    if (mailErr) { setNotice({ kind: 'error', msg: mailErr }); return; }
     if (!editId && live && !form.password) return;
     // New staff accounts must pass the shared password policy.
     if (!editId && live && form.password) {
@@ -378,29 +384,55 @@ function StaffTab() {
       if (!live) {
         // Dev session — local mock only, nothing touches the DB.
         const photoURL = photoPreview || '';
-        if (editId) setStaff(p => p.map(s => s.id === editId ? { ...s, ...form, photoURL, basicSalary: toInt(form.basicSalary), allowances: toInt(form.allowances), deductions: toInt(form.deductions) } : s));
-        else setStaff(p => [...p, { id: `dev-${Date.now()}`, staffId: `STF-DEV-${String(p.length + 1).padStart(4, '0')}`, authUid: `dev-${Date.now()}`, docs: [], ...form, photoURL, basicSalary: toInt(form.basicSalary), allowances: toInt(form.allowances), deductions: toInt(form.deductions) }]);
+        const mail = { email: form.email.trim(), loginEmail: form.email.trim() };
+        if (editId) setStaff(p => p.map(s => s.id === editId ? { ...s, ...form, ...mail, photoURL, basicSalary: toInt(form.basicSalary), allowances: toInt(form.allowances), deductions: toInt(form.deductions) } : s));
+        else setStaff(p => [...p, { id: `dev-${Date.now()}`, staffId: `STF-DEV-${String(p.length + 1).padStart(4, '0')}`, authUid: `dev-${Date.now()}`, docs: [], ...form, ...mail, photoURL, basicSalary: toInt(form.basicSalary), allowances: toInt(form.allowances), deductions: toInt(form.deductions) }]);
         setShowForm(false);
         return;
       }
       if (editId) {
+        const old = staff.find(s => s.id === editId) || {};
+        const currentMail = loginMailOf(old);
+        const nextMail = form.email.trim();
+        const pendingMail = String(old.pendingLoginEmail || '').trim();
+        const mailChanged = !sameEmail(nextMail, currentMail);
+        const by = String(currentUser?.email || 'admin').trim();
+        const at = new Date().toISOString();
+        // Append-only trail of every address change the admin asks for.
+        const log = [];
+        if (mailChanged) {
+          if (pendingMail && !sameEmail(pendingMail, nextMail)) {
+            log.push({ from: currentMail, to: pendingMail, state: 'Replaced', by, at });
+          }
+          log.push({ from: currentMail, to: nextMail, state: 'Requested', by, at });
+        }
         await updateDoc(doc(db, 'staff', editId), {
           name: form.name.trim(), role: form.role.trim(), department: form.department,
           phone: form.phone.trim(), address: form.address.trim(),
           joinedDate: form.joinedDate, education: form.education.trim(),
           basicSalary: toInt(form.basicSalary), allowances: toInt(form.allowances),
           deductions: toInt(form.deductions), status: form.status,
+          // Firebase only lets a user move their OWN login email and this app
+          // has no server, so the new address is staged here and the staff
+          // member applies it once from Staff Portal → Profile.
+          ...(mailChanged ? {
+            pendingLoginEmail: nextMail,
+            pendingLoginEmailAt: serverTimestamp(),
+            emailChangeLog: arrayUnion(...log),
+          } : {}),
           updatedAt: serverTimestamp(),
         });
         // Photo handling: new file → upload, removed → clear + delete old.
-        const old = staff.find(s => s.id === editId);
         if (photoBlob) {
           await uploadStaffPhoto(editId, photoBlob, old?.photoPath);
         } else if (clearPhoto && old?.photoURL) {
           await updateDoc(doc(db, 'staff', editId), { photoURL: '', photoPath: '', updatedAt: serverTimestamp() });
           if (old?.photoPath) { try { await deleteObject(ref(storage, old.photoPath)); } catch { /* already gone */ } }
         }
-        setNotice({ kind: 'ok', msg: `${form.name} updated.` });
+        setNotice(mailChanged ? {
+          kind: 'ok',
+          msg: `${form.name} updated. Sign-in moves to ${nextMail} as soon as ${form.name.split(' ')[0]} confirms it in Staff Portal → Profile. ${currentMail} keeps working until then.`,
+        } : { kind: 'ok', msg: `${form.name} updated.` });
       } else {
         // Provision the Firebase Auth account first (secondary app keeps
         // the admin signed in), then create staff/{uid} — doc id == uid.
@@ -466,6 +498,54 @@ function StaffTab() {
       setNotice({ kind: 'ok', msg: `Password reset email sent to ${s.loginEmail || s.email}.` });
     } catch (e) { setNotice({ kind: 'error', msg: e.message }); }
     finally { setBusy(false); setConfirmState(null); }
+  };
+
+  // Withdraw an email change that is still waiting for the staff member.
+  // The staged field is cleared; the log keeps the request and its end state.
+  const handleCancelMailChange = async (s) => {
+    const to = String(s.pendingLoginEmail || '').trim();
+    setBusy(true); setNotice(null);
+    try {
+      if (!live) {
+        setStaff(p => p.map(x => x.id === s.id ? { ...x, pendingLoginEmail: '' } : x));
+        setNotice({ kind: 'ok', msg: `Email change to ${to} cancelled.` });
+        return;
+      }
+      await updateDoc(doc(db, 'staff', s.id), {
+        pendingLoginEmail: null,
+        pendingLoginEmailAt: null,
+        emailChangeLog: arrayUnion({
+          from: loginMailOf(s), to, state: 'Cancelled',
+          by: String(currentUser?.email || 'admin').trim(),
+          at: new Date().toISOString(),
+        }),
+        updatedAt: serverTimestamp(),
+      });
+      setNotice({ kind: 'ok', msg: `Email change to ${to} cancelled. ${s.name} signs in with ${loginMailOf(s)}.` });
+    } catch (e) {
+      console.error(e);
+      setNotice({ kind: 'error', msg: e?.code === 'permission-denied' ? rulesNotice('This cancellation') : (e.message || 'Could not cancel the email change.') });
+    } finally { setBusy(false); setConfirmState(null); }
+  };
+
+  // The whole history of this person's login addresses, newest first.
+  const mailHistory = (s) => (Array.isArray(s?.emailChangeLog) ? s.emailChangeLog : [])
+    .slice()
+    .sort((a, b) => String(b?.at || '').localeCompare(String(a?.at || '')));
+
+  // Live state of the login-email row in the edit form: is what the admin
+  // typed valid, and does it differ from the address they sign in with?
+  const editMailState = () => {
+    const s = staff.find(x => x.id === editId) || {};
+    const current = loginMailOf(s);
+    const typed = form.email.trim();
+    const err = emailError(typed);
+    return {
+      current, typed, err,
+      changed: !err && !!typed && !sameEmail(typed, current),
+      pending: String(s.pendingLoginEmail || '').trim(),
+      first: String(s.name || '').split(' ')[0] || 'the staff member',
+    };
   };
 
   // ── secure documents ─────────────────────────────────────────────
@@ -663,8 +743,16 @@ function StaffTab() {
                       <div style={{ fontSize: 10, color: C.muted }}>{s.department || ''}</div>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
-                      <div style={{ fontSize: 11, color: C.subtle }}>{s.loginEmail || s.email || '—'}</div>
-                      <div style={{ fontSize: 10, color: C.muted }}>{s.phone || ''}</div>
+                      <div style={{ fontSize: 11, color: C.subtle }}>{loginMailOf(s) || '—'}</div>
+                      {s.pendingLoginEmail ? (
+                        <div style={{
+                          display: 'inline-block', marginTop: 3, fontSize: 9, fontWeight: 800,
+                          padding: '1px 7px', borderRadius: 999, color: C.amber,
+                          background: 'rgba(245,185,66,0.14)', border: '1px solid rgba(245,185,66,0.4)',
+                        }}>waiting for {s.pendingLoginEmail}</div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: C.muted }}>{s.phone || ''}</div>
+                      )}
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <span style={{ fontSize: 11, color: C.muted }}>{fmtDate(s.joinedDate) || '—'}</span>
@@ -760,11 +848,33 @@ function StaffTab() {
               Password policy: {PASSWORD_HINT} The staff member can change it after signing in.
             </div>
           )}
-          {editId && (
-            <div style={{ fontSize: 11, color: C.muted, padding: '8px 12px', borderRadius: 8, background: 'rgba(10,24,56,0.6)', border: `1px solid ${C.border}` }}>
-              Login: <strong style={{ color: C.subtle }}>{form.email || '—'}</strong> — use “Reset Password” in the staff detail panel to change it.
-            </div>
-          )}
+          {editId && (() => {
+            const m = editMailState();
+            const tone = m.err
+              ? { bg: 'rgba(240,90,103,0.1)', bd: 'rgba(240,90,103,0.35)', fg: C.red }
+              : m.changed
+              ? { bg: 'rgba(245,185,66,0.1)', bd: 'rgba(245,185,66,0.35)', fg: C.amber }
+              : { bg: 'rgba(10,24,56,0.6)', bd: C.border, fg: C.muted };
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <ERPInput label="Login Email" value={form.email} type="email" required
+                  onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="staff@smartpvtltd.com" />
+                <div style={{
+                  fontSize: 11, color: tone.fg, lineHeight: 1.5, padding: '8px 12px',
+                  borderRadius: 8, background: tone.bg, border: `1px solid ${tone.bd}`,
+                }}>
+                  {m.err ? m.err : m.changed ? (
+                    <>Sign-in moves to <strong style={{ color: C.text }}>{m.typed}</strong>. {m.first} confirms it once
+                      in Staff Portal → Profile with the current password — until then
+                      <strong style={{ color: C.text }}> {m.current}</strong> keeps working.
+                      {m.pending ? ` The change still waiting for ${m.pending} is replaced.` : ''}</>
+                  ) : (
+                    <>Current login: <strong style={{ color: C.subtle }}>{m.current || '—'}</strong></>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <ERPInput label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+94 77 000 0000" />
             <ERPInput label="Joined Date" value={form.joinedDate} type="date" onChange={e => setForm(p => ({ ...p, joinedDate: e.target.value }))} />
@@ -784,7 +894,7 @@ function StaffTab() {
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <ERPBtn variant="secondary" onClick={() => setShowForm(false)} style={{ flex: 1, justifyContent: 'center' }}>Cancel</ERPBtn>
-            <ERPBtn variant="primary" disabled={busy || !form.name.trim() || !form.email.trim() || (!editId && live && !form.password)}
+            <ERPBtn variant="primary" disabled={busy || !form.name.trim() || !!emailError(form.email) || (!editId && live && !form.password)}
               onClick={handleSave} style={{ flex: 1, justifyContent: 'center' }}>
               <Plus size={13} /> {editId ? 'Save Changes' : 'Create Staff + Login'}
             </ERPBtn>
@@ -1222,20 +1332,61 @@ function StaffTab() {
                   ))}
                 </div>
 
-                <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.3)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <ShieldCheck size={14} style={{ color: C.violet }} />
-                    <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Portal Login</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>
-                    Account: <strong style={{ color: C.subtle }}>{detail.loginEmail || detail.email || '—'}</strong>
-                    {detail.authUid ? ' · linked to Firebase Auth' : ' · not linked'}
-                  </div>
-                  <ERPBtn size="sm" variant="secondary" disabled={busy}
-                    onClick={() => setConfirmState({ type: 'resetpw', staff: detail })}>
-                    <KeyRound size={11} /> Send Password Reset Email
-                  </ERPBtn>
-                </div>
+                {(() => {
+                  const pending = String(detail.pendingLoginEmail || '').trim();
+                  const log = mailHistory(detail);
+                  const first = String(detail.name || '').split(' ')[0] || 'the staff member';
+                  return (
+                    <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(139,92,246,0.07)', border: '1px solid rgba(139,92,246,0.3)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <ShieldCheck size={14} style={{ color: C.violet }} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Portal Login</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>
+                        Account: <strong style={{ color: C.subtle }}>{loginMailOf(detail) || '—'}</strong>
+                        {detail.authUid ? ' · linked to Firebase Auth' : ' · not linked'}
+                      </div>
+
+                      {pending && (
+                        <div style={{
+                          padding: '9px 11px', borderRadius: 10, marginBottom: 10,
+                          background: 'rgba(245,185,66,0.1)', border: '1px solid rgba(245,185,66,0.35)',
+                        }}>
+                          <div style={{ fontSize: 11, color: C.amber, lineHeight: 1.55 }}>
+                            Waiting for <strong style={{ color: C.text }}>{first}</strong> to confirm
+                            <strong style={{ color: C.text }}> {pending}</strong> in Staff Portal → Profile.
+                            <strong style={{ color: C.text }}> {loginMailOf(detail) || 'no address'}</strong> stays the working login until then.
+                          </div>
+                          <ERPBtn size="sm" variant="secondary" disabled={busy} style={{ marginTop: 8 }}
+                            onClick={() => setConfirmState({ type: 'cancelmail', staff: detail })}>
+                            <MailX size={11} /> Cancel request
+                          </ERPBtn>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <ERPBtn size="sm" variant="secondary" disabled={busy}
+                          onClick={() => setConfirmState({ type: 'resetpw', staff: detail })}>
+                          <KeyRound size={11} /> Send Password Reset Email
+                        </ERPBtn>
+                        <ERPBtn size="sm" variant="secondary" disabled={busy}
+                          onClick={() => { setDetailId(null); openEdit(detail); }}>
+                          <Mail size={11} /> {pending ? 'Change Again' : 'Change Login Email'}
+                        </ERPBtn>
+                      </div>
+
+                      {log.length > 0 && (
+                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {log.slice(0, 4).map((e, i) => (
+                            <div key={`${String(e?.at || 'entry')}-${i}`} style={{ fontSize: 10, color: C.muted }}>
+                              {fmtDate(String(e?.at || '').slice(0, 10))} · {e?.from || '—'} → <strong style={{ color: C.subtle }}>{e?.to || '—'}</strong> · {e?.state} · {e?.by}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1339,6 +1490,25 @@ function StaffTab() {
               <ERPBtn variant="secondary" onClick={() => setConfirmState(null)} style={{ flex: 1, justifyContent: 'center' }}>Cancel</ERPBtn>
               <ERPBtn variant="primary" disabled={busy} onClick={() => handleResetPassword(confirmState.staff)} style={{ flex: 1, justifyContent: 'center' }}>
                 Send Email
+              </ERPBtn>
+            </div>
+          </div>
+        )}
+        {confirmState?.type === 'cancelmail' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', textAlign: 'center' }}>
+            <div style={{ fontSize: 34 }}>✉️</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Cancel this email change?</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                <strong style={{ color: C.subtle }}>{confirmState.staff?.name}</strong> keeps signing in with{' '}
+                <strong style={{ color: C.subtle }}>{loginMailOf(confirmState.staff || {}) || 'the current address'}</strong> and the move to{' '}
+                <strong style={{ color: C.subtle }}>{confirmState.staff?.pendingLoginEmail}</strong> is dropped.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, width: '100%' }}>
+              <ERPBtn variant="secondary" onClick={() => setConfirmState(null)} style={{ flex: 1, justifyContent: 'center' }}>Keep it</ERPBtn>
+              <ERPBtn variant="danger" disabled={busy} onClick={() => handleCancelMailChange(confirmState.staff)} style={{ flex: 1, justifyContent: 'center' }}>
+                Cancel request
               </ERPBtn>
             </div>
           </div>

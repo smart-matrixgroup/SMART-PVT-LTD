@@ -9,6 +9,7 @@ import {
   ERPStatCard, ERPPanel, ERPPanelHeader, ERPBadge,
   ERPBtn, ERPProgress, ERPAvatar, C
 } from '../components/ERPui';
+import { rulesNotice } from '../rulesNotice';
 
 // ── DEV mock data ──────────────────────────────────────────────────
 // Deleted on purpose: the dashboard builds every card from live Firestore
@@ -69,7 +70,7 @@ export default function ERPDashboard() {
       console.error('Dashboard listener error', err);
       setLoadError(
         err.code === 'permission-denied'
-          ? "Permission denied — deploy the updated Firestore rules and make sure you're signed in as an admin."
+          ? rulesNotice('Dashboard data')
           : (err.message || "Couldn't load dashboard data. Refresh the page to retry.")
       );
     };

@@ -11,8 +11,11 @@ import {
   ERPModal, ERPSelect, ERPInput, ERPEmpty, ERPAvatar,
   ERPProgress, C
 } from '../components/ERPui';
+import { rulesNotice } from '../rulesNotice';
 import { formatWhen } from '../formatWhen';
 import { nextNumber } from '../../staff/staffUtils';
+import { useStaffDirectory } from '../useStaffDirectory';
+import StaffAssignPicker, { StaffAssignChips } from '../components/StaffAssignPicker';
 import { CheckCircle2, Circle, ExternalLink, Pencil, Trash2, Plus } from 'lucide-react';
 
 const COLORS = ['#0066FF','#8B5CF6','#18C77A','#F5B942','#F05A67','#00D9FF'];
@@ -87,7 +90,7 @@ export default function ERPProjects() {
   const [filter,    setFilter]     = useState('All');
   const [saving,    setSaving]     = useState(false);
   const [showEdit,  setShowEdit]   = useState(false);
-  const [editForm,  setEditForm]   = useState({ title:'', serviceType:'', clientName:'', clientCompany:'', status:'In Progress', completion:0 });
+  const [editForm,  setEditForm]   = useState({ title:'', serviceType:'', clientName:'', clientCompany:'', status:'In Progress', completion:0, assignedStaff:[] });
   const [delTarget, setDelTarget]  = useState(null);
   const [delError,  setDelError]   = useState('');
   const [delBusy,   setDelBusy]    = useState(false);
@@ -97,9 +100,12 @@ export default function ERPProjects() {
   // the Clients page, so an empty Projects page had no way forward).
   const [clients,   setClients]    = useState([]);
   const [showNew,   setShowNew]    = useState(false);
-  const [newForm,   setNewForm]    = useState({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'' });
+  const [newForm,   setNewForm]    = useState({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'', assignedStaff:[] });
   const [newError,  setNewError]   = useState('');
   const [notice,    setNotice]     = useState(null);
+
+  // ERP → Staff directory, so a project can say who works on it.
+  const { staff } = useStaffDirectory();
 
   useEffect(() => {
     if (!live) return;
@@ -119,7 +125,7 @@ export default function ERPProjects() {
       console.error('Projects listener error', err);
       setLoadError(
         err.code === 'permission-denied'
-          ? "Permission denied — deploy the updated Firestore rules and make sure you're signed in as an admin."
+          ? rulesNotice('Projects')
           : (err.message || "Couldn't load projects. Refresh the page to retry.")
       );
     });
@@ -158,6 +164,27 @@ export default function ERPProjects() {
   // Initials + colour for compact staff chips.
   const initialsOf = name => (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const chipColor  = name => COLORS[(name || '').length % COLORS.length];
+
+  // Project team = the staff picked on the project form (assignedStaff ids,
+  // with assignedStaffNames kept beside them so old/offline rows still show
+  // a real name instead of an id).
+  const teamOf = proj => (Array.isArray(proj?.assignedStaff) ? proj.assignedStaff : [])
+    .map((id, i) => ({
+      id,
+      name: staff.find(s => s.id === id)?.name
+         || (Array.isArray(proj?.assignedStaffNames) ? proj.assignedStaffNames[i] : '')
+         || id,
+    }))
+    .filter(Boolean);
+
+  // What actually gets written on the project doc for a team selection.
+  const teamFields = ids => {
+    const list = Array.isArray(ids) ? ids : [];
+    return {
+      assignedStaff: list,
+      assignedStaffNames: list.map(id => staff.find(s => s.id === id)?.name || id),
+    };
+  };
 
   const FILTER_LABEL = {
     All:'All',
@@ -219,6 +246,7 @@ export default function ERPProjects() {
       clientCompany: proj.clientCompany || '',
       status: proj.status || 'In Progress',
       completion: proj.completion || 0,
+      assignedStaff: Array.isArray(proj.assignedStaff) ? proj.assignedStaff : [],
     });
     setSaveError('');
     setShowEdit(true);
@@ -239,6 +267,7 @@ export default function ERPProjects() {
       clientCompany: editForm.clientCompany.trim(),
       status: editForm.status,
       completion: Math.max(0, Math.min(100, Number(editForm.completion)||0)),
+      ...teamFields(editForm.assignedStaff),
     };
     setProjects(prev => prev.map(p => p.id === selected ? { ...p, ...patch } : p));
     if (live) {
@@ -336,6 +365,7 @@ export default function ERPProjects() {
       status: newForm.status,
       completion: 0,
       milestones: [],
+      ...teamFields(newForm.assignedStaff),
       createdAt: serverTimestamp(),
     };
     try {
@@ -389,7 +419,7 @@ export default function ERPProjects() {
         })}
         <div style={{marginLeft:'auto',fontSize:12,color:C.muted,display:'flex',alignItems:'center',gap:10}}>
           {filtered.length} projects
-          <ERPBtn variant="primary" onClick={()=>{ setNewForm({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'' }); setNewError(''); setShowNew(true); }}>
+          <ERPBtn variant="primary" onClick={()=>{ setNewForm({ title:'', serviceType:'', status:'requirements_pending', clientId:'', clientName:'', clientCompany:'', assignedStaff:[] }); setNewError(''); setShowNew(true); }}>
             <Plus size={13}/> New Project
           </ERPBtn>
         </div>
@@ -413,6 +443,8 @@ export default function ERPProjects() {
         {/* Project cards (when no selection) */}
         {!selProj && filtered.map((proj, i) => {
           const projAs = assignments.filter(a=>a.projectId===proj.id);
+          const team   = teamOf(proj);
+          const faces  = team.length ? team.map(t=>t.name) : projAs.map(a=>a.staffName);
           const done  = (proj.milestones||[]).filter(m=>m.done).length;
           return (
             <div key={proj.id}
@@ -449,15 +481,15 @@ export default function ERPProjects() {
 
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{display:'flex'}}>
-                  {projAs.length>0 ? projAs.slice(0,4).map(a=>(
-                    <div key={a.id} title={`${a.staffName} — ${a.title} (${a.status})`} style={{
-                      width:24,height:24,borderRadius:'50%',background:chipColor(a.staffName),
+                  {faces.length>0 ? faces.slice(0,4).map((nm,k)=>(
+                    <div key={`${nm}-${k}`} title={nm} style={{
+                      width:24,height:24,borderRadius:'50%',background:chipColor(nm),
                       display:'flex',alignItems:'center',justifyContent:'center',
                       fontSize:8.5,fontWeight:800,color:'#fff',
                       border:'2px solid #040D1F',marginLeft:-6,
-                    }}>{initialsOf(a.staffName)}</div>
+                    }}>{initialsOf(nm)}</div>
                   )) : <span style={{fontSize:10,color:C.muted}}>No staff assigned</span>}
-                  {projAs.length>4 && <span style={{fontSize:10,color:C.muted,marginLeft:6,alignSelf:'center'}}>+{projAs.length-4}</span>}
+                  {faces.length>4 && <span style={{fontSize:10,color:C.muted,marginLeft:6,alignSelf:'center'}}>+{faces.length-4}</span>}
                 </div>
                 <span style={{fontSize:10,color:C.muted}}>{formatWhen(proj.createdAt)}</span>
               </div>
@@ -602,6 +634,23 @@ export default function ERPProjects() {
                 )}
               </div>
 
+              {/* Project team — picked right here on the project (Edit /
+                  Update → Assigned Staff). Tasks below still come from
+                  Staff → Work. */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:10}}>
+                  Project Team ({teamOf(selProj).length})
+                </div>
+                {teamOf(selProj).length === 0 ? (
+                  <div style={{fontSize:11,color:C.muted}}>No staff assigned</div>
+                ) : (
+                  <StaffAssignChips
+                    ids={selProj.assignedStaff}
+                    names={selProj.assignedStaffNames}
+                    staff={staff} />
+                )}
+              </div>
+
               {/* Work assignments (real data from Staff → Work, Phase 3) */}
               <div>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
@@ -667,6 +716,10 @@ export default function ERPProjects() {
             onChange={e=>setEditForm(p=>({...p,clientName:e.target.value}))} />
           <ERPInput label="Client Company" value={editForm.clientCompany}
             onChange={e=>setEditForm(p=>({...p,clientCompany:e.target.value}))} />
+          <StaffAssignPicker
+            staff={staff}
+            value={editForm.assignedStaff}
+            onChange={ids=>setEditForm(p=>({ ...p, assignedStaff: ids }))} />
           <ERPSelect label="Status" value={editForm.status}
             onChange={e=>setEditForm(p=>({...p,status:e.target.value}))}
             options={STATUS_OPTS} />
@@ -755,6 +808,10 @@ export default function ERPProjects() {
             <ERPInput label="Client company" value={newForm.clientCompany}
               onChange={e=>setNewForm(p=>({...p,clientCompany:e.target.value}))} placeholder="e.g. Love Cake House" />
           </div>
+          <StaffAssignPicker
+            staff={staff}
+            value={newForm.assignedStaff}
+            onChange={ids=>setNewForm(p=>({ ...p, assignedStaff: ids }))} />
           <ERPSelect label="Status" value={newForm.status}
             onChange={e=>setNewForm(p=>({...p,status:e.target.value}))}
             options={STATUS_OPTS} />

@@ -14,14 +14,16 @@ import { ref as storageRef, uploadBytes, getBytes } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPAvatar,
+  C, ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPAvatar, ERPInput,
 } from '../../erp/components/ERPui';
 import StaffEmpty from '../components/StaffEmpty';
 import { DOC_CATEGORIES } from '../staffUtils';
+import { applyLoginEmailChange } from '../loginEmail';
+import { loginMailOf } from '../../erp/emailPolicy';
 import { fmtDate } from '../../erp/money';
 import {
   User, Mail, Phone, MapPin, CalendarDays, GraduationCap, Briefcase, Info,
-  Upload, FileText, Download, AlertCircle, CheckCircle2,
+  Upload, FileText, Download, AlertCircle, CheckCircle2, MailCheck,
 } from 'lucide-react';
 
 const fmtWhen = iso => {
@@ -58,7 +60,7 @@ export default function MyProfile() {
   }
 
   const fields = [
-    { icon: Mail,          label: 'Email',      value: staffProfile.loginEmail || staffProfile.email || '—' },
+    { icon: Mail,          label: 'Email',      value: loginMailOf(staffProfile) || '—' },
     { icon: Phone,         label: 'Phone',      value: staffProfile.phone || '—' },
     { icon: CalendarDays,  label: 'Joined',     value: fmtDate(staffProfile.joinedDate) || '—' },
     { icon: Briefcase,     label: 'Department', value: staffProfile.department || '—' },
@@ -119,7 +121,98 @@ export default function MyProfile() {
           </div>
         </div>
       </ERPPanel>
+
+      <LoginEmailMove />
     </div>
+  );
+}
+
+
+// ═════════════════════════════════════════════════════════════════
+//  Login email change.
+//  The admin can type a new sign-in address, but only the account owner can
+//  move it (there is no server side Admin SDK here), so the new address
+//  arrives staged and is confirmed once from this panel with the current
+//  password. The old address keeps working until it is confirmed — see
+//  src/staff/loginEmail.js.
+// ═════════════════════════════════════════════════════════════════
+function LoginEmailMove() {
+  const { staffProfile, isDevSession } = useAuth();
+  const live = isFirebaseConfigured && !isDevSession;
+
+  const [pwd, setPwd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState('');
+
+  const to = String(staffProfile?.pendingLoginEmail || '').trim();
+  if (!to) {
+    if (!done) return null;
+    return (
+      <ERPPanel>
+        <ERPPanelHeader title="Login Email Updated" icon={MailCheck} />
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10,
+          background: 'rgba(24,199,122,0.1)', border: '1px solid rgba(24,199,122,0.35)',
+          color: C.green, fontSize: 12,
+        }}>
+          <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Sign in with <strong>{done}</strong> from now on. Your password, your staff id and all your records stayed the same.</span>
+        </div>
+      </ERPPanel>
+    );
+  }
+
+  const confirm = async () => {
+    setErr('');
+    if (!live) { setErr('This needs the live Firebase login (not available in a dev session).'); return; }
+    setBusy(true);
+    try {
+      const moved = await applyLoginEmailChange({ uid: staffProfile.id, newEmail: to, password: pwd });
+      setPwd('');
+      setDone(moved);
+    } catch (e) {
+      setErr(e?.message || 'Could not change the login email.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <ERPPanel>
+      <ERPPanelHeader title="Login Email Change" icon={Mail} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{
+          display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+          padding: '10px 12px', borderRadius: 10, background: 'rgba(245,185,66,0.09)',
+          border: '1px solid rgba(245,185,66,0.35)', fontSize: 12, color: C.text,
+        }}>
+          <span style={{ color: C.muted, wordBreak: 'break-all' }}>{loginMailOf(staffProfile) || '—'}</span>
+          <MailCheck size={14} color={C.amber} style={{ flexShrink: 0 }} />
+          <strong style={{ wordBreak: 'break-all' }}>{to}</strong>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.55 }}>
+          Your administrator asked to move your login to the address above. Confirm it with your
+          current password — nothing else changes, and <strong style={{ color: C.subtle }}>{loginMailOf(staffProfile) || 'the current email'}</strong> keeps working until then.
+        </div>
+
+        <ERPInput label="Current Password" value={pwd} type="password"
+          onChange={e => setPwd(e.target.value)} placeholder="your password right now" />
+
+        {err && (
+          <div style={{
+            display: 'flex', gap: 8, alignItems: 'flex-start', padding: '9px 12px', borderRadius: 10,
+            background: 'rgba(240,90,103,0.1)', border: '1px solid rgba(240,90,103,0.35)',
+            color: C.red, fontSize: 11.5,
+          }}>
+            <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {err}
+          </div>
+        )}
+
+        <ERPBtn variant="primary" disabled={busy || !pwd} onClick={confirm}>
+          <MailCheck size={13} /> {busy ? 'Confirming…' : 'Confirm new login email'}
+        </ERPBtn>
+      </div>
+    </ERPPanel>
   );
 }
 

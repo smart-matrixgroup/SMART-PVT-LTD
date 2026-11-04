@@ -24,8 +24,9 @@ import {
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
 import {
   DEV_FINANCE_INCOME, DEV_FINANCE_EXPENSES, defaultExpenseCategories,
-  financeErrorText, expenseTotal, RULES_DEPLOY_CMD
+  financeErrorText, expenseTotal
 } from '../finance/financeSync';
+import { RULES_PAGE } from '../rulesNotice';
 
 const INCOME_CATEGORIES = ['Investment', 'Trust', 'Refund', 'Other'];
 const SETTINGS_DOC_ID = 'financeSettings';
@@ -508,13 +509,9 @@ export default function ERPFinance() {
           <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <span style={{ fontWeight: 800 }}>{loadError}</span>
-            {loadError.includes(RULES_DEPLOY_CMD) && (
-              <span style={{
-                alignSelf: 'flex-start', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontSize: 11, color: C.cyan, background: 'rgba(0,217,255,0.08)',
-                border: '1px solid rgba(0,217,255,0.3)', borderRadius: 6, padding: '3px 8px',
-              }}>{RULES_DEPLOY_CMD}</span>
-            )}
+            <span style={{ fontSize: 11, color: C.subtle }}>
+              The complete list of pending rules, and the command to deploy them, is in <strong style={{ color: C.cyan }}>{RULES_PAGE}</strong>.
+            </span>
           </div>
         </div>
       )}
