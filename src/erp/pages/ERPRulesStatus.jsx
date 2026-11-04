@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ERPPanel, ERPPanelHeader, ERPBtn, C } from '../components/ERPui';
 import { isFirebaseConfigured } from '../../config/firebase';
 import { ShieldCheck, RefreshCw, Copy, Check, AlertTriangle } from 'lucide-react';
-import { RULES_BLOCKS, DEPLOY_COMMAND, pendingBlocks, changedBlocks } from '../rulesChecklist';
+import { RULES_BLOCKS, DEPLOY_COMMAND, pendingBlocks, changedBlocks, RULES_REVISION } from '../rulesChecklist';
 
 const STATE_UI = {
   live:    { label: 'Live',          color: C.green, bg: 'rgba(24,199,122,0.12)' },
@@ -47,6 +47,18 @@ export default function ERPRulesStatus() {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const [copied, setCopied] = useState('');
+  // Which rules revision the admin has already deployed. The probe can see
+  // whether a collection is allowed, but not whether a REWRITTEN rule text
+  // went live — so the reminder clears only when the admin says they ran the
+  // command for this revision, and returns on the next rewrite.
+  const ACK_KEY = 'erp.rulesDeployedRevision';
+  const [acked, setAcked] = useState(() => {
+    try { return localStorage.getItem(ACK_KEY) || ''; } catch { return ''; }
+  });
+  const markDeployed = () => {
+    try { localStorage.setItem(ACK_KEY, RULES_REVISION); } catch { /* private mode */ }
+    setAcked(RULES_REVISION);
+  };
 
   const check = useCallback(async () => {
     if (!isFirebaseConfigured) { setDone(true); return; }
@@ -76,7 +88,7 @@ export default function ERPRulesStatus() {
   // older deployed rule, so they need the command run once even while the row
   // shows green — without this line the list would lie about the staff email
   // change (the old rule rejects it silently, it does not look "blocked").
-  const rewritten = done ? changedBlocks : [];
+  const rewritten = done && acked !== RULES_REVISION ? changedBlocks : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -131,9 +143,14 @@ export default function ERPRulesStatus() {
               </ERPBtn>
             )}
             {!list.length && rewritten.length > 0 && (
-              <ERPBtn size="sm" variant="secondary" onClick={() => copy('list', rewritten.map(b => `- ${b.name}  (${b.coll}) — rule rewritten`).join('\n'))}>
-                {copied === 'list' ? <Check size={12} /> : <Copy size={12} />} Copy what needs deploying
-              </ERPBtn>
+              <>
+                <ERPBtn size="sm" variant="secondary" onClick={() => copy('list', rewritten.map(b => `- ${b.name}  (${b.coll}) — rule rewritten`).join('\n'))}>
+                  {copied === 'list' ? <Check size={12} /> : <Copy size={12} />} Copy what needs deploying
+                </ERPBtn>
+                <ERPBtn size="sm" variant="success" onClick={markDeployed}>
+                  <Check size={12} /> I ran the command
+                </ERPBtn>
+              </>
             )}
           </div>
         </div>

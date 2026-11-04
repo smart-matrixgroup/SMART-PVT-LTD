@@ -18,7 +18,7 @@ import { collection, limit, query, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { RULES_BLOCKS } from './rulesBlocks.js';
 
-export { DEPLOY_COMMAND, RULES_BLOCKS, pendingBlocks, changedBlocks } from './rulesBlocks.js';
+export { DEPLOY_COMMAND, RULES_BLOCKS, pendingBlocks, changedBlocks, RULES_REVISION } from './rulesBlocks.js';
 
 /**
  * Read one document from each collection as the signed-in admin.

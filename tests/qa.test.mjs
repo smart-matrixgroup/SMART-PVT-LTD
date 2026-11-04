@@ -1084,6 +1084,11 @@ test('Rules status page - probes live, shows the pending list, and is reachable 
   assert.match(page, /pendingBlocks\(states\)/, 'and marks only the blocked ones');
   assert.match(page, /DEPLOY_COMMAND/, 'the command is copyable from here');
   assert.match(page, /Check now/, 'one button re-checks everything');
+  // A rewritten rule cannot be seen by the read probe, so the reminder clears
+  // by explicit acknowledgement and returns on the next revision.
+  assert.match(page, /acked !== RULES_REVISION \? changedBlocks/, 'the rewritten note is tied to a revision');
+  assert.match(page, /localStorage\.setItem\(ACK_KEY, RULES_REVISION\)/, 'running the command is remembered');
+  assert.match(page, /I ran the command/, 'the admin can clear it after deploying');
 
   const settings = fs.readFileSync(new URL('../src/erp/pages/ERPSettings.jsx', import.meta.url), 'utf8');
   assert.match(settings, /\{id:'deploy',\s*label:'Rules Status'/, 'Settings has the Rules Status entry');

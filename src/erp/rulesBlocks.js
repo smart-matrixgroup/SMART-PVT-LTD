@@ -49,6 +49,14 @@ export const RULES_BLOCKS = [
  */
 export const changedBlocks = RULES_BLOCKS.filter(b => b.changed);
 
+/**
+ * Bump this string whenever a block above is rewritten (not merely added).
+ * The rewritten-rule reminder is hidden only after the admin confirms they
+ * ran the deploy for THIS revision, so it comes back on the next rewrite
+ * instead of nagging forever after one deploy.
+ */
+export const RULES_REVISION = 'offer-letters-1';
+
 /** The blocks that still need deploying, in the order they were added. */
 export const pendingBlocks = results =>
   RULES_BLOCKS.filter(b => results?.[b.coll] === 'blocked' || results?.[b.coll] === 'error');
