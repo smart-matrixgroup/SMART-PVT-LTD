@@ -22,6 +22,7 @@ import {
 } from '../../staff/performanceReport';
 import { saveWorkReportPdf } from '../../staff/workReportPdf';
 import { saveDailyReportPdf } from '../utils/dailyReportPdf';
+import { normalizeOfficialStaff, matchesStaffFilter, CANONICAL_STAFF_DEFINITIONS } from '../../staff/canonicalStaff.js';
 import {
   periodLabelOf, weekBounds, summariseWeekRuns, runStatusOf,
   describeMailRun, mailRunProblem, fetchWeekRuns, emailWeekNow,
@@ -318,7 +319,7 @@ export default function ERPStaffUpdates() {
   useEffect(() => {
     if (!live) {
       setUpdates(DEV_UPDATES);
-      setStaff(DEV_STAFF);
+      setStaff(normalizeOfficialStaff([]));
       setLoading(false);
       return;
     }
@@ -338,7 +339,7 @@ export default function ERPStaffUpdates() {
       ),
       onSnapshot(
         collection(db, 'staff'),
-        snap => setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted)),
+        snap => setStaff(normalizeOfficialStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted))),
         err => console.error(err)
       ),
       onSnapshot(
@@ -363,6 +364,9 @@ export default function ERPStaffUpdates() {
       lunchStart: log.lunchStart || '13:00',
       lunchEnd: log.lunchEnd || '14:00',
       departure: log.departure || log.endTime || '17:30',
+      startingWorkSummary: log.startingWorkSummary || '',
+      audioNote: log.audioNote || '',
+      audioNoteDuration: log.audioNoteDuration || '',
       tasks: log.tasks && log.tasks.length > 0 ? log.tasks : [
         { no: 1, start: '09:00', end: '11:00', hours: '2.0 hrs', description: log.workDescription || '', status: log.status || 'Completed' }
       ],
@@ -435,6 +439,9 @@ export default function ERPStaffUpdates() {
         lunchDuration,
         departure: editForm.departure,
         totalWorkHours,
+        startingWorkSummary: (editForm.startingWorkSummary || '').trim(),
+        audioNote: editForm.audioNote || '',
+        audioNoteDuration: editForm.audioNoteDuration || '',
         tasks: cleanTasks,
         remarks: editForm.remarks.trim(),
         planTomorrow: (editForm.planTomorrow || '').trim(),
@@ -492,7 +499,13 @@ export default function ERPStaffUpdates() {
     .filter(u => (dateF ? u.date === dateF : true))
     .filter(u => (fromF ? String(u.date) >= fromF : true))
     .filter(u => (toF ? String(u.date) <= toF : true))
-    .filter(u => (staffF === 'All' ? true : (u.staffId === staffF || u.name === staffF || u.staffName === staffF)))
+    .filter(u => {
+      if (staffF === 'All') return true;
+      // First try matchesStaffFilter (uses canonical aliases + fuzzy name)
+      if (matchesStaffFilter(u, staffF, staff)) return true;
+      // Fallback: direct name / staffId comparison (plain string submitted by older portal versions)
+      return u.staffId === staffF || u.name === staffF || u.staffName === staffF;
+    })
     .filter(u => (statusF === 'All' ? true : (u.status || 'Completed') === statusF))
     .filter(u => {
       if (!search.trim()) return true;
@@ -519,12 +532,25 @@ export default function ERPStaffUpdates() {
   // ── Range aggregation (Today, Weekly Mon–Sun, or Monthly) ──
   const rangeStart = rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? weekStart : monthStart;
   const rangeEnd = rangeMode === 'day' ? todayKey() : rangeMode === 'week' ? isoAdd(weekStart, 6) : endOfMonth(monthStart);
+  // Helper: resolve the canonical name for any update record
+  const canonicalNameOf = (u) => {
+    const rawName = u.name || u.staffName || '';
+    const rawId   = u.staffId || u.authUid || '';
+    const canon = CANONICAL_STAFF_DEFINITIONS.find(c =>
+      c.aliases.some(a =>
+        rawName.toLowerCase() === a ||
+        rawName.toLowerCase().includes(a) ||
+        a.includes(rawName.toLowerCase())
+      ) || rawId === c.canonicalId || rawId === c.staffId
+    );
+    return canon ? canon.name : (rawName || 'Staff');
+  };
   const rangeReports = updates
     .filter(u => u.date >= rangeStart && u.date <= rangeEnd)
-    .sort((a, b) => String(a.name || a.staffName).localeCompare(String(b.name || b.staffName)) || String(a.date).localeCompare(String(b.date)));
+    .sort((a, b) => canonicalNameOf(a).localeCompare(canonicalNameOf(b)) || String(a.date).localeCompare(String(b.date)));
   const rangeGroups = {};
   rangeReports.forEach(u => {
-    const k = u.name || u.staffName || 'Staff';
+    const k = canonicalNameOf(u);
     (rangeGroups[k] = rangeGroups[k] || []).push(u);
   });
   const rangeStaff = Object.entries(rangeGroups);
@@ -1578,7 +1604,17 @@ export default function ERPStaffUpdates() {
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.departure || r.endTime || '—'}</td>
                           <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800, color: C.green }}>{r.totalWorkHours || r.totalHours || '—'}</td>
                           <td style={{ padding: '6px 8px', color: C.text, wordBreak: 'break-word', lineHeight: 1.5 }}>
-                            {r.workDescription || (r.tasks || []).map(t => t.description).join(' | ') || (r.items || []).join(' | ') || '—'}
+                            {r.startingWorkSummary && (
+                              <div style={{ fontSize: 10.5, color: C.cyan, marginBottom: 3, fontWeight: 700 }}>
+                                📋 Briefing: {r.startingWorkSummary}
+                              </div>
+                            )}
+                            {r.audioNote && (
+                              <div style={{ fontSize: 10, color: C.violet, marginBottom: 3, fontWeight: 700 }}>
+                                🎙 Voice Note ({r.audioNoteDuration || 'audio'})
+                              </div>
+                            )}
+                            <div>{r.workDescription || (r.tasks || []).map(t => t.description).join(' | ') || (r.items || []).join(' | ') || '—'}</div>
                           </td>
                           <td style={{ padding: '6px 8px', wordBreak: 'break-word' }}>
                             {(r.remarks || r.notes) && <div style={{ color: C.amber, fontSize: 10.5 }}><strong>RMK:</strong> {r.remarks || r.notes}</div>}
@@ -1857,8 +1893,18 @@ export default function ERPStaffUpdates() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <ERPAvatar name={displayName} size={32} />
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 900, color: C.text }}>
-                          {displayName} • {u.position || 'Software Associate'}
+                        <div style={{ fontSize: 13, fontWeight: 900, color: C.text, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span>{displayName} • {u.position || 'Software Associate'}</span>
+                          {u.startingWorkSummary && (
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 12, background: 'rgba(0,217,255,0.15)', color: C.cyan, border: '1px solid rgba(0,217,255,0.35)' }}>
+                              📋 Briefing
+                            </span>
+                          )}
+                          {u.audioNote && (
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 12, background: 'rgba(139,92,246,0.2)', color: C.violet, border: '1px solid rgba(139,92,246,0.4)' }}>
+                              🎙 Voice Note
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: 11, color: C.cyan, fontWeight: 700 }}>
                           {displayDate} ({displayDay}) • {u.location || 'SMART Trincomalee'} • {u.workMode || 'On-Site'}
@@ -1931,6 +1977,41 @@ export default function ERPStaffUpdates() {
                       <strong style={{ fontSize: 13, color: C.green }}>{u.totalWorkHours || u.totalHours || '—'}</strong>
                     </div>
                   </div>
+
+                  {/* Morning Work Briefing & Audio Voice Note */}
+                  {(u.startingWorkSummary || u.audioNote) && (
+                    <div style={{
+                      padding: '12px 14px', borderRadius: 8, background: 'rgba(139,92,246,0.08)',
+                      border: '1px solid rgba(139,92,246,0.28)', display: 'flex', flexDirection: 'column', gap: 8
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: C.violet, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          📋 Morning Work Briefing & Audio Note
+                        </span>
+                        {u.audioNoteDuration && (
+                          <span style={{ fontSize: 10.5, color: C.muted, fontWeight: 700 }}>
+                            ⏱ {u.audioNoteDuration}
+                          </span>
+                        )}
+                      </div>
+
+                      {u.startingWorkSummary && (
+                        <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, background: 'rgba(10,24,56,0.6)', padding: '8px 12px', borderRadius: 6, border: `1px solid ${C.border}` }}>
+                          <strong style={{ color: C.cyan, fontSize: 10.5, display: 'block', marginBottom: 3, letterSpacing: '0.04em' }}>OBJECTIVE / MORNING BRIEFING:</strong>
+                          {u.startingWorkSummary}
+                        </div>
+                      )}
+
+                      {u.audioNote && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(10,24,56,0.5)', padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 11, color: C.violet, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            🎙 Audio Voice Note:
+                          </span>
+                          <audio controls src={u.audioNote} style={{ height: 32, flex: 1, minWidth: 240, maxWidth: 450 }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Tasks Table — scrolls inside the card instead of pushing
                       the whole page wider. */}
@@ -2166,6 +2247,39 @@ export default function ERPStaffUpdates() {
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.subtle, marginBottom: 4 }}>Morning Work Briefing / Summary</label>
+                <textarea
+                  rows={2}
+                  value={editForm.startingWorkSummary || ''}
+                  onChange={e => setEditForm(p => ({ ...p, startingWorkSummary: e.target.value }))}
+                  placeholder="Morning briefing objectives / tasks assigned on arrival..."
+                  style={{ width: '100%', background: 'rgba(10,24,56,0.8)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px', color: C.text, fontSize: 12, resize: 'vertical' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: C.violet, marginBottom: 4 }}>Voice Note Recording</label>
+                {editForm.audioNote ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(10,24,56,0.8)', padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(139,92,246,0.3)' }}>
+                    <audio controls src={editForm.audioNote} style={{ height: 32, flex: 1 }} />
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(p => ({ ...p, audioNote: '', audioNoteDuration: '' }))}
+                      title="Remove voice note"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.red, padding: 4 }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic', padding: '10px', background: 'rgba(10,24,56,0.4)', borderRadius: 8, border: `1px dashed ${C.border}` }}>
+                    No voice note attached to this report.
+                  </div>
+                )}
               </div>
             </div>
 
