@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ERPPanel, ERPPanelHeader, ERPBtn, ERPInput, ERPTextarea, C } from '../components/ERPui';
-import { Save, Shield, Bell, Building, User, Lock, ShieldCheck, Landmark } from 'lucide-react';
+import {
+  Save, Shield, Bell, Building, User, Lock, ShieldCheck, Landmark,
+  Key, Copy, Check, Eye, EyeOff, RefreshCw, Code, CheckCircle2
+} from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import {
   EmailAuthProvider, reauthenticateWithCredential, updatePassword,
@@ -16,6 +19,7 @@ const SECTIONS = [
   {id:'company',  label:'Company Info',     icon:<Building size={14}/> },
   {id:'admin',    label:'Admin Profile',    icon:<User size={14}/>     },
   {id:'security', label:'Security',         icon:<Lock size={14}/>     },
+  {id:'api',      label:'Boss & Manager API Key', icon:<Key size={14}/> },
   {id:'bank',     label:'Bank Details',     icon:<Landmark size={14}/> },
   {id:'rules',    label:'Access Rules',     icon:<ShieldCheck size={14}/> },
   {id:'deploy',   label:'Rules Status',     icon:<Shield size={14}/>   },
@@ -52,6 +56,13 @@ export default function ERPSettings() {
     projectUpdates:true,messages:true,staffSalary:false,
   });
 
+  // ── Boss & Manager API Key (Executive Portal Connection) ──
+  const [apiKey, setApiKey] = useState('smart_live_sec_7a9f82d14b8e3c6a501e4d92bf7301c8');
+  const [keyVisible, setKeyVisible] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
+  const [apiSaved, setApiSaved] = useState(false);
+  const [apiBusy, setApiBusy] = useState(false);
+
   // ── Bank details (persisted to Firestore settings/bankDetails) ──
   const [bankForm,   setBankForm]   = useState(EMPTY_BANK);
   const [bankLoaded, setBankLoaded] = useState(false);
@@ -76,12 +87,53 @@ export default function ERPSettings() {
       getDoc(doc(db, 'settings', 'companyInfo')),
       getDoc(doc(db, 'settings', 'adminProfile')),
       getDoc(doc(db, 'settings', 'notifications')),
-    ]).then(([comp, admin, notif]) => {
+      getDoc(doc(db, 'settings', 'apiConfig')),
+    ]).then(([comp, admin, notif, apiSnap]) => {
       if (comp.exists()) setCompForm(p => ({ ...p, ...comp.data() }));
       if (admin.exists()) setAdminForm(p => ({ ...p, ...admin.data() }));
       if (notif.exists()) setNotifs(p => ({ ...p, ...notif.data() }));
+      if (apiSnap.exists() && apiSnap.data()?.key) setApiKey(apiSnap.data().key);
     }).catch(err => console.error('Settings load error', err));
   }, []);
+
+  const handleGenerateApiKey = async () => {
+    setApiBusy(true);
+    const chars = 'abcdef0123456789';
+    let rand = '';
+    for (let i = 0; i < 32; i++) rand += chars[Math.floor(Math.random() * chars.length)];
+    const newKey = `smart_live_sec_${rand}`;
+    setApiKey(newKey);
+    try {
+      if (isFirebaseConfigured) {
+        await setDoc(doc(db, 'settings', 'apiConfig'), {
+          key: newKey,
+          name: 'Boss & Manager Executive Portal',
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        await setDoc(doc(db, 'apiKeys', 'boss_manager_key'), {
+          key: newKey,
+          name: 'Boss & Manager Executive Portal',
+          status: 'active',
+          scopes: ['read:staff', 'read:attendance', 'write:attendance', 'read:salary', 'read:dailyUpdates', 'read:assignedWork', 'write:approvals'],
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+      setApiSaved(true);
+      setTimeout(() => setApiSaved(false), 2500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setApiBusy(false);
+    }
+  };
+
+  const handleCopyApiKey = () => {
+    navigator.clipboard?.writeText(apiKey).then(() => {
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 2500);
+    });
+  };
 
   const handleSaveBank = async () => {
     setBankError('');
@@ -285,6 +337,157 @@ export default function ERPSettings() {
               <ERPBtn variant="primary" onClick={handleUpdatePassword} disabled={savingSection === 'security'} style={{alignSelf:'flex-end'}}>
                 <Lock size={13}/> {savingSection === 'security' ? 'Updating…' : 'Update Password'}
               </ERPBtn>
+            </div>
+          </ERPPanel>
+        )}
+
+        {/* ── Boss & Manager API Key (Executive Portal) ── */}
+        {section==='api' && (
+          <ERPPanel>
+            <ERPPanelHeader title="Boss & Manager Webpage Connection API" icon="🔑" />
+            <div style={{padding:20,display:'flex',flexDirection:'column',gap:16}}>
+              <div style={{padding:'12px 16px',borderRadius:12,background:'rgba(0,102,255,0.07)',border:`1px solid ${C.borderHi}`,fontSize:11.5,color:C.subtle,lineHeight:1.65}}>
+                🌐 <strong>Boss & Manager Executive Portal Connection Key</strong><br/>
+                Use this secure API Key to connect your SMART ERP to the executive Boss & Manager webpage.
+                Any updates made by staff or admin (profile, attendance, salary, daily updates, assigned work)
+                will seamlessly sync to the external dashboard, and approvals submitted by the Boss & Manager
+                will write straight back into the ERP.
+              </div>
+
+              {apiSaved && (
+                <div style={{padding:'10px 16px',borderRadius:10,background:'rgba(24,199,122,0.1)',border:'1px solid rgba(24,199,122,0.3)',fontSize:12,color:C.green,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                  <CheckCircle2 size={15}/> API Key generated and activated successfully!
+                </div>
+              )}
+
+              {/* API Key Box */}
+              <div style={{
+                background:'rgba(4,13,31,0.7)',border:`1px solid ${C.border}`,borderRadius:12,padding:14,
+                display:'flex',flexDirection:'column',gap:10,
+              }}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <label style={{fontSize:11,fontWeight:700,color:C.subtle,textTransform:'uppercase',letterSpacing:0.6}}>
+                    Active Connection API Key
+                  </label>
+                  <span style={{
+                    fontSize:10,fontWeight:800,color:C.green,background:'rgba(24,199,122,0.12)',
+                    border:'1px solid rgba(24,199,122,0.3)',padding:'2px 8px',borderRadius:10,
+                  }}>
+                    ● ACTIVE
+                  </span>
+                </div>
+
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{
+                    flex:1,padding:'11px 14px',borderRadius:10,background:'#020612',
+                    border:`1px solid ${C.border}`,fontFamily:'monospace',fontSize:12,
+                    color:'#A5B4FC',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',letterSpacing:0.8,
+                  }}>
+                    {keyVisible ? apiKey : apiKey.slice(0, 15) + '••••••••••••••••••••••••••••••'}
+                  </div>
+                  <button
+                    onClick={()=>setKeyVisible(!keyVisible)}
+                    title={keyVisible ? 'Hide API Key' : 'Reveal API Key'}
+                    style={{
+                      background:'rgba(255,255,255,0.05)',border:`1px solid ${C.border}`,borderRadius:10,
+                      padding:'10px 12px',color:C.subtle,cursor:'pointer',display:'flex',alignItems:'center',
+                    }}
+                  >
+                    {keyVisible ? <EyeOff size={15}/> : <Eye size={15}/>}
+                  </button>
+                  <ERPBtn
+                    variant="primary"
+                    onClick={handleCopyApiKey}
+                    style={{padding:'10px 14px',gap:6}}
+                  >
+                    {keyCopied ? <Check size={14} style={{color:C.green}}/> : <Copy size={14}/>}
+                    {keyCopied ? 'Copied' : 'Copy Key'}
+                  </ERPBtn>
+                </div>
+
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4,fontSize:10.5,color:C.muted}}>
+                  <span>Send in HTTP Header: <code>x-api-key: {keyVisible ? apiKey : 'YOUR_KEY'}</code></span>
+                  <button
+                    onClick={handleGenerateApiKey}
+                    disabled={apiBusy}
+                    style={{
+                      background:'none',border:'none',color:C.blue,fontSize:11,
+                      fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:4,
+                    }}
+                  >
+                    <RefreshCw size={11}/> {apiBusy ? 'Generating…' : 'Regenerate New Key'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Endpoint Base URL */}
+              <div>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:C.subtle,marginBottom:5}}>
+                  Connection API Base URL (Asia / Colombo Region)
+                </label>
+                <div style={{
+                  padding:'10px 12px',borderRadius:10,background:'rgba(255,255,255,0.03)',
+                  border:`1px solid ${C.border}`,fontSize:12,fontFamily:'monospace',color:C.cyan,
+                  display:'flex',justifyContent:'space-between',alignItems:'center',
+                }}>
+                  <span>https://asia-south1-smart-pvt-ltd-website.cloudfunctions.net/api/v1</span>
+                  <button
+                    onClick={()=>navigator.clipboard?.writeText('https://asia-south1-smart-pvt-ltd-website.cloudfunctions.net/api/v1')}
+                    style={{background:'none',border:'none',color:C.muted,cursor:'pointer'}}
+                  >
+                    <Copy size={13}/>
+                  </button>
+                </div>
+              </div>
+
+              {/* Included Capabilities / Scopes */}
+              <div>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:C.subtle,marginBottom:8}}>
+                  Connected Modules & Capabilities
+                </label>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  {[
+                    {name:'Staff Profiles',scope:'read:staff',desc:'View staff info, department, role, status'},
+                    {name:'Staff Attendance',scope:'read:attendance, write:attendance',desc:'Live punches, monochrome selfie photos, out-office breaks'},
+                    {name:'Staff Salary & Payslips',scope:'read:salary',desc:'Monthly salary breakdown, payment status & receipts'},
+                    {name:'Daily Work Updates',scope:'read:dailyUpdates',desc:'Task logs, hours worked, descriptions & tomorrow plans'},
+                    {name:'Assigned Work / Projects',scope:'read:assignedWork',desc:'Assigned stages, client project status & reviews'},
+                    {name:'Boss & Manager Approvals',scope:'write:approvals',desc:'One-click approvals for leave, tasks & salary payments'},
+                  ].map(m=>(
+                    <div key={m.name} style={{
+                      padding:'9px 12px',borderRadius:10,background:'rgba(255,255,255,0.02)',
+                      border:`1px solid ${C.border}20`,display:'flex',flexDirection:'column',gap:2,
+                    }}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <strong style={{fontSize:11.5,color:C.text}}>{m.name}</strong>
+                        <span style={{fontSize:9,color:C.blue,fontFamily:'monospace'}}>{m.scope}</span>
+                      </div>
+                      <span style={{fontSize:10,color:C.muted}}>{m.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sample Code for Developer */}
+              <div>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:C.subtle,marginBottom:5}}>
+                  Quick Connection Example (JavaScript / Webpage)
+                </label>
+                <pre style={{
+                  fontSize:10.5,background:'#020612',color:'#CBD5E1',padding:12,
+                  borderRadius:10,border:`1px solid ${C.border}`,margin:0,overflowX:'auto',lineHeight:1.6,
+                }}>
+{`// Example: Fetch Staff Attendance & Profiles for Boss Dashboard
+const res = await fetch("https://asia-south1-smart-pvt-ltd-website.cloudfunctions.net/api/v1/attendance?date=today", {
+  headers: {
+    "x-api-key": "${apiKey}",
+    "Content-Type": "application/json"
+  }
+});
+const { ok, data } = await res.json();
+console.log("Live ERP Attendance:", data);`}
+                </pre>
+              </div>
             </div>
           </ERPPanel>
         )}

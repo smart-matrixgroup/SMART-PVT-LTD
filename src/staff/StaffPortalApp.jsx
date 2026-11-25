@@ -119,8 +119,8 @@ function Section({ page, onNavigate, isAllowed }) {
     case 'daily':           return <DailyUpdate />;
     case 'sheets':          return <WorkSheets />;
     case 'client_projects': return <StaffClientProjects isRestricted={false} />;
-    case 'checkout':        return <MyAttendance variant="checkout" />;
-    case 'attendance':      return <MyAttendance variant="attendance" />;
+    case 'checkout':        return <MyAttendance variant="checkout" onNavigate={onNavigate} />;
+    case 'attendance':      return <MyAttendance variant="attendance" onNavigate={onNavigate} />;
     case 'leave':           return <MyLeave />;
     case 'profile':         return <MyProfile />;
     case 'kyc':             return <MyDocuments category="kyc" icon={IdCard} />;

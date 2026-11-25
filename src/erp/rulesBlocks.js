@@ -39,6 +39,9 @@ export const RULES_BLOCKS = [
   { coll: 'weeklyReportRuns',   name: 'Weekly report mail ledger', page: 'Daily Updates → Week end mails', since: 'weekly report mails' },
   { coll: 'reportEmailConfig',  name: 'Week end mail settings',  page: 'Daily Updates → Week end mails', since: 'weekly report mails' },
   { coll: 'offerLetters',       name: 'Offer letters',           page: 'Team → Offer Letters', since: 'offer letters' },
+  { coll: 'ndaLetters',         name: 'NDA letters',             page: 'Team → NDA Letters', since: 'nda letters' },
+  { coll: 'whatsappAlerts',     name: 'WhatsApp alert log',      page: 'Team → WhatsApp Alerts', since: 'whatsapp alerts' },
+  { coll: 'whatsappConfig',     name: 'WhatsApp alert settings', page: 'Team → WhatsApp Alerts', since: 'whatsapp alerts' },
   { coll: 'settings',           name: 'Settings & access rules', page: 'Settings, bank details, access rules', since: 'first build' },
 ];
 
@@ -55,7 +58,7 @@ export const changedBlocks = RULES_BLOCKS.filter(b => b.changed);
  * ran the deploy for THIS revision, so it comes back on the next rewrite
  * instead of nagging forever after one deploy.
  */
-export const RULES_REVISION = 'offer-letters-1';
+export const RULES_REVISION = 'nda-whatsapp-1';
 
 /** The blocks that still need deploying, in the order they were added. */
 export const pendingBlocks = results =>

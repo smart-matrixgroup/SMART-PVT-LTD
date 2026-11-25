@@ -10,12 +10,15 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, query,
 import { db, isFirebaseConfigured } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { ERPPanel, ERPPanelHeader, ERPBadge, ERPBtn, ERPModal, ERPInput, ERPSelect, ERPEmpty, ERPAvatar, C } from '../components/ERPui';
-import { nextNumber, thisMonthKey, monthLabel, computeNet } from '../../staff/staffUtils';
+import { nextNumber, thisMonthKey, monthLabel, computeNet, getMonthsBetween, calculateStaffSalarySummary } from '../../staff/staffUtils';
 import PayslipDoc from '../../staff/PayslipDoc';
 import { saveTablePdf } from '../utils/reportPdf';
 import { savePayslipPdf } from '../../staff/payslipPdf';
 import { toInt, formatLKR, fmtDate, todayISO } from '../money';
-import { Plus, FileText, Trash2, AlertTriangle } from 'lucide-react';
+import { OFFICIAL_STAFF_MEMBERS } from '../data/officialAttendance.js';
+import { normalizeOfficialStaff } from '../../staff/canonicalStaff.js';
+import SalarySheetSyncModal from '../components/SalarySheetSyncModal';
+import { Plus, FileText, Trash2, AlertTriangle, UploadCloud, CheckCircle, Clock, Calendar } from 'lucide-react';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Cheque', 'Card', 'Online'];
@@ -36,6 +39,7 @@ export default function ERPStaffSalary() {
   const [loadError, setLoadError] = useState(null);
   const [monthF,   setMonthF]   = useState(thisMonthKey());
   const [showForm, setShowForm] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [form,     setForm]     = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [slipTarget, setSlipTarget] = useState(null);
@@ -43,17 +47,31 @@ export default function ERPStaffSalary() {
   const [busy,       setBusy]       = useState(false);
 
   useEffect(() => {
-    if (!live) { setPayments(DEV_PAYMENTS); setStaff(DEV_STAFF); setLoading(false); return; }
+    if (!live) {
+      setPayments(DEV_PAYMENTS);
+      setStaff(normalizeOfficialStaff([]));
+      setLoading(false);
+      return;
+    }
     const unsubs = [
       onSnapshot(collection(db, 'salaryPayments'),
         snap => { setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); },
         err => { console.error(err); setLoadError(`Salary payments — ${err.message}`); setLoading(false); }),
       onSnapshot(collection(db, 'staff'),
-        snap => setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted)),
+        snap => {
+          const liveStaff = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted);
+          setStaff(normalizeOfficialStaff(liveStaff));
+        },
         err => console.error(err)),
     ];
     return () => unsubs.forEach(u => u());
   }, [live]);
+
+  const currentMonth = thisMonthKey();
+  const salarySummaries = staff.map(s => calculateStaffSalarySummary(s, payments, currentMonth)).filter(Boolean);
+  const totalMonthsWorkedAll = salarySummaries.reduce((sum, s) => sum + (s?.monthsWorkedCount || 0), 0);
+  const totalMonthsPaidAll = salarySummaries.reduce((sum, s) => sum + (s?.monthsPaidCount || 0), 0);
+  const totalPendingMonthsAll = salarySummaries.reduce((sum, s) => sum + (s?.monthsPendingCount || 0), 0);
 
   const monthPayments = payments
     .filter(p => !monthF || p.month === monthF)
@@ -99,10 +117,21 @@ export default function ERPStaffSalary() {
     });
   };
 
-
-  const openCreate = () => {
-    setForm({ staffId: '', month: monthF, amount: '', paidOn: todayISO(), method: 'Bank Transfer', reference: '' });
-    setFormError(null); setShowForm(true);
+  const openCreate = (initialStaff = null, initialMonth = null) => {
+    const s = initialStaff || staff[0];
+    const sId = s ? s.id : '';
+    const m = initialMonth || monthF || currentMonth;
+    const netAmt = s ? staffNet(s) : 0;
+    setForm({
+      staffId: sId,
+      month: m,
+      amount: netAmt ? String(netAmt) : '60000',
+      paidOn: todayISO(),
+      method: 'Bank Transfer',
+      reference: ''
+    });
+    setFormError(null);
+    setShowForm(true);
   };
 
   const pickStaff = id => {
@@ -185,10 +214,131 @@ export default function ERPStaffSalary() {
           disabled={!monthPayments.length}>
           <FileText size={13} /> Payroll Register PDF
         </ERPBtn>
-        <ERPBtn variant="primary" onClick={openCreate}>
+        <ERPBtn variant="secondary" onClick={() => setShowSyncModal(true)}
+          style={{ background: 'rgba(139,92,246,0.12)', color: C.violet, border: '1px solid rgba(139,92,246,0.35)' }}>
+          <UploadCloud size={13} /> Sync Salary Sheet
+        </ERPBtn>
+        <ERPBtn variant="primary" onClick={() => openCreate()}>
           <Plus size={13} /> Record Salary Payment
         </ERPBtn>
       </div>
+
+      {/* Staff Salary Overview: Months Worked vs Months Paid */}
+      <ERPPanel>
+        <ERPPanelHeader
+          title="Staff Salary Status (Months Worked vs Months Paid)"
+          icon="👥"
+          action={
+            <span style={{ fontSize: 11, color: C.muted }}>
+              <strong style={{ color: C.cyan }}>{salarySummaries.length}</strong> staff • <strong style={{ color: C.green }}>{totalMonthsPaidAll}</strong> months paid • <strong style={{ color: C.amber }}>{totalPendingMonthsAll}</strong> pending
+            </span>
+          }
+        />
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
+            <thead>
+              <tr style={{ background: 'rgba(10,24,56,0.5)', borderBottom: `1px solid ${C.border}` }}>
+                {['Staff', 'Department / Role', 'Joined / Start', 'Worked', 'Paid', 'Pending Months', 'Total Paid', 'Action'].map(h => (
+                  <th key={h} style={{
+                    padding: '10px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.8px', color: C.muted, textAlign: h === 'Total Paid' ? 'right' : 'left'
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {salarySummaries.map((sum, i) => (
+                <tr
+                  key={sum.staffId || i}
+                  style={{ borderTop: `1px solid ${C.border}20` }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,102,255,0.04)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <td style={{ padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <ERPAvatar name={sum.staffName} color={AVATAR_COLORS[i % AVATAR_COLORS.length]} size={28} />
+                      <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{sum.staffName}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <div style={{ fontSize: 11.5, color: C.subtle }}>{sum.role}</div>
+                    <div style={{ fontSize: 10, color: C.muted }}>{sum.department}</div>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ fontSize: 11.5, color: C.cyan, fontWeight: 700 }}>{sum.joinedDate}</span>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 12,
+                      background: 'rgba(0,102,255,0.15)', color: C.cyan, border: `1px solid ${C.borderHi}`
+                    }}>
+                      {sum.monthsWorkedCount} mo
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 12,
+                      background: sum.monthsPaidCount > 0 ? 'rgba(24,199,122,0.15)' : 'rgba(255,255,255,0.06)',
+                      color: sum.monthsPaidCount > 0 ? C.green : C.muted,
+                      border: `1px solid ${sum.monthsPaidCount > 0 ? 'rgba(24,199,122,0.35)' : C.border}`
+                    }}>
+                      {sum.monthsPaidCount} paid
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    {sum.pendingMonths.length === 0 ? (
+                      <span style={{ fontSize: 11, color: C.green, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        ✓ Up to date
+                      </span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {sum.pendingMonths.map(pm => (
+                          <button
+                            key={pm}
+                            onClick={() => {
+                              const sObj = staff.find(x => x.id === sum.staffId || x.name === sum.staffName);
+                              openCreate(sObj, pm);
+                            }}
+                            title={`Click to record salary payment for ${monthLabel(pm)}`}
+                            style={{
+                              padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: 'pointer',
+                              background: 'rgba(245,185,66,0.15)', color: C.amber, border: '1px solid rgba(245,185,66,0.35)',
+                              display: 'inline-flex', alignItems: 'center', gap: 3
+                            }}
+                          >
+                            + {monthLabel(pm)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: sum.totalPaid > 0 ? C.green : C.muted }}>
+                      {formatLKR(sum.totalPaid)}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    {sum.pendingMonths.length > 0 ? (
+                      <ERPBtn
+                        size="sm"
+                        variant="primary"
+                        onClick={() => {
+                          const sObj = staff.find(x => x.id === sum.staffId || x.name === sum.staffName);
+                          openCreate(sObj, sum.pendingMonths[0]);
+                        }}
+                      >
+                        Pay {monthLabel(sum.pendingMonths[0])}
+                      </ERPBtn>
+                    ) : (
+                      <span style={{ fontSize: 10.5, color: C.green, fontWeight: 700 }}>Done</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </ERPPanel>
 
       {/* Payments table */}
       <ERPPanel>
@@ -323,6 +473,19 @@ export default function ERPStaffSalary() {
           </div>
         </div>
       </ERPModal>
+
+      {/* Salary Sheet Import / Sync Modal */}
+      <SalarySheetSyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        staff={staff}
+        live={live}
+        onImported={(newRecs) => {
+          if (!live) {
+            setPayments(prev => [...newRecs, ...prev]);
+          }
+        }}
+      />
     </div>
   );
 }

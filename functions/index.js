@@ -2,7 +2,7 @@
 //  SMART PVT LTD — weekly staff report emails (Cloud Functions)
 //
 //  What this does
-//    Every week end (Sunday 23:30, Asia/Colombo) the scheduler reads
+//    Every week end (Saturday 23:30, Asia/Colombo) the scheduler reads
 //    `dailyUpdates` for Mon…Sun, builds ONE PDF per staff member
 //    (weeklyReportPdf.js — same layout as the staff portal's sheet) and mails
 //    each of them separately to the owner. Every run is written to
@@ -35,7 +35,7 @@
 
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions/v2');
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
@@ -43,6 +43,7 @@ const nodemailer = require('nodemailer');
 const { jsPDF } = require('jspdf');
 const { buildWeeklyReportPdf } = require('./weeklyReportPdf');
 const { dateKeyOf, isoWeek, weekBounds, prettyDay, todayKeyColombo } = require('./weekUtils');
+const { handleBossManagerApi } = require('./bossManagerApi');
 
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
@@ -54,8 +55,8 @@ const ADMIN_EMAILS = ['admin@smart.com', 'admin@findmysmart.com'];
 const DEFAULT_TO = 'matrixgroup.smart@gmail.com';
 const DEFAULT_FROM = 'matrixgroup.smart@gmail.com';
 const TIME_ZONE = 'Asia/Colombo';
-// minute hour day-of-month month day-of-week → Sunday 23:30, every week.
-const WEEK_CRON = '30 23 * * 0';
+// minute hour day-of-month month day-of-week → Saturday 23:30, every week.
+const WEEK_CRON = '30 23 * * 6';
 
 setGlobalOptions({
   region: 'asia-south1',
@@ -260,6 +261,251 @@ exports.sendWeeklyReportsNow = onCall({ timeoutSeconds: 300, memory: '512MiB' },
     logger.error('manual weekly report run failed', { message });
     throw new HttpsError('internal', message);
   }
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  WhatsApp alerts
+//    · 15:30 Mon–Sat → a confirmation to every active staff member who
+//      has already checked in, to the number in their staff profile.
+//    · 09:00 on the 12th and 14th → alert the owner (076 210 0778)
+//      with everyone whose salary for the month is not marked yet.
+//  Both run by themselves on Cloud Scheduler; nobody has to press
+//  anything. Every attempt is written to whatsappAlerts with the composed
+//  text and a wa.me link, so an unconfigured API still leaves the message
+//  one tap away in the ERP. The API token never leaves the Functions
+//  environment.
+// ─────────────────────────────────────────────────────────────────
+const wa = require('./whatsapp');
+
+const WA_COLLECTION = 'whatsappAlerts';
+const WA_CONFIG = 'whatsappConfig';
+
+async function readWhatsAppConfig() {
+  const defaults = {
+    enabled: true,
+    ownerPhone: wa.OWNER_PHONE,
+    startMonth: wa.DEFAULT_START_MONTH,
+    templateCheckin: '',
+    templateSalary: '',
+    language: 'en',
+  };
+  try {
+    const snap = await db.collection(WA_CONFIG).doc('main').get();
+    return snap.exists ? { ...defaults, ...(snap.data() || {}) } : defaults;
+  } catch (err) {
+    logger.warn('whatsappConfig could not be read, using defaults', { message: err.message });
+    return defaults;
+  }
+}
+
+async function whatsappRoster() {
+  const snap = await db.collection('staff').get();
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(s => !s.deleted && (s.status || 'active') === 'active')
+    .map(s => ({
+      id: s.id,
+      name: s.name || '',
+      phone: s.phone || '',
+      role: s.position || s.role || '',
+    }));
+}
+
+/** One message per person; the doc id is deterministic, so a retry or a
+ *  double schedule can never message the same person twice for one day. */
+async function recordWhatsApp({ id, status, payload, extra = {} }) {
+  try {
+    await db.collection(WA_COLLECTION).doc(id).set({
+      ...payload,
+      ...extra,
+      status,
+      updatedAt: new Date(),
+    }, { merge: true });
+  } catch (err) {
+    logger.error('whatsappAlerts write failed', { id, message: err.message });
+  }
+}
+
+async function alreadySent(id) {
+  try {
+    const snap = await db.collection(WA_COLLECTION).doc(id).get();
+    return snap.exists && snap.data().status === 'sent';
+  } catch {
+    return false;
+  }
+}
+
+async function runCheckinReminders({ dayKey, trigger = 'schedule' } = {}) {
+  const date = dayKey || todayKeyColombo();
+  const cfg = await readWhatsAppConfig();
+  const summary = { job: 'checkin', date, trigger, total: 0, sent: 0, manual: 0, failed: 0, skipped: 0 };
+  if (!cfg.enabled) return { ...summary, disabled: true };
+
+  const [staff, attSnap] = await Promise.all([
+    whatsappRoster(),
+    db.collection('attendance').where('date', '==', date).get(),
+  ]);
+  const records = attSnap.docs.map(d => d.data());
+  const checkedIn = wa.checkedInStaff(staff, records);
+  summary.total = checkedIn.length;
+
+  const token = process.env.WHATSAPP_TOKEN || '';
+  const phoneId = process.env.WHATSAPP_PHONE_ID || '';
+
+  for (const person of checkedIn) {
+    const id = `checkin_${date}_${person.id}`;
+    if (await alreadySent(id)) { summary.skipped += 1; continue; }
+
+    const message = wa.checkinConfirmation(person.name, date, person.attendance?.checkInMs);
+    const first = String(person.name).trim().split(/\s+/)[0] || 'there';
+    const res = await wa.sendWhatsApp({
+      token,
+      phoneId,
+      to: person.phone,
+      text: message,
+      template: cfg.templateCheckin || '',
+      params: [first, wa.prettyDay(date)],
+      language: cfg.language || 'en',
+    });
+    const status = res.ok ? 'sent' : (res.skipped ? 'manual' : 'failed');
+    summary[status] += 1;
+
+    await recordWhatsApp({
+      id,
+      status,
+      payload: {
+        kind: 'checkin',
+        date,
+        staffId: person.id,
+        staffName: person.name,
+        phone: wa.normalizePhone(person.phone),
+        checkInMs: person.attendance?.checkInMs || 0,
+        message,
+        waLink: wa.waLink(person.phone, message),
+        template: cfg.templateCheckin || '',
+        sentAt: res.ok ? new Date() : null,
+        providerId: res.ok ? res.id : '',
+        error: res.ok ? '' : String(res.error || ''),
+        trigger,
+      },
+    });
+  }
+
+  logger.info('whatsapp check-in reminders', { summary: JSON.stringify(summary) });
+  return summary;
+}
+
+async function runSalaryAlert({ dayKey, trigger = 'schedule' } = {}) {
+  const today = dayKey || todayKeyColombo();
+  const cfg = await readWhatsAppConfig();
+  const month = wa.salaryWindow(today);
+  const summary = { job: 'salary', date: today, month, trigger, pending: 0, status: 'skipped' };
+
+  if (!month) return { ...summary, reason: 'not the 12th or 14th' };
+  if (!wa.afterStartMonth(month, cfg.startMonth)) {
+    return { ...summary, reason: `before the first alert month (${cfg.startMonth})` };
+  }
+  if (!cfg.enabled) return { ...summary, disabled: true };
+
+  const [staff, paySnap] = await Promise.all([
+    whatsappRoster(),
+    db.collection('salaryPayments').where('month', '==', month).get(),
+  ]);
+  const unpaid = wa.unpaidStaff(staff, paySnap.docs.map(d => d.data()));
+  summary.pending = unpaid.length;
+  if (!unpaid.length) return { ...summary, reason: 'every salary is marked' };
+
+  const id = `salary_${month}_${today}`;
+  if (await alreadySent(id)) return { ...summary, reason: 'already alerted today' };
+
+  const names = unpaid.map(s => `${s.name}${s.role ? ` (${s.role})` : ''}`);
+  const message = wa.salaryPendingMessage(month, names);
+  const to = cfg.ownerPhone || wa.OWNER_PHONE;
+  const res = await wa.sendWhatsApp({
+    token: process.env.WHATSAPP_TOKEN || '',
+    phoneId: process.env.WHATSAPP_PHONE_ID || '',
+    to,
+    text: message,
+    template: cfg.templateSalary || '',
+    params: [wa.monthLabel(month), String(unpaid.length), names.join(', ')],
+    language: cfg.language || 'en',
+  });
+  summary.status = res.ok ? 'sent' : (res.skipped ? 'manual' : 'failed');
+
+  await recordWhatsApp({
+    id,
+    status: summary.status,
+    payload: {
+      kind: 'salary',
+      date: today,
+      month,
+      staffName: `Payroll — ${wa.monthLabel(month)}`,
+      phone: wa.normalizePhone(to),
+      message,
+      waLink: wa.waLink(to, message),
+      pending: names,
+      template: cfg.templateSalary || '',
+      sentAt: res.ok ? new Date() : null,
+      providerId: res.ok ? res.id : '',
+      error: res.ok ? '' : String(res.error || ''),
+      trigger,
+    },
+  });
+
+  logger.info('whatsapp salary alert', { summary: JSON.stringify(summary) });
+  return summary;
+}
+
+function assertAdminCaller(request) {
+  const email = String(request.auth?.token?.email || '').toLowerCase();
+  const ok = ADMIN_EMAILS.includes(email) || request.auth?.token?.admin === true;
+  if (!ok) throw new HttpsError('permission-denied', 'Only the administrator can send WhatsApp alerts.');
+}
+
+exports.whatsappCheckinReminder = onSchedule(
+  wa.CHECKIN_CRON, { timeZone: wa.TIME_ZONE }, async () => {
+    try {
+      await runCheckinReminders({ trigger: 'schedule' });
+    } catch (err) {
+      logger.error('scheduled check-in reminder failed', { message: String(err && err.message || err) });
+    }
+  },
+);
+
+exports.whatsappSalaryAlert = onSchedule(
+  wa.SALARY_CRON, { timeZone: wa.TIME_ZONE }, async () => {
+    try {
+      await runSalaryAlert({ trigger: 'schedule' });
+    } catch (err) {
+      logger.error('scheduled salary alert failed', { message: String(err && err.message || err) });
+    }
+  },
+);
+
+exports.runWhatsAppCheckinNow = onCall({ timeoutSeconds: 120 }, async request => {
+  assertAdminCaller(request);
+  try {
+    return await runCheckinReminders({ dayKey: request.data?.dayKey, trigger: 'admin' });
+  } catch (err) {
+    throw new HttpsError('internal', String(err && err.message || err));
+  }
+});
+
+exports.runWhatsAppSalaryNow = onCall({ timeoutSeconds: 120 }, async request => {
+  assertAdminCaller(request);
+  try {
+    return await runSalaryAlert({ dayKey: request.data?.dayKey, trigger: 'admin' });
+  } catch (err) {
+    throw new HttpsError('internal', String(err && err.message || err));
+  }
+});
+
+/**
+ * Boss & Manager Executive Connection API
+ * Secure REST API for executive dashboard and 1-click approvals.
+ */
+exports.api = onRequest({ cors: true, timeoutSeconds: 60, region: 'asia-south1' }, async (req, res) => {
+  return handleBossManagerApi(req, res, db);
 });
 
 // Re-exported for the QA tests (tests/qa.test.mjs requires this file).

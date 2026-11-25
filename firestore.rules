@@ -411,6 +411,22 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Non-disclosure agreements. Same reason as offer letters: personal
+    // contact details and the company's own confidential wording.
+    match /ndaLetters/{letterId} {
+      allow read, write: if isAdmin();
+    }
+
+    // WhatsApp alert ledger + its (non-secret) settings. The Cloud Function
+    // writes with the Admin SDK; the ERP reads the log and can mark a row
+    // as sent by hand. The API token is never stored here.
+    match /whatsappAlerts/{alertId} {
+      allow read, write: if isAdmin();
+    }
+    match /whatsappConfig/{configId} {
+      allow read, write: if isAdmin();
+    }
+
     // System Settings & Access Control Rules
     match /settings/{settingId} {
       allow read: if request.auth != null;

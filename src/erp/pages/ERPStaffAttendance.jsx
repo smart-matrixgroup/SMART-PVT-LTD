@@ -17,19 +17,25 @@ import { leaveDateList, leaveDays, letterDate } from '../../staff/leaveLetter';
 import {
   attendanceStatus, minutesBetween, fmtTime, fmtHours, downloadCsv,
   todayKey, thisMonthKey, monthLabel, periodRange, expectedWorkdays, dayLabel,
-  getDayName, addDaysIso, toMs,
+  getDayName, addDaysIso, toMs, sameStaffName,
 } from '../../staff/staffUtils';
+import { normalizeOfficialStaff, matchesStaffFilter } from '../../staff/canonicalStaff.js';
 import { company } from '../../config/company';
 import { saveTablePdf } from '../utils/reportPdf';
 import {
   getStaffCheckInPublicUrl, generateStaffCheckInQRCodeDataUrl, downloadStaffCheckInQRPng,
 } from '../../utils/qrUtils';
-import { Pencil, AlertTriangle, Download, Printer, QrCode, ExternalLink, Copy, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import {
+  Pencil, AlertTriangle, Download, Printer, QrCode, ExternalLink,
+  Copy, ChevronLeft, ChevronRight, Trash2, Camera, Navigation, FileSpreadsheet, Eye
+} from 'lucide-react';
+import AttendanceSheetSyncModal from '../components/AttendanceSheetSyncModal';
+import { OFFICIAL_ATTENDANCE_RECORDS, OFFICIAL_STAFF_MEMBERS } from '../data/officialAttendance';
 
 const AVATAR_COLORS = ['#0066FF', '#8B5CF6', '#18C77A', '#F5B942', '#F05A67', '#00D9FF'];
 
-// Dev preview shows no invented attendance rows.
-const DEV_ATT = [];
+// Full official 7-staff attendance history (2026-09-28 to 2026-11-23)
+const DEV_ATT = OFFICIAL_ATTENDANCE_RECORDS;
 
 const REPORT_HEADERS = ['Date', 'Staff', 'Check In', 'Check Out', 'Hours', 'Status'];
 const ATT_PDF_COLUMNS = [
@@ -118,6 +124,11 @@ export default function ERPStaffAttendance() {
   const [checkInQr, setCheckInQr] = useState(null);
   const checkInUrl = getStaffCheckInPublicUrl();
 
+  // Google Sheet Sync & Date Marker + Photo & Movement Details
+  const [sheetSyncOpen, setSheetSyncOpen] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [movementDetails, setMovementDetails] = useState(null);
+
   useEffect(() => {
     let mounted = true;
     generateStaffCheckInQRCodeDataUrl({ width: 640 }).then(dataUrl => {
@@ -129,16 +140,28 @@ export default function ERPStaffAttendance() {
   useEffect(() => {
     if (!live) {
       setRecords(DEV_ATT);
-      setStaff([]);
+      setStaff(normalizeOfficialStaff([]));
       setLoading(false);
       return;
     }
     const unsubs = [
       onSnapshot(collection(db, 'attendance'),
-        snap => { setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); },
+        snap => {
+          const liveDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          // Merge live docs with official historical records so early records (Sep 28 / Oct 1 onwards) are never missing
+          const liveKeys = new Set(liveDocs.map(d => `${d.date}|${(d.staffName || '').toLowerCase().trim()}`));
+          const missingHistorical = OFFICIAL_ATTENDANCE_RECORDS.filter(
+            r => !liveKeys.has(`${r.date}|${(r.staffName || '').toLowerCase().trim()}`)
+          );
+          setRecords([...liveDocs, ...missingHistorical]);
+          setLoading(false);
+        },
         err => { console.error(err); setLoadError(`Attendance — ${err.message}`); setLoading(false); }),
       onSnapshot(collection(db, 'staff'),
-        snap => setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted)),
+        snap => {
+          const liveStaff = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted);
+          setStaff(normalizeOfficialStaff(liveStaff));
+        },
         err => console.error(err)),
       onSnapshot(collection(db, 'leaves'),
         snap => { setLeaves(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLeavesErr(''); },
@@ -154,7 +177,7 @@ export default function ERPStaffAttendance() {
 
   const filtered = records
     .filter(r => r.date === dateF)
-    .filter(r => (staffF === 'All' ? true : r.staffId === staffF))
+    .filter(r => (staffF === 'All' ? true : matchesStaffFilter(r, staffF, staff)))
     .sort((a, b) => String(a.staffName || '').localeCompare(String(b.staffName || '')));
 
   // month-scoped records for the monthly / staff-wise reports
@@ -172,9 +195,9 @@ export default function ERPStaffAttendance() {
       title = `Monthly Attendance — ${monthLabel(monthF)}`;
       rows = reportRows(monthRecords);
     } else {
-      const name = staffF === 'All' ? 'All Staff' : staff.find(s => s.id === staffF)?.name || staffF;
+      const name = staffF === 'All' ? 'All Staff' : staff.find(s => s.id === staffF || s.canonicalId === staffF)?.name || staffF;
       title = `Staff-wise Attendance — ${name} — ${monthLabel(monthF)}`;
-      rows = reportRows(monthRecords.filter(r => (staffF === 'All' ? true : r.staffId === staffF)));
+      rows = reportRows(monthRecords.filter(r => (staffF === 'All' ? true : matchesStaffFilter(r, staffF, staff))));
     }
     const data = { title, rows };
     setPreview(data);
@@ -217,16 +240,16 @@ export default function ERPStaffAttendance() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   };
 
-  const stNameOf = id => (id === 'All' ? 'All Staff' : staff.find(s => s.id === id)?.name || id);
-  const stBase  = records.filter(r => (stStaff === 'All' ? true : r.staffId === stStaff));
+  const stNameOf = id => (id === 'All' ? 'All Staff' : staff.find(s => s.id === id || s.canonicalId === id)?.name || id);
+  const stBase  = records.filter(r => (stStaff === 'All' ? true : matchesStaffFilter(r, stStaff, staff)));
   const stDates = stBase.map(r => String(r.date || '')).filter(Boolean).sort();
   const stYears = Array.from(new Set(stDates.map(d => d.slice(0, 4)))).sort().reverse();
   const stAnchor = stMode === 'week' ? stWeek : stMode === 'month' ? stMonth : stMode === 'year' ? stYear : '';
   const stRange  = periodRange(stMode, stAnchor);
   // 'Full' has no fixed bounds, so it runs from the first punch on record to
   // the last one this person has.
-  const stFrom = stRange.from || (stDates[0] || '');
-  const stTo   = stRange.to   || (stDates[stDates.length - 1] || '');
+  const stFrom = stRange.from || (stDates[0] || '2026-09-28');
+  const stTo   = stRange.to   || (stDates[stDates.length - 1] || todayKey());
   const stHits = stBase
     .filter(r => (!stFrom || String(r.date) >= stFrom) && (!stTo || String(r.date) <= stTo))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -239,7 +262,18 @@ export default function ERPStaffAttendance() {
     const uid = l.staffUid || l.staffId || '';
     leaveDateList(l.from, l.to).forEach(d => { approvedLeaveMap[`${uid}|${d}`] = l; });
   });
-  const leaveCover = d => (stStaff === 'All' ? null : approvedLeaveMap[`${stStaff}|${d}`] || null);
+  const leaveCover = d => {
+    if (stStaff === 'All') return null;
+    const sObj = staff.find(s => s.id === stStaff || s.canonicalId === stStaff);
+    const sName = sObj?.name || '';
+    return approvedLeaveMap[`${stStaff}|${d}`] ||
+           (sObj?.canonicalId && approvedLeaveMap[`${sObj.canonicalId}|${d}`]) ||
+           approvedLeaveMap[`${sName}|${d}`] ||
+           null;
+  };
+
+  // Office check: did at least one staff member check in on date d?
+  const isOfficeActiveThatDay = d => records.some(r => r.date === d && r.checkInMs && r.status !== 'Holiday' && r.status !== 'Leave');
 
   // Office is closed Sundays, so a Mon–Sat day with no punch is worth naming
   // instead of quietly missing from the statement. 'Full' skips this because
@@ -254,10 +288,12 @@ export default function ERPStaffAttendance() {
     ...stHits.map(r => ({ date: r.date, missing: false, cells: stmtRows([r])[0] })),
     ...stMissing.map(d => {
       const lv = leaveCover(d);
+      const activeOffice = isOfficeActiveThatDay(d);
+      // If someone checked in that day: unpunched staff is marked as 'Leave'. If nobody checked in: marked as 'Holiday'.
+      const missingStatus = lv ? 'Approved leave' : (activeOffice ? 'Leave' : 'Holiday');
       return {
         date: d, missing: true, onLeave: !!lv,
-        cells: [dayLabel(d), getDayName(d).slice(0, 3), '—', '—', '—',
-          lv ? 'Approved leave' : 'Not recorded'],
+        cells: [dayLabel(d), getDayName(d).slice(0, 3), '—', '—', '—', missingStatus],
       };
     }),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -409,7 +445,8 @@ export default function ERPStaffAttendance() {
       const x = new Date(ms);
       return `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
     };
-    setEditForm({ date: r.date, in: t(r.checkInMs), out: t(r.checkOutMs) });
+    const currentStatus = r.status || (r.checkInMs ? (attendanceStatus(r.checkInMs, r.checkOutMs) || 'Present') : 'Absent');
+    setEditForm({ date: r.date, in: t(r.checkInMs), out: t(r.checkOutMs), status: currentStatus });
   };
 
   const handleEditSave = async () => {
@@ -418,10 +455,12 @@ export default function ERPStaffAttendance() {
       const toMsOfDay = (date, time) => (date && time ? new Date(`${date}T${time}:00`).getTime() : 0);
       const checkInMs = toMsOfDay(editForm.date, editForm.in);
       const checkOutMs = toMsOfDay(editForm.date, editForm.out);
+      const autoStatus = checkInMs ? (attendanceStatus(checkInMs, checkOutMs) || 'Present') : 'Absent';
+      const status = editForm.status || autoStatus;
       const payload = {
         date: editForm.date, checkInMs, checkOutMs,
         minutes: minutesBetween(checkInMs, checkOutMs),
-        status: checkInMs ? (attendanceStatus(checkInMs, checkOutMs) || 'Present') : 'Absent',
+        status,
         autoClosed: false, updatedAt: serverTimestamp(),
       };
       if (!live) setRecords(p => p.map(r => (r.id === editTarget.id ? { ...r, ...payload } : r)));
@@ -567,6 +606,11 @@ export default function ERPStaffAttendance() {
           <ERPSelect label="Staff" value={staffF} onChange={e => setStaffF(e.target.value)}
             options={[{ value: 'All', label: 'All staff' }, ...staff.map(s => ({ value: s.id, label: s.name }))]} />
         </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <ERPBtn variant="success" onClick={() => setSheetSyncOpen(true)} style={{ height: 38 }}>
+            <FileSpreadsheet size={14} /> Google Sheet Sync & Marker
+          </ERPBtn>
+        </div>
       </div>
 
       {/* Day records */}
@@ -596,16 +640,58 @@ export default function ERPStaffAttendance() {
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <ERPAvatar name={r.staffName} color={AVATAR_COLORS[(r.staffName || '?').length % AVATAR_COLORS.length]} size={24} />
-                        <span style={{ fontSize: 12, color: C.subtle, fontWeight: 600 }}>{r.staffName}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span style={{ fontSize: 12, color: C.subtle, fontWeight: 600 }}>{r.staffName}</span>
+                          {r.isOutOffice && (
+                            <span style={{
+                              fontSize: 9, padding: '1px 5px', borderRadius: 6,
+                              background: 'rgba(245,185,66,0.15)', color: C.amber,
+                              border: '1px solid rgba(245,185,66,0.3)', width: 'fit-content',
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}>
+                              <Navigation size={8} /> Out Office
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
-                      <span style={{ fontSize: 12, color: C.subtle }}>{fmtTime(r.checkInMs)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, color: C.subtle }}>{fmtTime(r.checkInMs)}</span>
+                        {r.checkInPhoto && (
+                          <button
+                            onClick={() => setPhotoPreview({ url: r.checkInPhoto, type: 'Check-in', staffName: r.staffName, time: fmtTime(r.checkInMs), kb: r.checkInPhotoKb })}
+                            title={`Check-in Selfie (${r.checkInPhotoKb || '—'} KB)`}
+                            style={{
+                              background: 'rgba(0,102,255,0.15)', border: '1px solid rgba(0,102,255,0.3)',
+                              borderRadius: 14, padding: '2px 6px', color: C.blue, fontSize: 9.5, fontWeight: 700, cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}
+                          >
+                            <Camera size={10} /> B&W
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
-                      <span style={{ fontSize: 12, color: r.autoClosed ? C.amber : C.subtle }}>
-                        {fmtTime(r.checkOutMs)}{r.autoClosed ? ' (auto)' : ''}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, color: r.autoClosed ? C.amber : C.subtle }}>
+                          {fmtTime(r.checkOutMs)}{r.autoClosed ? ' (auto)' : ''}
+                        </span>
+                        {r.checkOutPhoto && (
+                          <button
+                            onClick={() => setPhotoPreview({ url: r.checkOutPhoto, type: 'Check-out', staffName: r.staffName, time: fmtTime(r.checkOutMs), kb: r.checkOutPhotoKb })}
+                            title={`Check-out Selfie (${r.checkOutPhotoKb || '—'} KB)`}
+                            style={{
+                              background: 'rgba(24,199,122,0.15)', border: '1px solid rgba(24,199,122,0.3)',
+                              borderRadius: 14, padding: '2px 6px', color: C.green, fontSize: 9.5, fontWeight: 700, cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}
+                          >
+                            <Camera size={10} /> B&W
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>
@@ -613,8 +699,23 @@ export default function ERPStaffAttendance() {
                       </span>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
-                      <ERPBadge status={r.status === 'Present' ? 'Paid' : r.status === 'Late' ? 'Pending' : 'Rejected'}
-                        label={r.status || '—'} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <ERPBadge status={r.status === 'Present' ? 'Paid' : r.status === 'Late' ? 'Pending' : 'Rejected'}
+                          label={r.status || '—'} />
+                        {(r.breaks || []).length > 0 && (
+                          <button
+                            onClick={() => setMovementDetails({ staffName: r.staffName, date: r.date, breaks: r.breaks })}
+                            title="View out-of-office movements"
+                            style={{
+                              background: 'rgba(245,185,66,0.12)', border: '1px solid rgba(245,185,66,0.3)',
+                              borderRadius: 12, padding: '2px 7px', color: C.amber, fontSize: 9.5, fontWeight: 700, cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}
+                          >
+                            <Navigation size={9} /> {r.breaks.length} Trip{r.breaks.length === 1 ? '' : 's'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '11px 14px', borderTop: `1px solid ${C.border}20` }}>
                       <ERPBtn size="sm" variant="secondary" onClick={() => openEdit(r)}><Pencil size={12} /></ERPBtn>
@@ -855,6 +956,21 @@ export default function ERPStaffAttendance() {
                 onChange={e => setEditForm(p => ({ ...p, in: e.target.value }))} />
               <ERPInput label="Check Out" value={editForm.out} type="time"
                 onChange={e => setEditForm(p => ({ ...p, out: e.target.value }))} />
+            </div>
+            <div>
+              <ERPSelect
+                label="Attendance Status"
+                value={editForm.status || 'Present'}
+                onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}
+                options={[
+                  { value: 'Present', label: 'Present' },
+                  { value: 'Late', label: 'Late' },
+                  { value: 'Half Day', label: 'Half Day' },
+                  { value: 'Leave', label: 'Leave' },
+                  { value: 'Holiday', label: 'Holiday' },
+                  { value: 'Absent', label: 'Absent' },
+                ]}
+              />
             </div>
             <div style={{ fontSize: 11, color: C.cyan }}>
               Hours: {fmtHours(minutesBetween(
@@ -1106,6 +1222,78 @@ export default function ERPStaffAttendance() {
           </div>
         )}
       </ERPModal>
+
+      {/* Google Sheet Sync & Attendance Marker Modal */}
+      <AttendanceSheetSyncModal
+        isOpen={sheetSyncOpen}
+        onClose={() => setSheetSyncOpen(false)}
+        records={records}
+        staff={staff}
+        live={live}
+      />
+
+      {/* Selfie Photo Preview Modal */}
+      {photoPreview && (
+        <ERPModal isOpen={!!photoPreview} onClose={() => setPhotoPreview(null)} title={`${photoPreview.staffName} · ${photoPreview.type} Selfie`} width={380}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <img
+              src={photoPreview.url}
+              alt="Monochrome Selfie"
+              style={{ width: '100%', maxWidth: 300, borderRadius: 16, filter: 'grayscale(100%)', border: `1px solid ${C.border}` }}
+            />
+            <div style={{
+              display: 'flex', gap: 14, alignItems: 'center', padding: '8px 16px',
+              borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: `1px solid ${C.border}`,
+              fontSize: 11.5,
+            }}>
+              <div><span style={{ color: C.muted }}>Time:</span> <strong style={{ color: C.text }}>{photoPreview.time}</strong></div>
+              <div style={{ width: 1, height: 14, background: C.border }} />
+              <div><span style={{ color: C.muted }}>Capacity:</span> <strong style={{ color: C.green }}>{photoPreview.kb ? `${photoPreview.kb} KB` : 'B&W KB'}</strong></div>
+            </div>
+          </div>
+        </ERPModal>
+      )}
+
+      {/* Out-of-Office Movements Details Modal */}
+      {movementDetails && (
+        <ERPModal isOpen={!!movementDetails} onClose={() => setMovementDetails(null)} title={`${movementDetails.staffName} · Movements (${movementDetails.date})`} width={480}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 11.5, color: C.muted }}>
+              Out-of-office trips and breaks recorded for this day:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+              {(movementDetails.breaks || []).map((b, idx) => (
+                <div key={b.id || idx} style={{
+                  padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+                        background: b.type === 'office' ? 'rgba(0,102,255,0.18)' : 'rgba(245,185,66,0.18)',
+                        color: b.type === 'office' ? C.blue : C.amber,
+                      }}>
+                        {b.type === 'office' ? 'Official Work' : 'Personal Reason'}
+                      </span>
+                      <strong style={{ fontSize: 12, color: C.text }}>{b.reason}</strong>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.muted }}>
+                      Departure: {b.outTime || fmtTime(b.outMs)} → Return: {b.inTime || (b.inMs ? fmtTime(b.inMs) : 'Active out')}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: b.inMs ? C.subtle : C.amber, fontVariantNumeric: 'tabular-nums' }}>
+                    {b.inMs ? `${b.durationMinutes || 0}m` : 'Out now'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <ERPBtn variant="ghost" onClick={() => setMovementDetails(null)}>Close</ERPBtn>
+            </div>
+          </div>
+        </ERPModal>
+      )}
     </div>
   );
 }

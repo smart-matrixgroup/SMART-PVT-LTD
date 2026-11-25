@@ -21,6 +21,8 @@ import {
   downloadPerformanceReport, downloadReportTemplate, prettyDate
 } from '../../staff/performanceReport';
 import { saveWorkReportPdf } from '../../staff/workReportPdf';
+import { saveWorkReportPdfA4 } from '../utils/workReportPdfA4';
+import { saveWorkReportPdfMobile } from '../utils/workReportPdfMobile';
 import { saveDailyReportPdf } from '../utils/dailyReportPdf';
 import { normalizeOfficialStaff, matchesStaffFilter, CANONICAL_STAFF_DEFINITIONS } from '../../staff/canonicalStaff.js';
 import {
@@ -275,6 +277,7 @@ export default function ERPStaffUpdates() {
   const [monthStart, setMonthStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [importing,  setImporting]  = useState(false);
   const [exporting,  setExporting]  = useState(false);
+  const [pdfMenu,    setPdfMenu]    = useState(null);   // null | 'main' | 'range'
   const [importMsg,  setImportMsg]  = useState(null);
   const fileRef = useRef(null);
 
@@ -615,31 +618,42 @@ export default function ERPStaffUpdates() {
     } finally { setExporting(false); }
   };
 
-  const exportPdf = () => {
+  const exportPdf = (format = 'a4') => {
     if (!filtered.length) return;
     try {
-      saveWorkReportPdf(filtered, {
+      const opts = {
         staffRecords: staff,
-        title: 'SMART PVT LTD · STAFF WORK REPORT',
-        rangeLabel: dailyLabel,
+        kind: 'STAFF WORK REPORT',
+        period: dailyLabel,
         generatedBy: adminName,
-        fileName: `STAFF-WORK-REPORT-${todayKey()}.pdf`,
-      });
+        fileName: `STAFF-WORK-REPORT-${format === 'mobile' ? 'MOBILE' : 'A4'}-${todayKey()}.pdf`,
+      };
+      if (format === 'mobile') {
+        // Also pass legacy-compatible fields
+        saveWorkReportPdfMobile(filtered, opts);
+      } else {
+        saveWorkReportPdfA4(filtered, opts);
+      }
     } catch (err) {
       console.error(err);
       setImportMsg({ kind: 'err', text: `PDF export failed — ${err.message || err}` });
     }
   };
-  const exportRangePdf = () => {
+  const exportRangePdf = (format = 'a4') => {
     if (!rangeReports.length) return;
     try {
-      saveWorkReportPdf(rangeReports, {
+      const opts = {
         staffRecords: staff,
-        title: `SMART PVT LTD · ${rangeTitle.toUpperCase()} WORK REPORT`,
-        rangeLabel,
+        kind: `${rangeTitle.toUpperCase()} WORK REPORT`,
+        period: rangeLabel,
         generatedBy: adminName,
-        fileName: `STAFF-${rangeAdj.toUpperCase()}-REPORT-${rangeStart}.pdf`,
-      });
+        fileName: `STAFF-${rangeAdj.toUpperCase()}-REPORT-${format === 'mobile' ? 'MOBILE' : 'A4'}-${rangeStart}.pdf`,
+      };
+      if (format === 'mobile') {
+        saveWorkReportPdfMobile(rangeReports, opts);
+      } else {
+        saveWorkReportPdfA4(rangeReports, opts);
+      }
     } catch (err) {
       console.error(err);
       setImportMsg({ kind: 'err', text: `PDF export failed — ${err.message || err}` });
@@ -1331,20 +1345,44 @@ export default function ERPStaffUpdates() {
           <Download size={12} /> {exporting ? 'Building…' : `Export Excel (${filtered.length})`}
         </button>
 
-        <button
-          onClick={exportPdf}
-          disabled={filtered.length === 0}
-          title="Download the filtered reports as a PDF file, grouped per staff member"
-          style={{
-            padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-            background: filtered.length === 0 ? 'rgba(10,24,56,0.4)' : 'rgba(0,102,255,0.12)',
-            color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
-            display: 'flex', alignItems: 'center', gap: 6,
-            opacity: filtered.length === 0 ? 0.5 : 1,
-          }}
-        >
-          <Download size={12} /> Export PDF
-        </button>
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setPdfMenu(pdfMenu === 'main' ? null : 'main')}
+            disabled={filtered.length === 0}
+            title="Download the filtered reports as a PDF file, grouped per staff member"
+            style={{
+              padding: '8px 14px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+              background: filtered.length === 0 ? 'rgba(10,24,56,0.4)' : 'rgba(0,102,255,0.12)',
+              color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              opacity: filtered.length === 0 ? 0.5 : 1,
+            }}
+          >
+            <Download size={12} /> Export PDF ▾
+          </button>
+          {pdfMenu === 'main' && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 50,
+              background: 'rgba(10,24,56,0.95)', border: `1px solid ${C.border}`, borderRadius: 10,
+              padding: 4, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            }}>
+              <button onClick={() => { setPdfMenu(null); exportPdf('a4'); }} style={{
+                display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none',
+                color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 8, textAlign: 'left',
+              }} onMouseOver={e => e.currentTarget.style.background = 'rgba(0,102,255,0.15)'}
+                 onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                🖨️ A4 PDF (Print)
+              </button>
+              <button onClick={() => { setPdfMenu(null); exportPdf('mobile'); }} style={{
+                display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none',
+                color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 8, textAlign: 'left',
+              }} onMouseOver={e => e.currentTarget.style.background = 'rgba(0,102,255,0.15)'}
+                 onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                📱 Mobile PDF (Phone)
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       )}
 
@@ -1393,19 +1431,43 @@ export default function ERPStaffUpdates() {
                 >
                   <Download size={12} /> {exporting ? 'Building…' : `Export ${rangeTitle} Excel`}
                 </button>
-                <button
-                  onClick={exportRangePdf}
-                  disabled={rangeReports.length === 0}
-                  title={`Download this ${rangeUnit}'s report as a PDF file`}
-                  style={{
-                    padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                    background: 'rgba(0,102,255,0.12)', color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    opacity: rangeReports.length === 0 ? 0.5 : 1,
-                  }}
-                >
-                  <Download size={12} /> Export {rangeTitle} PDF
-                </button>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setPdfMenu(pdfMenu === 'range' ? null : 'range')}
+                    disabled={rangeReports.length === 0}
+                    title={`Download this ${rangeUnit}'s report as a PDF file`}
+                    style={{
+                      padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer',
+                      background: 'rgba(0,102,255,0.12)', color: C.cyan, border: '1px solid rgba(0,102,255,0.35)',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      opacity: rangeReports.length === 0 ? 0.5 : 1,
+                    }}
+                  >
+                    <Download size={12} /> Export {rangeTitle} PDF ▾
+                  </button>
+                  {pdfMenu === 'range' && (
+                    <div style={{
+                      position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 50,
+                      background: 'rgba(10,24,56,0.95)', border: `1px solid ${C.border}`, borderRadius: 10,
+                      padding: 4, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    }}>
+                      <button onClick={() => { setPdfMenu(null); exportRangePdf('a4'); }} style={{
+                        display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none',
+                        color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 8, textAlign: 'left',
+                      }} onMouseOver={e => e.currentTarget.style.background = 'rgba(0,102,255,0.15)'}
+                         onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                        🖨️ A4 PDF (Print)
+                      </button>
+                      <button onClick={() => { setPdfMenu(null); exportRangePdf('mobile'); }} style={{
+                        display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none',
+                        color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 8, textAlign: 'left',
+                      }} onMouseOver={e => e.currentTarget.style.background = 'rgba(0,102,255,0.15)'}
+                         onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
+                        📱 Mobile PDF (Phone)
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             }
           />

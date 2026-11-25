@@ -19,8 +19,10 @@ import {
 } from '../staff/staffUtils';
 import {
   Mail, Lock, Eye, EyeOff, LogIn, LogOut, CheckCircle2, Timer,
-  ShieldCheck, AlertCircle, ArrowRight, CalendarCheck,
+  ShieldCheck, AlertCircle, ArrowRight, CalendarCheck, Camera, Navigation, Briefcase, User, Check,
 } from 'lucide-react';
+import SelfieModal from '../staff/components/SelfieModal';
+import { ERPModal, ERPBtn } from '../erp/components/ERPui';
 
 const C = {
   bg: '#040D1F',
@@ -74,6 +76,16 @@ export default function StaffCheckInPage() {
   const [error, setError] = useState('');
   const [okMsg, setOkMsg] = useState('');
   const [now, setNow] = useState(Date.now());
+  const [selfieModal, setSelfieModal] = useState({ open: false, type: 'checkin' });
+  const [stepOutModal, setStepOutModal] = useState(false);
+  const [stepOutType, setStepOutType] = useState('office'); // 'office' | 'personal'
+  const [stepOutReason, setStepOutReason] = useState('');
+  const [installEvt, setInstallEvt] = useState(null);
+  const isStandalone = typeof window !== 'undefined' && (
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    window.navigator.standalone === true
+  );
+  const isIos = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
 
   const uid = staffProfile?.id || '';
   const today = todayKey();
@@ -82,6 +94,13 @@ export default function StaffCheckInPage() {
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Install prompt for the home-screen icon (Chrome/Edge fire this once).
+  useEffect(() => {
+    const onPrompt = e => { e.preventDefault(); setInstallEvt(e); };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', onPrompt);
   }, []);
 
   // Own attendance records only (rules allow authUid == uid)
@@ -124,10 +143,10 @@ export default function StaffCheckInPage() {
     }
   };
 
-  const handleCheckIn = async () => {
+  const handleCheckInWithPhoto = async (photoResult) => {
     setBusy(true); setError(''); setOkMsg('');
     try {
-      const at = Date.now();
+      const at = photoResult?.timestamp || Date.now();
       if (live) {
         const dup = await getDocs(query(
           collection(db, 'attendance'),
@@ -141,6 +160,11 @@ export default function StaffCheckInPage() {
           staffId: uid, staffName: staffProfile?.name || '—', authUid: uid,
           date: today, checkInMs: at, checkOutMs: 0,
           minutes: 0, status: attendanceStatus(at, 0) || 'Present',
+          checkInPhoto: photoResult?.dataUrl || null,
+          checkInPhotoKb: photoResult?.sizeKb || null,
+          checkInTime: fmtTime(at),
+          breaks: [],
+          isOutOffice: false,
           autoClosed: false, source: 'office-qr',
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
@@ -148,10 +172,11 @@ export default function StaffCheckInPage() {
         setRecords(p => [{
           id: `dev-${Date.now()}`, staffId: uid, staffName: staffProfile?.name || '—',
           authUid: uid, date: today, checkInMs: at, checkOutMs: 0, minutes: 0,
-          status: 'Present', autoClosed: false,
+          status: 'Present', autoClosed: false, isOutOffice: false, breaks: [],
+          checkInPhoto: photoResult?.dataUrl || null, checkInPhotoKb: photoResult?.sizeKb || null,
         }, ...p]);
       }
-      setOkMsg(`Checked in at ${fmtTime(at)}. Have a great day!`);
+      setOkMsg(`Checked in at ${fmtTime(at)} with selfie verification. Have a great day!`);
     } catch (e) {
       console.error(e);
       setError(e.message || 'Check-in failed. Please try again.');
@@ -160,15 +185,25 @@ export default function StaffCheckInPage() {
     }
   };
 
-  const handleCheckOut = async () => {
+  const handleCheckIn = () => {
+    setSelfieModal({ open: true, type: 'checkin' });
+  };
+
+  const handleCheckOutWithPhoto = async (photoResult) => {
     if (!todayRec?.id) return;
     setBusy(true); setError(''); setOkMsg('');
     try {
-      const out = Date.now();
+      const out = photoResult?.timestamp || Date.now();
+      const updatedBreaks = (todayRec.breaks || []).map(b => (!b.inMs ? { ...b, inMs: out, durationMinutes: Math.max(1, Math.round((out - b.outMs) / 60000)) } : b));
       const payload = {
         checkOutMs: out,
+        checkOutPhoto: photoResult?.dataUrl || null,
+        checkOutPhotoKb: photoResult?.sizeKb || null,
+        checkOutTime: fmtTime(out),
         minutes: minutesBetween(todayRec.checkInMs, out),
         status: attendanceStatus(todayRec.checkInMs, out),
+        breaks: updatedBreaks,
+        isOutOffice: false,
         autoClosed: false,
         updatedAt: serverTimestamp(),
       };
@@ -178,6 +213,77 @@ export default function StaffCheckInPage() {
     } catch (e) {
       console.error(e);
       setError(e.message || 'Check-out failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCheckOut = () => {
+    setSelfieModal({ open: true, type: 'checkout' });
+  };
+
+  const handleStepOut = async () => {
+    if (!todayRec?.id) return;
+    setBusy(true); setError(''); setOkMsg('');
+    try {
+      const stepOutTime = Date.now();
+      const newTrip = {
+        id: `brk-${stepOutTime}`,
+        type: stepOutType,
+        reason: stepOutReason.trim() || (stepOutType === 'office' ? 'Official Office Errand' : 'Personal Break'),
+        outMs: stepOutTime,
+        outTime: fmtTime(stepOutTime),
+        inMs: 0,
+        inTime: '',
+        durationMinutes: 0,
+      };
+      const updatedBreaks = [...(todayRec.breaks || []), newTrip];
+      const payload = {
+        breaks: updatedBreaks,
+        isOutOffice: true,
+        updatedAt: serverTimestamp(),
+      };
+      if (live) await updateDoc(doc(db, 'attendance', todayRec.id), payload);
+      else setRecords(p => p.map(r => r.id === todayRec.id ? { ...r, ...payload } : r));
+      setOkMsg(`Stepped out at ${fmtTime(stepOutTime)} (${stepOutType === 'office' ? 'Official' : 'Personal'}).`);
+      setStepOutModal(false);
+      setStepOutReason('');
+    } catch (e) {
+      console.error(e);
+      setError('Could not mark out of office: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReturnToOffice = async () => {
+    if (!todayRec?.id) return;
+    setBusy(true); setError(''); setOkMsg('');
+    try {
+      const returnTime = Date.now();
+      const updatedBreaks = (todayRec.breaks || []).map(b => {
+        if (!b.inMs) {
+          const duration = Math.max(1, Math.round((returnTime - b.outMs) / 60000));
+          return {
+            ...b,
+            inMs: returnTime,
+            inTime: fmtTime(returnTime),
+            durationMinutes: duration,
+          };
+        }
+        return b;
+      });
+      const payload = {
+        breaks: updatedBreaks,
+        isOutOffice: false,
+        updatedAt: serverTimestamp(),
+      };
+      if (live) await updateDoc(doc(db, 'attendance', todayRec.id), payload);
+      else setRecords(p => p.map(r => r.id === todayRec.id ? { ...r, ...payload } : r));
+      setOkMsg(`Welcome back! Marked in-office at ${fmtTime(returnTime)}.`);
+    } catch (e) {
+      console.error(e);
+      setError('Could not mark return to office: ' + e.message);
     } finally {
       setBusy(false);
     }
@@ -195,7 +301,31 @@ export default function StaffCheckInPage() {
       padding: 20,
     }}>
       <style>{PAGE_CSS}</style>
-      <div style={{ width: '100%', maxWidth: 430 }}>{children}</div>
+      <div style={{ width: '100%', maxWidth: 430 }}>
+        {children}
+        {!isStandalone && (installEvt || isIos) && (
+          <div style={{ marginTop: 14, textAlign: 'center', fontSize: 10.5, color: C.muted, lineHeight: 1.6 }}>
+            {installEvt ? (
+              <button
+                onClick={async () => {
+                  installEvt.prompt();
+                  try { await installEvt.userChoice; } catch { /* ignore */ }
+                  setInstallEvt(null);
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`,
+                  borderRadius: 10, padding: '9px 14px', color: C.subtle,
+                  fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Add SMART Check-in to home screen
+              </button>
+            ) : (
+              <>iPhone: tap Share → <strong style={{ color: C.subtle }}>Add to Home Screen</strong></>
+            )}
+          </div>
+        )}
+      </div>
       <div style={{
         position: 'fixed', bottom: 14, left: 0, right: 0, textAlign: 'center',
         fontSize: 10, color: 'rgba(255,255,255,0.28)', pointerEvents: 'none',
@@ -443,25 +573,66 @@ export default function StaffCheckInPage() {
           alignItems: 'center', justifyContent: 'center', gap: 9,
           boxShadow: '0 12px 28px rgba(0,102,255,0.4)',
         }}>
-          <LogIn size={18} /> {busy ? 'Checking in…' : 'Check In'}
+          <Camera size={18} /> {busy ? 'Checking in…' : 'Take Selfie & Check In'}
         </button>
       ) : !todayRec.checkOutMs ? (
-        <button onClick={handleCheckOut} disabled={busy || loadingAtt} className="ci-btn" style={{
-          width: '100%', padding: '15px', borderRadius: 14, border: 'none',
-          cursor: busy ? 'wait' : 'pointer', background: 'linear-gradient(135deg,#18C77A,#0E9E63)',
-          color: '#fff', fontSize: 14.5, fontWeight: 900, display: 'flex',
-          alignItems: 'center', justifyContent: 'center', gap: 9,
-          boxShadow: '0 12px 28px rgba(24,199,122,0.35)',
-        }}>
-          <LogOut size={18} /> {busy ? 'Checking out…' : 'Check Out'}
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button onClick={handleCheckOut} disabled={busy || loadingAtt} className="ci-btn" style={{
+            width: '100%', padding: '15px', borderRadius: 14, border: 'none',
+            cursor: busy ? 'wait' : 'pointer', background: 'linear-gradient(135deg,#18C77A,#0E9E63)',
+            color: '#fff', fontSize: 14.5, fontWeight: 900, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', gap: 9,
+            boxShadow: '0 12px 28px rgba(24,199,122,0.35)',
+          }}>
+            <Camera size={18} /> {busy ? 'Checking out…' : 'Take Selfie & Check Out'}
+          </button>
+
+          {/* Office Movement / Step Out */}
+          <div style={{
+            padding: 12, borderRadius: 12,
+            background: 'rgba(255,255,255,0.03)', border: `1px solid ${todayRec.isOutOffice ? C.amber : C.border}`,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.subtle, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Navigation size={13} style={{ color: todayRec.isOutOffice ? C.amber : C.blue }} /> Office Movement
+              </span>
+              <span style={{
+                fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 8,
+                background: todayRec.isOutOffice ? 'rgba(245,185,66,0.15)' : 'rgba(24,199,122,0.15)',
+                color: todayRec.isOutOffice ? C.amber : C.green,
+              }}>
+                {todayRec.isOutOffice ? 'Out of Office' : 'In Office'}
+              </span>
+            </div>
+
+            {todayRec.isOutOffice ? (
+              <button onClick={handleReturnToOffice} disabled={busy} className="ci-btn" style={{
+                width: '100%', padding: '11px', borderRadius: 10, border: 'none',
+                cursor: 'pointer', background: 'linear-gradient(135deg,#0066FF,#1787FF)',
+                color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', gap: 7,
+              }}>
+                <Check size={15} /> Back to Office (Mark In-Office)
+              </button>
+            ) : (
+              <button onClick={() => setStepOutModal(true)} disabled={busy} className="ci-btn" style={{
+                width: '100%', padding: '10px', borderRadius: 10, border: `1px solid ${C.border}`,
+                cursor: 'pointer', background: 'rgba(255,255,255,0.05)',
+                color: C.text, fontSize: 12, fontWeight: 700, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                <Navigation size={13} /> Step Out / Mark Out-Office
+              </button>
+            )}
+          </div>
+        </div>
       ) : (
         <div style={{
           textAlign: 'center', padding: '13px', borderRadius: 14,
           background: 'rgba(24,199,122,0.10)', border: '1px solid rgba(24,199,122,0.35)',
           fontSize: 12, color: C.green, fontWeight: 700,
         }}>
-          ✓ Attendance complete for today
+          ✓ Attendance complete for today · {todayRec.status}
         </div>
       )}
 
@@ -474,7 +645,7 @@ export default function StaffCheckInPage() {
 
       <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12, textAlign: 'center' }}>
         <div style={{ fontSize: 9.5, color: C.muted, lineHeight: 1.6 }}>
-          One check-in per day. Forgot to check out? The day closes automatically at {AUTOCLOSE_TIME}.
+          One check-in per day. Checkout after 3:00 PM counts as Full Day.
         </div>
         <button onClick={() => navigate('/staff-portal')} style={{
           marginTop: 8, background: 'none', border: 'none', color: C.blue,
@@ -483,6 +654,77 @@ export default function StaffCheckInPage() {
           Open full staff portal →
         </button>
       </div>
+
+      {/* Selfie Camera Modal */}
+      <SelfieModal
+        isOpen={selfieModal.open}
+        onClose={() => setSelfieModal({ open: false, type: 'checkin' })}
+        onConfirm={selfieModal.type === 'checkin' ? handleCheckInWithPhoto : handleCheckOutWithPhoto}
+        actionType={selfieModal.type}
+        staffName={staffProfile?.name || ''}
+      />
+
+      {/* Step Out / Out-Office Modal */}
+      <ERPModal isOpen={stepOutModal} onClose={() => setStepOutModal(false)} title="Mark Out-Office / Step Out" width={400}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 11.5, color: C.muted }}>
+            Departure time will automatically record as <strong>{fmtTime(now)}</strong>.
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.subtle, marginBottom: 6 }}>Reason Category</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setStepOutType('office')}
+                style={{
+                  padding: '9px', borderRadius: 9, cursor: 'pointer',
+                  background: stepOutType === 'office' ? 'rgba(0,102,255,0.18)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${stepOutType === 'office' ? C.blue : C.border}`,
+                  color: stepOutType === 'office' ? C.blue : C.subtle,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 11.5, fontWeight: 700,
+                }}
+              >
+                <Briefcase size={13} /> Official Work
+              </button>
+              <button
+                type="button"
+                onClick={() => setStepOutType('personal')}
+                style={{
+                  padding: '9px', borderRadius: 9, cursor: 'pointer',
+                  background: stepOutType === 'personal' ? 'rgba(245,185,66,0.18)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${stepOutType === 'personal' ? C.amber : C.border}`,
+                  color: stepOutType === 'personal' ? C.amber : C.subtle,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 11.5, fontWeight: 700,
+                }}
+              >
+                <User size={13} /> Personal Reason
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.subtle, marginBottom: 6 }}>Purpose / Remarks</label>
+            <input
+              type="text"
+              value={stepOutReason}
+              onChange={e => setStepOutReason(e.target.value)}
+              placeholder={stepOutType === 'office' ? 'e.g. Client visit, bank errand' : 'e.g. Lunch break, personal doctor visit'}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 9,
+                background: 'rgba(4,13,31,0.8)', border: `1px solid ${C.border}`, color: '#fff', fontSize: 12, outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+            <ERPBtn variant="secondary" onClick={() => setStepOutModal(false)}>Cancel</ERPBtn>
+            <ERPBtn variant="primary" disabled={busy} onClick={handleStepOut}>
+              <Check size={14} /> Confirm Step Out
+            </ERPBtn>
+          </div>
+        </div>
+      </ERPModal>
     </div>
   );
 }

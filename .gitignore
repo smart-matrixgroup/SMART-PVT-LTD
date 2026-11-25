@@ -2,3 +2,14 @@ node_modules/
 dist/
 .env
 firebase-debug.log
+
+# Cloud Functions environment (WhatsApp API token, Gmail app password)
+functions/.env
+functions/.env.*
+!functions/.env.example
+
+# Local WhatsApp Bot (session + admin credentials)
+whatsapp-bot/.env
+whatsapp-bot/.wwebjs_auth/
+whatsapp-bot/.wwebjs_cache/
+whatsapp-bot/whatsapp_session/

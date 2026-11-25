@@ -1467,7 +1467,7 @@ test('Weekly PDF - the server builds one real file per staff member', async () =
 
 test('Scheduler wiring - Sunday night, roster-only, one mail per person, ledger for every outcome', () => {
   const src = fs.readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
-  assert.match(src, /const WEEK_CRON = '30 23 \* \* 0'/, 'runs at 23:30 on Sunday');
+  assert.match(src, /const WEEK_CRON = '30 23 \* \* 6'/, 'runs at 23:30 on Saturday');
   assert.match(src, /const TIME_ZONE = 'Asia\/Colombo'/, 'office time zone');
   assert.match(src, /onSchedule\(WEEK_CRON, \{ timeZone: TIME_ZONE \}/, 'the cron is attached to the scheduler');
   assert.match(src, /exports\.sendWeeklyReportsNow = onCall/, 'and an admin can run it on demand');
@@ -1650,4 +1650,433 @@ test('Offer letters page - route, sidebar, rules block and deploy list', async (
   assert.ok(!/window\.print|printDialog/.test(page), 'never the browser print dialog');
   assert.match(page, /diffOffer\(editing, payload, adminName\)/, 'money edits keep a history entry');
   assert.match(page, /rulesNotice\('Offer letters'\)/, 'a blocked list points at Rules Status');
+});
+
+// ── 17. Staff attendance history + PDF ────────────────────────────
+test('My attendance - every past month is readable, not just this one', () => {
+  const src = fs.readFileSync(new URL('../src/staff/sections/MyAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(src, /const \[range, setRange\] = useState\(\(\) => thisMonthKey\(\)\)/, 'opens on this month');
+  assert.match(src, /set\.add\(thisMonthKey\(\)\)/, 'the current month is always in the picker');
+  assert.match(src, /<option value="all"[^>]*>All records<\/option>/, 'an All records view exists');
+  assert.match(src, /range === 'all' \|\| String\(r\.date \|\| ''\)\.startsWith\(range\)/, 'the table follows the chosen month');
+  assert.match(src, /sort\(\(a, b\) => String\(b\.date\)\.localeCompare\(String\(a\.date\)\)\)/, 'newest day first');
+  assert.match(src, /\['Date', 'Day', 'Check In', 'Check Out', 'Hours', 'Status'\]/, 'weekday is shown beside the date');
+  assert.match(src, /viewStats\.auto/, 'auto-closed days are counted separately');
+});
+
+test('My attendance - the statement downloads as a real PDF, never a print dialog', () => {
+  const src = fs.readFileSync(new URL('../src/staff/sections/MyAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(src, /saveTablePdf\(\{/, 'goes through the shared report builder');
+  assert.match(src, /title: 'Attendance Statement'/, 'named for a shared statement');
+  assert.match(src, /statusCol: 5/, 'the status column is colour-coded');
+  assert.match(src, /`ATTENDANCE-\$\{String\(staffProfile\?\.name/, 'file name carries the staff name');
+  assert.match(src, /range === 'all' \? 'ALL' : range/, 'and the chosen period');
+  assert.ok(!/window\.print|printDialog/.test(src), 'no browser print dialog anywhere');
+});
+
+test('Attendance statement - builds a real A4 PDF with one row per day', async () => {
+  const { buildTablePdf } = await import('../src/erp/utils/reportPdf.js');
+  const rows = Array.from({ length: 45 }, (_, i) => [
+    `${String(i + 1).padStart(2, '0')} Oct 2026`, 'Mon', '08:30', '17:31', '9h 01m', 'Present',
+  ]);
+  const doc = buildTablePdf({
+    title: 'Attendance Statement',
+    subtitle: 'Ashan Rifkan — October 2026',
+    meta: ['Staff ID: SMART-001', 'Position: Software Engineer'],
+    summary: [{ label: 'Days recorded', value: '45' }, { label: 'Total hours', value: '405h' }],
+    columns: [
+      { label: 'Date', width: 1.3 }, { label: 'Day', width: 0.7 }, { label: 'Check in', width: 1 },
+      { label: 'Check out', width: 1.1 }, { label: 'Hours', width: 0.8, align: 'right' },
+      { label: 'Status', width: 1 },
+    ],
+    rows,
+    statusCol: 5,
+    footNote: '0 day(s) were closed automatically at 17:30.',
+    generatedBy: 'Ashan Rifkan',
+  });
+  const out = doc.output();
+  assert.ok(out.startsWith('%PDF-'), 'a real PDF stream');
+  assert.equal(doc.internal.pageSize.getWidth(), 595.28, 'A4 width');
+  assert.equal(doc.internal.pageSize.getHeight(), 841.89, 'A4 height');
+  assert.ok(doc.internal.getNumberOfPages() >= 2, 'a long month continues onto a second page');
+});
+
+// ── 18. Home-screen app (manifest, service worker, check-in start) ─
+test('Home-screen app - the manifest opens the check-in page, not the website', async () => {
+  const manifest = JSON.parse(fs.readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  assert.equal(manifest.start_url, '/staff-checkin', 'one tap opens check-in');
+  assert.equal(manifest.id, '/staff-checkin');
+  assert.equal(manifest.display, 'standalone', 'no browser address bar');
+  assert.equal(manifest.scope, '/', 'the staff portal is still reachable inside the app');
+  assert.equal(manifest.theme_color, '#040D1F');
+  assert.equal(manifest.background_color, '#040D1F');
+  assert.ok(manifest.icons.some(i => i.sizes === '192x192'), 'a 192 icon exists');
+  assert.ok(manifest.icons.some(i => i.sizes === '512x512' && i.purpose === 'any'), 'a 512 icon exists');
+  assert.ok(manifest.icons.some(i => i.purpose === 'maskable'), 'an Android maskable icon exists');
+  for (const icon of manifest.icons) {
+    assert.ok(fs.existsSync(new URL(`../public${icon.src}`, import.meta.url)), `${icon.src} is on disk`);
+  }
+});
+
+test('Home-screen app - index.html points at the manifest and home-screen icons', () => {
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest" \/>/);
+  assert.match(html, /<meta name="theme-color" content="#040D1F" \/>/);
+  assert.match(html, /<meta name="apple-mobile-web-app-capable" content="yes" \/>/);
+  assert.match(html, /<meta name="apple-mobile-web-app-title" content="SMART Check-in" \/>/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\/icons\/apple-touch-icon\.png" \/>/);
+});
+
+test('Home-screen app - the service worker keeps the shell, never the attendance data', () => {
+  const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(sw, /self\.addEventListener\('install'/, 'installs a shell cache');
+  assert.match(sw, /req\.mode === 'navigate'/, 'page loads are handled');
+  assert.match(sw, /url\.origin !== self\.location\.origin\) return/, 'Firebase and font requests are never cached');
+  assert.match(sw, /caches\.match\('\/index\.html'\)/, 'offline opens show the last shell');
+  assert.match(sw, /fetch\(req\)/, 'online page loads go to the network first, so a new build is never stale');
+});
+
+test('Home-screen app - the worker is registered in production only', () => {
+  const main = fs.readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+  assert.match(main, /import\.meta\.env\.PROD && 'serviceWorker' in navigator/, 'dev hot reload is left alone');
+  assert.match(main, /navigator\.serviceWorker\.register\('\/sw\.js'\)/);
+});
+
+test('Home-screen app - the check-in page offers the install step', () => {
+  const page = fs.readFileSync(new URL('../src/pages/StaffCheckInPage.jsx', import.meta.url), 'utf8');
+  assert.match(page, /'beforeinstallprompt'/, 'Android / desktop install prompt is captured');
+  assert.match(page, /Add SMART Check-in to home screen/, 'a button offers the icon');
+  assert.match(page, /display-mode: standalone/, 'hidden once already installed');
+  assert.match(page, /Add to Home Screen/, 'iPhone gets the share-sheet instruction');
+});
+
+test('Home-screen app - the worker file is never cached for a year by hosting', () => {
+  const cfg = JSON.parse(fs.readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'));
+  const list = cfg.hosting.headers;
+  const swIdx = list.findIndex(h => h.source === '/sw.js');
+  const jsIdx = list.findIndex(h => h.source === '**/*.@(jpg|jpeg|gif|png|svg|webp|js|css)');
+  assert.ok(swIdx > -1 && swIdx > jsIdx, 'the /sw.js rule comes after the year-long JS rule so it wins');
+  assert.equal(list[swIdx].headers[0].key, 'Cache-Control');
+  assert.equal(list[swIdx].headers[0].value, 'no-cache', 'a new worker is picked up on the next visit');
+  const manIdx = list.findIndex(h => h.source === '/manifest.webmanifest');
+  assert.equal(list[manIdx].headers[0].value, 'no-cache', 'and so is a manifest change');
+});
+
+// ── NDA letters ────────────────────────────────────────────────────
+test('NDA - staff details fill the agreement, standard clauses carry no money', async () => {
+  const m = await import('../src/erp/nda/ndaModel.js');
+
+  const form = m.ndaFromStaff({
+    id: 'nd1', name: 'Ashan Rifkan', staffId: 'SMART-001', position: 'Software Engineer',
+    department: 'Software', email: 'ashan@smart.com', phone: '076 202 4545',
+    address: 'Main Street, Kalmunai', joinedDate: '2026-01-05',
+  }, { refNo: 'SMART/HR/NDA/2026/004', date: '2026-11-04' });
+
+  assert.equal(form.staffId, 'nd1');
+  assert.equal(form.staffName, 'Ashan Rifkan');
+  assert.equal(form.staffCode, 'SMART-001');
+  assert.equal(form.position, 'Software Engineer');
+  assert.equal(form.effectiveDate, '2026-01-05', 'effective date starts as the joining date');
+  assert.equal(form.refNo, 'SMART/HR/NDA/2026/004');
+  assert.equal(form.status, 'Draft');
+
+  const clauses = m.resolvedClauses(form);
+  assert.equal(clauses.length, 9, 'the nine standard clauses');
+  const all = clauses.map(c => `${c.title} ${c.text}`).join(' ');
+  assert.ok(!/Rs\.?|LKR|salary|100,000/.test(all), 'no money in a confidentiality agreement');
+  assert.match(all, /Ashan Rifkan|SMART Pvt Ltd/, 'the parties are named');
+  assert.match(all, /three \(3\) years/, 'the term appears in words');
+
+  // A one-year term reads in the singular.
+  const one = m.defaultNdaClauses({ ...form, termYears: '1' }).map(c => c.text).join(' ');
+  assert.match(one, /one \(1\) year/);
+  assert.ok(!/one \(1\) years/.test(one));
+
+  // Typed clauses and text win over the auto wording.
+  const edited = { ...form, clauses, purpose: 'Typed purpose.', opening: 'Typed opening.' };
+  assert.equal(m.resolvedPurpose(edited), 'Typed purpose.');
+  assert.equal(m.resolvedOpening(edited), 'Typed opening.');
+  assert.equal(m.resolvedClauses(edited)[0].title, clauses[0].title);
+});
+
+test('NDA - reference series, missing fields and the edit history', async () => {
+  const m = await import('../src/erp/nda/ndaModel.js');
+
+  assert.equal(m.makeNdaRefNo(1, '2026-11-04'), 'SMART/HR/NDA/2026/001');
+  assert.equal(m.makeNdaRefNo(57, '2026-11-04'), 'SMART/HR/NDA/2026/057');
+  assert.equal(m.nextNdaSequence([
+    { refNo: 'SMART/HR/NDA/2026/003' }, { refNo: 'SMART/HR/NDA/2026/011' }, { refNo: '' },
+  ]), 12);
+  assert.equal(m.nextNdaSequence([]), 1);
+
+  assert.match(m.ndaProblem({}), /Choose the staff member/);
+  assert.match(m.ndaProblem({ staffName: 'A', position: '' }), /position/);
+  assert.match(m.ndaProblem({
+    staffName: 'A', position: 'Dev', date: '2026-11-04', effectiveDate: '2026-11-04', termYears: '0',
+  }), /years/);
+  assert.equal(m.ndaProblem({
+    staffName: 'A', position: 'Dev', date: '2026-11-04', effectiveDate: '2026-11-04', termYears: '3',
+  }), '');
+
+  const history = m.diffNda(
+    { position: 'Intern', effectiveDate: '2026-01-05', termYears: '3', status: 'Draft' },
+    { position: 'Software Engineer', effectiveDate: '2026-01-05', termYears: '3', status: 'Issued' },
+    'Admin',
+  );
+  assert.equal(history.length, 2, 'only the changed fields make an entry');
+  assert.deepEqual(history.map(h => h.field), ['Position', 'Status']);
+  assert.ok(history.every(h => h.by === 'Admin' && typeof h.at === 'number'));
+
+  assert.match(m.ndaSummary({ termYears: '3' }), /3 years after leaving/);
+  assert.match(m.ndaSummary({ termYears: '1' }), /1 year after leaving/);
+});
+
+test('NDA - the agreement is a real A4 PDF with two signatures', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const { jsPDF } = req('jspdf');
+  const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  const { buildNdaPdf, ndaPdfFileName } = await import('../src/erp/nda/ndaPdf.js');
+  const m = await import('../src/erp/nda/ndaModel.js');
+  const base = m.ndaFromStaff({
+    name: 'Ashan Rifkan', staffId: 'SMART-001', position: 'Software Engineer',
+    department: 'Software', address: 'Main Street, Kalmunai', joinedDate: '2026-01-05',
+  }, { refNo: 'SMART/HR/NDA/2026/004', date: '2026-11-04' });
+
+  const doc = buildNdaPdf(base, { logoDataUrl: logo, signerName: 'M. Rifkan' });
+  const out = doc.output();
+  assert.ok(out.startsWith('%PDF-'), 'a real PDF stream');
+  assert.ok(out.length > 12000, 'the agreement has real content');
+  assert.equal(doc.internal.pageSize.getWidth(), 595.28, 'A4 width');
+  assert.equal(doc.internal.pageSize.getHeight(), 841.89, 'A4 height');
+  assert.equal(typeof jsPDF, 'function', 'built on jsPDF');
+
+  const long = {
+    ...base,
+    clauses: m.defaultNdaClauses(base).concat(
+      Array.from({ length: 6 }, (_, i) => ({ title: `Extra clause ${i + 1}`, text: 'Word '.repeat(90) })),
+    ),
+  };
+  const big = buildNdaPdf(long, {});
+  assert.ok(big.internal.getNumberOfPages() >= 3, `long agreements paginate (got ${big.internal.getNumberOfPages()})`);
+  assert.ok(big.output().startsWith('%PDF-'));
+
+  assert.equal(ndaPdfFileName(base), 'NDA-ASHAN-RIFKAN-SMART-HR-NDA-2026-004.pdf');
+});
+
+test('NDA page - route, sidebar, rules block and real PDF button', async () => {
+  const app = fs.readFileSync(new URL('../src/erp/ERPApp.jsx', import.meta.url), 'utf8');
+  assert.match(app, /const ERPNDAs = lazy\(\(\) => import\('\.\/pages\/ERPNDAs'\)\)/);
+  assert.match(app, /<Route path="nda"\s+element=\{<Suspense[\s\S]{0,60}?<ERPNDAs \/><\/Suspense>\}/);
+
+  const nav = fs.readFileSync(new URL('../src/erp/layout/ERPSidebar.jsx', import.meta.url), 'utf8');
+  assert.match(nav, /\{ path: '\/erp\/nda',\s*label: 'NDA Letters',\s*icon: ShieldCheck\s*\}/);
+
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/ndaLetters\/\{letterId\} \{\s*allow read, write: if isAdmin\(\);\s*\}/,
+    'agreements are admin-only');
+
+  const { RULES_BLOCKS } = await import('../src/erp/rulesBlocks.js');
+  assert.ok(RULES_BLOCKS.some(b => b.coll === 'ndaLetters'), 'the new collection is on the deploy checklist');
+
+  const page = fs.readFileSync(new URL('../src/erp/pages/ERPNDAs.jsx', import.meta.url), 'utf8');
+  assert.match(page, /ndaFromStaff\(s, \{/, 'picking a staff member fills the agreement');
+  assert.match(page, /saveNdaPdf\(saved, \{ logoDataUrl: logo \}\)/, 'Save & PDF downloads the real file');
+  assert.ok(!/window\.print/.test(page), 'never the browser print dialog');
+  assert.match(page, /diffNda\(editing, payload, adminName\)/, 'edits keep a who/when history');
+  assert.match(page, /rulesNotice\('Non-disclosure agreements'\)/, 'a blocked list points at Rules Status');
+});
+
+// ── WhatsApp alerts ───────────────────────────────────────────────
+test('WhatsApp - numbers, day and month labels, and the owner number', async () => {
+  const wa = await import('../src/erp/whatsapp/alertText.js');
+  assert.equal(wa.OWNER_PHONE, '94762100778');
+  assert.equal(wa.normalizePhone('076 210 0778'), '94762100778');
+  assert.equal(wa.normalizePhone('+94 76 210 0778'), '94762100778');
+  assert.equal(wa.normalizePhone('0094 762100778'), '94762100778');
+  assert.equal(wa.normalizePhone('0762024545'), '94762024545', 'a local mobile gains the country code');
+  assert.equal(wa.normalizePhone('abc'), '');
+  assert.equal(wa.normalizePhone('123'), '');
+
+  assert.equal(wa.prettyDay('2026-11-04'), 'Wednesday, 04 November 2026');
+  assert.equal(wa.monthLabel('2026-11'), 'November 2026');
+  assert.match(wa.waLink('076 210 0778', 'Hi'), /^https:\/\/wa\.me\/94762100778\?text=Hi$/);
+  assert.equal(wa.waLink('', 'Hi'), '');
+});
+
+test('WhatsApp - the 15:30 message confirms the attendance that was recorded', async () => {
+  const wa = await import('../src/erp/whatsapp/alertText.js');
+  const checkIn = new Date('2026-11-04T08:32:00+05:30').getTime();
+  const msg = wa.checkinConfirmation('Ashan Rifkan', '2026-11-04', checkIn);
+  assert.match(msg, /^Dear Ashan,/);
+  assert.match(msg, /attendance for today, Wednesday, 04 November 2026, has been recorded/);
+  assert.match(msg, /check-in at 08:32 AM/);
+  assert.match(msg, /Please submit your daily work report on the staff portal/);
+  assert.ok(!/check out|check-out/i.test(msg), 'the confirmation asks for the report, not a check-out');
+  assert.match(msg, /Thank you,\nSMART Pvt Ltd$/);
+  assert.ok(!/Human Resources/i.test(msg), 'the signature is the company alone');
+  assert.ok(!/Ashan Rifkan/.test(msg), 'only the first name is used');
+  assert.ok(!/no check-in|not been marked/i.test(msg), 'a confirmation never accuses anyone');
+  assert.ok(!/😀|🔥|urgent|fine|penalty/i.test(msg), 'no emoji and no threats');
+
+  // Without a stored check-in time the sentence still reads correctly.
+  const noTime = wa.checkinConfirmation('Nimal Perera', '2026-11-04', 0);
+  assert.match(noTime, /has been recorded\./);
+  assert.ok(!/check-in at/.test(noTime));
+});
+
+test('WhatsApp - the salary window is the 12th and 14th only, from this month', async () => {
+  const wa = await import('../src/erp/whatsapp/alertText.js');
+  assert.equal(wa.salaryWindow('2026-11-11'), '');
+  assert.equal(wa.salaryWindow('2026-11-12'), '2026-11');
+  assert.equal(wa.salaryWindow('2026-11-13'), '', 'the 13th is silent');
+  assert.equal(wa.salaryWindow('2026-11-14'), '2026-11');
+  assert.equal(wa.salaryWindow('2026-11-15'), '');
+  assert.equal(wa.salaryWindow('2026-11-16'), '', 'the old window is gone');
+  assert.equal(wa.salaryWindow('2026-11-18'), '');
+  assert.equal(wa.salaryWindow(''), '');
+
+  assert.equal(wa.DEFAULT_START_MONTH, '2026-11', 'alerts begin with the current month');
+  assert.equal(wa.afterStartMonth('2026-11'), true);
+  assert.equal(wa.afterStartMonth('2026-12'), true);
+  assert.equal(wa.afterStartMonth('2026-10'), false, 'months before the start are silent');
+
+  const msg = wa.salaryPendingMessage('2026-11', ['Ashan Rifkan (Software Engineer)', 'Nimal (Intern)']);
+  assert.match(msg, /SMART payroll alert — November 2026/);
+  assert.match(msg, /not been marked in the ERP for 2 staff members/);
+  assert.match(msg, /1\. Ashan Rifkan/);
+  assert.match(msg, /2\. Nimal/);
+  assert.match(msg, /ERP → Staff Salary/);
+  assert.match(wa.salaryPendingMessage('2026-11', []), /No action needed/);
+  assert.match(wa.salaryPendingMessage('2026-11', ['Solo']), /1 staff member:/, 'singular is correct');
+});
+
+test('WhatsApp - only staff who checked in get the 15:30 message', async () => {
+  const wa = await import('../src/erp/whatsapp/alertText.js');
+  const staff = [
+    { id: 'a', name: 'Ashan', phone: '0762024545' },
+    { id: 'b', name: 'Nimal', phone: '0771234567' },
+    { id: 'c', name: 'No phone' },
+  ];
+  const checkIn = new Date('2026-11-04T09:05:00+05:30').getTime();
+  const sent = wa.checkedInStaff(staff, [{ staffId: 'a', checkInMs: checkIn }, { staffId: 'c', checkInMs: checkIn }]);
+  assert.deepEqual(sent.map(s => s.id), ['a'], 'checked-in staff with a number; the rest are left out');
+  assert.equal(sent[0].attendance.checkInMs, checkIn, 'the check-in time travels to the message');
+
+  assert.deepEqual(wa.checkedInStaff(staff, []), [], 'nobody checked in → nothing is sent');
+  assert.deepEqual(
+    wa.checkedInStaff(staff, [{ authUid: 'b' }]).map(s => s.id),
+    ['b'],
+    'the auth uid also counts as the same person',
+  );
+
+  assert.deepEqual(
+    wa.unpaidStaff(staff, [{ staffId: 'a' }]).map(s => s.id),
+    ['b', 'c'],
+    'everyone without a payslip is listed',
+  );
+});
+
+test('WhatsApp - the scheduler and the ERP use the same wording', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const server = req('../functions/whatsapp.js');
+  const erp = await import('../src/erp/whatsapp/alertText.js');
+
+  assert.equal(server.OWNER_PHONE, erp.OWNER_PHONE);
+  assert.equal(server.DEFAULT_START_MONTH, erp.DEFAULT_START_MONTH);
+  const at = new Date('2026-11-04T08:32:00+05:30').getTime();
+  assert.equal(
+    server.checkinConfirmation('Ashan Rifkan', '2026-11-04', at),
+    erp.checkinConfirmation('Ashan Rifkan', '2026-11-04', at),
+  );
+  assert.equal(
+    server.salaryPendingMessage('2026-11', ['Ashan (Dev)', 'Nimal']),
+    erp.salaryPendingMessage('2026-11', ['Ashan (Dev)', 'Nimal']),
+  );
+  for (const d of ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-16', '2026-11-03']) {
+    assert.equal(server.salaryWindow(d), erp.salaryWindow(d));
+  }
+  for (const p of ['076 210 0778', '+94 76 210 0778', '0094 762100778', '123']) {
+    assert.equal(server.normalizePhone(p), erp.normalizePhone(p));
+  }
+});
+
+test('WhatsApp - cron timing, one ledger row per person per day', async () => {
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const wa = req('../functions/whatsapp.js');
+
+  assert.equal(wa.CHECKIN_CRON, '30 15 * * 1-6', '15:30, Monday to Saturday');
+  assert.equal(wa.SALARY_CRON, '0 9 12,14 * *', '09:00 on the 12th and 14th only');
+  assert.equal(wa.TIME_ZONE, 'Asia/Colombo');
+
+  const src = fs.readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+  assert.match(src, /exports\.whatsappCheckinReminder = onSchedule\(\s*wa\.CHECKIN_CRON, \{ timeZone: wa\.TIME_ZONE \}/);
+  assert.match(src, /exports\.whatsappSalaryAlert = onSchedule\(\s*wa\.SALARY_CRON, \{ timeZone: wa\.TIME_ZONE \}/);
+  assert.match(src, /const checkedIn = wa\.checkedInStaff\(staff, records\)/,
+    'the 15:30 run messages the people who did check in');
+  assert.match(src, /const id = `checkin_\$\{date\}_\$\{person\.id\}`/, 'check-in ids are deterministic');
+  assert.match(src, /wa\.checkinConfirmation\(person\.name, date, person\.attendance\?\.checkInMs\)/,
+    'the confirmation carries the check-in time');
+  assert.match(src, /const id = `salary_\$\{month\}_\$\{today\}`/, 'salary ids are deterministic');
+  assert.match(src, /if \(await alreadySent\(id\)\) \{ summary\.skipped/, 'a retry never double-messages');
+  assert.match(src, /if \(!unpaid\.length\) return \{ \.\.\.summary, reason: 'every salary is marked' \};/,
+    'a fully marked month sends nothing');
+  const salaryBlock = src.slice(src.indexOf('async function runSalaryAlert'), src.indexOf('function assertAdminCaller'));
+  assert.ok(salaryBlock.indexOf('every salary is marked') < salaryBlock.indexOf('wa.sendWhatsApp('),
+    'the all-marked check runs before any message is sent');
+  assert.match(src, /!s\.deleted && \(s\.status \|\| 'active'\) === 'active'/, 'only active staff are messaged');
+  assert.match(src, /process\.env\.WHATSAPP_TOKEN/, 'the token comes from the environment');
+  assert.ok(!/db\.collection\('whatsappConfig'\)[\s\S]{0,40}token/i.test(src), 'no token in Firestore');
+  assert.match(src, /assertAdminCaller\(request\)/, '"run now" is admin-only');
+});
+
+test('WhatsApp page - route, sidebar, rules and the manual wa.me fallback', async () => {
+  const app = fs.readFileSync(new URL('../src/erp/ERPApp.jsx', import.meta.url), 'utf8');
+  assert.match(app, /const ERPWhatsAppAlerts = lazy\(\(\) => import\('\.\/pages\/ERPWhatsAppAlerts'\)\)/);
+  assert.match(app, /<Route path="whatsapp-alerts"\s+element=\{<Suspense[\s\S]{0,60}?<ERPWhatsAppAlerts \/><\/Suspense>\}/);
+
+  const nav = fs.readFileSync(new URL('../src/erp/layout/ERPSidebar.jsx', import.meta.url), 'utf8');
+  assert.match(nav, /\{ path: '\/erp\/whatsapp-alerts', label: 'WhatsApp Alerts', icon: MessageCircle \}/);
+
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /match \/whatsappAlerts\/\{alertId\} \{\s*allow read, write: if isAdmin\(\);\s*\}/);
+  assert.match(rules, /match \/whatsappConfig\/\{configId\} \{\s*allow read, write: if isAdmin\(\);\s*\}/);
+
+  const { RULES_BLOCKS, RULES_REVISION } = await import('../src/erp/rulesBlocks.js');
+  assert.ok(RULES_BLOCKS.some(b => b.coll === 'whatsappAlerts'));
+  assert.ok(RULES_BLOCKS.some(b => b.coll === 'whatsappConfig'));
+  assert.match(RULES_REVISION, /whatsapp/, 'the revision forces the deploy reminder');
+
+  const page = fs.readFileSync(new URL('../src/erp/pages/ERPWhatsAppAlerts.jsx', import.meta.url), 'utf8');
+  assert.match(page, /runWhatsAppCheckinNow/, 'the check-in run button calls the function');
+  assert.match(page, /runWhatsAppSalaryNow/, 'the payroll run button calls the function');
+  assert.match(page, /const link = waLink\(s\.phone, text\)/, 'each person keeps a tap-to-send link');
+  assert.match(page, /rulesNotice\('WhatsApp alert log'\)/, 'a blocked list points at Rules Status');
+  assert.ok(!/WHATSAPP_TOKEN\s*=/.test(page), 'the page never holds the API token');
+
+  const env = fs.readFileSync(new URL('../functions/.env.example', import.meta.url), 'utf8');
+  assert.match(env, /WHATSAPP_TOKEN=\s*$/m, 'the key is documented, never committed');
+  assert.match(env, /WHATSAPP_PHONE_ID=\s*$/m);
+
+  const ignore = fs.readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
+  assert.match(ignore, /^functions\/\.env$/m, 'the real env file stays out of git');
+  assert.match(ignore, /^!functions\/\.env\.example$/m, 'the example is kept');
+});
+
+// ── Check-in / Check-out vs Attendance ────────────────────────────
+test('Staff portal - the punch screen and the history are two different views', async () => {
+  const app = fs.readFileSync(new URL('../src/staff/StaffPortalApp.jsx', import.meta.url), 'utf8');
+  assert.match(app, /case 'checkout':\s+return <MyAttendance variant="checkout" onNavigate=\{onNavigate\} \/>;/);
+  assert.match(app, /case 'attendance':\s+return <MyAttendance variant="attendance" onNavigate=\{onNavigate\} \/>;/);
+
+  const page = fs.readFileSync(new URL('../src/staff/sections/MyAttendance.jsx', import.meta.url), 'utf8');
+  assert.match(page, /export default function MyAttendance\(\{ variant = 'attendance', onNavigate \}\)/);
+  assert.match(page, /if \(variant === 'checkout'\) \{/, 'a dedicated punch screen');
+  assert.match(page, /title="Check-in \/ Check-out"/, 'the punch view is titled for punching');
+  assert.match(page, /onNavigate\?\.\('attendance'\)/, 'a link leads to the history');
+  assert.match(page, /onNavigate\?\.\('checkout'\)/, 'the history links back to punching');
+  assert.ok(!/window\.print/.test(page), 'the statement downloads as a real PDF');
 });

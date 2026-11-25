@@ -22,6 +22,8 @@ const ERPSettings     = lazy(() => import('./pages/ERPSettings'));
 const ERPAccessRules  = lazy(() => import('./pages/ERPAccessRules'));
 const ERPFinance      = lazy(() => import('./pages/ERPFinance'));
 const ERPOfferLetters = lazy(() => import('./pages/ERPOfferLetters'));
+const ERPNDAs = lazy(() => import('./pages/ERPNDAs'));
+const ERPWhatsAppAlerts = lazy(() => import('./pages/ERPWhatsAppAlerts'));
 
 function ERPFallback() {
   return (
@@ -53,6 +55,8 @@ export default function ERPApp() {
         <Route path="invoices"          element={<Suspense fallback={<ERPFallback/>}><ERPInvoices /></Suspense>} />
         <Route path="staff"             element={<Suspense fallback={<ERPFallback/>}><ERPStaff /></Suspense>} />
         <Route path="offer-letters"     element={<Suspense fallback={<ERPFallback/>}><ERPOfferLetters /></Suspense>} />
+        <Route path="nda"               element={<Suspense fallback={<ERPFallback/>}><ERPNDAs /></Suspense>} />
+        <Route path="whatsapp-alerts"   element={<Suspense fallback={<ERPFallback/>}><ERPWhatsAppAlerts /></Suspense>} />
         <Route path="messages"          element={<Suspense fallback={<ERPFallback/>}><ERPMessages /></Suspense>} />
         <Route path="qr-services"       element={<Suspense fallback={<ERPFallback/>}><ERPQRServices /></Suspense>} />
         <Route path="analytics"         element={<Suspense fallback={<ERPFallback/>}><ERPAnalytics /></Suspense>} />

@@ -61,6 +61,69 @@ export function monthLabel(key) {
     : d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+/**
+ * Generates an array of YYYY-MM month keys between startMonth and endMonth inclusive.
+ * e.g. getMonthsBetween('2026-09', '2026-11') -> ['2026-09', '2026-10', '2026-11']
+ */
+export function getMonthsBetween(startMonth, endMonth = thisMonthKey()) {
+  if (!startMonth) return [endMonth];
+  const sParts = String(startMonth).slice(0, 7).split('-').map(Number);
+  const eParts = String(endMonth).slice(0, 7).split('-').map(Number);
+  if (sParts.length < 2 || eParts.length < 2) return [endMonth];
+  let [y, m] = sParts;
+  const [ey, em] = eParts;
+  const list = [];
+  while (y < ey || (y === ey && m <= em)) {
+    list.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return list.length ? list : [endMonth];
+}
+
+/**
+ * Computes months worked vs months paid for a staff member.
+ */
+export function calculateStaffSalarySummary(staffMember, allPayments = [], currentMonth = thisMonthKey()) {
+  if (!staffMember) return null;
+  const joinDate = staffMember.joinedDate || staffMember.joinDate || staffMember.firstDate || '';
+  const startMonth = joinDate ? String(joinDate).slice(0, 7) : (currentMonth || '2026-10');
+  const workedMonths = getMonthsBetween(startMonth, currentMonth);
+
+  // Match payments by staffId or matching name
+  const staffPayments = allPayments.filter(p =>
+    (p.staffId && staffMember.id && p.staffId === staffMember.id) ||
+    (p.staffId && staffMember.staffId && p.staffId === staffMember.staffId) ||
+    (p.staffName && staffMember.name && p.staffName.trim().toLowerCase() === staffMember.name.trim().toLowerCase())
+  );
+
+  const paidMonthsSet = new Set(staffPayments.map(p => p.month).filter(Boolean));
+  const paidMonths = workedMonths.filter(m => paidMonthsSet.has(m));
+  const pendingMonths = workedMonths.filter(m => !paidMonthsSet.has(m));
+  const totalPaid = staffPayments.reduce((acc, p) => acc + (toInt(p.net) || 0), 0);
+
+  return {
+    staffId: staffMember.id || staffMember.staffId,
+    staffName: staffMember.name,
+    role: staffMember.role || staffMember.position || 'Staff',
+    department: staffMember.department || 'General',
+    joinedDate: joinDate || '—',
+    startMonth,
+    workedMonths,
+    monthsWorkedCount: workedMonths.length,
+    paidMonths,
+    monthsPaidCount: paidMonths.length,
+    pendingMonths,
+    monthsPendingCount: pendingMonths.length,
+    totalPaid,
+    status: pendingMonths.length === 0 ? 'Up to date' : `${pendingMonths.length} month${pendingMonths.length === 1 ? '' : 's'} pending`,
+    payments: staffPayments,
+  };
+}
+
 /** minutes → '7h 30m' (never negative). */
 export function fmtHours(mins) {
   const m = Math.max(0, Math.round(Number(mins) || 0));
@@ -73,10 +136,11 @@ export function fmtTime(ms) {
 }
 
 // ── Attendance rules ─────────────────────────────────────────────
-// Standard start 08:30 with a grace window until 09:00; fewer than 4
-// logged hours is a half day.
+// Standard start 08:30 with a grace window until 09:00.
+// Checkout at or after 3:00 PM (15:00) counts as Full Day; checkout before 3:00 PM counts as Half Day.
 export const WORK_START = '08:30';
 export const LATE_AFTER = '09:00';
+export const FULL_DAY_AFTER = '15:00'; // 3:00 PM
 export const AUTOCLOSE_TIME = '17:30';
 const HALF_DAY_MINUTES = 4 * 60;
 
@@ -85,14 +149,21 @@ export function minutesBetween(inMs, outMs) {
   return Math.max(0, Math.round((outMs - inMs) / 60000));
 }
 
-/** 'Present' | 'Late' | 'Half Day' — or '' when there is no check-in yet. */
+/** 'Present' | 'Late' | 'Half Day' — or '' when there is no check-in yet.
+ *  Checkout at or after 3:00 PM (15:00) qualifies as Full Day (Present or Late).
+ *  Checkout before 3:00 PM qualifies as Half Day. */
 export function attendanceStatus(checkInMs, checkOutMs) {
   if (!checkInMs) return '';
   const inMins = new Date(checkInMs).getHours() * 60 + new Date(checkInMs).getMinutes();
   const [lh, lm] = LATE_AFTER.split(':').map(Number);
   let status = inMins <= lh * 60 + lm ? 'Present' : 'Late';
-  if (checkOutMs && minutesBetween(checkInMs, checkOutMs) < HALF_DAY_MINUTES) {
-    status = 'Half Day';
+  if (checkOutMs) {
+    const outDate = new Date(checkOutMs);
+    const outMins = outDate.getHours() * 60 + outDate.getMinutes();
+    // Before 3:00 PM (15:00 = 900 mins) or less than 4 hours is Half Day
+    if (outMins < 15 * 60 || minutesBetween(checkInMs, checkOutMs) < HALF_DAY_MINUTES) {
+      status = 'Half Day';
+    }
   }
   return status;
 }

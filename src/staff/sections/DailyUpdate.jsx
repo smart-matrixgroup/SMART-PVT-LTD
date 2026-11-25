@@ -14,7 +14,7 @@
 //  table cannot fit a 520 px screen, and the STATUS + remove column used to
 //  sit past the right edge, unreachable.
 // ─────────────────────────────────────────────────────────────────
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc,
   query, where, serverTimestamp
@@ -31,7 +31,7 @@ import {
 import {
   Plus, Trash2, Send, AlertTriangle, CheckCircle2, Clock,
   Coffee, Check, Hourglass, Edit3, X, Calendar, Printer, FileText,
-  Building, User, Briefcase, MapPin, Eye, ChevronDown
+  Building, User, Briefcase, MapPin, Eye, ChevronDown, Mic, Square, Upload
 } from 'lucide-react';
 
 const WORK_MODES = ['On-Site / Office', 'Remote / WFH', 'Hybrid'];
@@ -131,6 +131,80 @@ export default function DailyUpdate() {
   const [successMsg, setSuccessMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  // Morning Work Briefing & Voice Note (Starting Work Summary)
+  const [startingWorkSummary, setStartingWorkSummary] = useState('');
+  const [audioNote, setAudioNote] = useState(''); // base64 dataUrl
+  const [audioNoteDuration, setAudioNoteDuration] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+
+  const startRecording = async () => {
+    try {
+      setErrorMsg(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          setAudioNote(reader.result);
+        };
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(sec => {
+          if (sec >= 180) {
+            stopRecording();
+            return sec;
+          }
+          return sec + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error('Audio recording failed:', err);
+      setErrorMsg('Microphone access denied or not supported in this browser. You can still upload an audio file below.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const handleAudioFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('Audio file is too large (max 5 MB).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAudioNote(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Sync with user profile on load
   useEffect(() => {
     if (staffProfile) {
@@ -216,6 +290,11 @@ export default function DailyUpdate() {
     ]);
     setRemarks('');
     setPlanTomorrow('');
+    setStartingWorkSummary('');
+    setAudioNote('');
+    setAudioNoteDuration('');
+    setIsRecording(false);
+    setRecordingSeconds(0);
     setErrorMsg(null);
   };
 
@@ -233,6 +312,9 @@ export default function DailyUpdate() {
     setTasks(r.tasks && r.tasks.length > 0 ? r.tasks : [INITIAL_TASK_ROW]);
     setRemarks(r.remarks || r.notes || '');
     setPlanTomorrow(r.planTomorrow || '');
+    setStartingWorkSummary(r.startingWorkSummary || '');
+    setAudioNote(r.audioNote || '');
+    setAudioNoteDuration(r.audioNoteDuration || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -265,6 +347,9 @@ export default function DailyUpdate() {
         tasks: cleanTasks,
         remarks: remarks.trim(),
         planTomorrow: planTomorrow.trim(),
+        startingWorkSummary: startingWorkSummary.trim(),
+        audioNote: audioNote || '',
+        audioNoteDuration: audioNoteDuration || (recordingSeconds ? `${recordingSeconds}s` : ''),
         // Backwards compatibility fields for ERP dashboard
         staffId: uid,
         staffName: name.trim(),
@@ -602,6 +687,112 @@ export default function DailyUpdate() {
               }}>
                 {totalWorkHours}
               </div>
+            </div>
+          </div>
+
+          {/* ── Morning Work Briefing & Voice Note (Starting Work Summary) ── */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(10,24,56,0.85) 0%, rgba(20,40,90,0.6) 100%)',
+            borderRadius: 12, border: `1px solid ${C.borderHi}`, padding: 14,
+            display: 'flex', flexDirection: 'column', gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8, background: 'rgba(0,102,255,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.blue,
+                }}>
+                  <Mic size={15} />
+                </div>
+                <div>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', display: 'block' }}>
+                    MORNING WORK BRIEFING & VOICE NOTE
+                  </span>
+                  <span style={{ fontSize: 10.5, color: C.muted }}>
+                    Record or write the starting work summary and objectives assigned upon arrival
+                  </span>
+                </div>
+              </div>
+
+              {/* Audio recording status badge */}
+              {isRecording && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px',
+                  borderRadius: 20, background: 'rgba(240,90,103,0.18)', border: '1px solid rgba(240,90,103,0.4)',
+                  color: C.red, fontSize: 11, fontWeight: 800
+                }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', background: C.red,
+                    display: 'inline-block'
+                  }} />
+                  Recording Voice Note: {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, '0')}
+                </div>
+              )}
+            </div>
+
+            {/* Starting Work Summary Textarea */}
+            <div>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: C.subtle, marginBottom: 5 }}>
+                Starting Work Summary & Morning Objectives :
+              </label>
+              <textarea
+                rows={2}
+                value={startingWorkSummary}
+                onChange={e => setStartingWorkSummary(e.target.value)}
+                placeholder="Enter the morning briefing summary, goals, or instructions given by the manager upon arrival..."
+                style={{
+                  width: '100%', boxSizing: 'border-box', background: 'rgba(4,13,31,0.85)',
+                  border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px',
+                  color: C.text, fontSize: 12, outline: 'none', resize: 'vertical', lineHeight: 1.5,
+                }}
+              />
+            </div>
+
+            {/* Voice Note Controls & Audio Player */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(4,13,31,0.5)', padding: '10px 12px', borderRadius: 8, border: `1px solid ${C.border}30`
+            }}>
+              {!audioNote ? (
+                <>
+                  {!isRecording ? (
+                    <ERPBtn type="button" variant="primary" size="sm" onClick={startRecording}>
+                      <Mic size={13} /> Record Morning Voice Note
+                    </ERPBtn>
+                  ) : (
+                    <ERPBtn type="button" variant="danger" size="sm" onClick={stopRecording}>
+                      <Square size={13} fill="currentColor" /> Stop Recording ({recordingSeconds}s)
+                    </ERPBtn>
+                  )}
+
+                  <span style={{ fontSize: 11, color: C.muted }}>or</span>
+
+                  <label style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.border}`,
+                    color: C.subtle, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                    <Upload size={12} /> Upload Audio File
+                    <input type="file" accept="audio/*" onChange={handleAudioFileUpload} style={{ display: 'none' }} />
+                  </label>
+                </>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.green, fontSize: 11.5, fontWeight: 700 }}>
+                    <CheckCircle2 size={15} /> Morning Voice Note Attached:
+                  </div>
+                  <audio controls src={audioNote} style={{ height: 32, flex: 1, minWidth: 200 }} />
+                  <ERPBtn
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setAudioNote(''); setAudioNoteDuration(''); }}
+                    style={{ color: C.red }}
+                  >
+                    <Trash2 size={12} /> Remove / Re-record
+                  </ERPBtn>
+                </div>
+              )}
             </div>
           </div>
 

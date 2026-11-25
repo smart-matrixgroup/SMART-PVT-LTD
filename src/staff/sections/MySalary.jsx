@@ -16,12 +16,12 @@ import {
 } from '../../erp/components/ERPui';
 import StaffEmpty from '../components/StaffEmpty';
 import PayslipDoc from '../PayslipDoc';
-import { computeNet, monthLabel } from '../staffUtils';
+import { computeNet, monthLabel, thisMonthKey, calculateStaffSalarySummary } from '../staffUtils';
 import { formatLKR, fmtDate } from '../../erp/money';
 import { savePayslipPdf } from '../payslipPdf';
 import {
   Wallet, ArrowUpCircle, ArrowDownCircle, Receipt, Eye,
-  Printer, Info, AlertCircle, Download,
+  Printer, Info, AlertCircle, Download, CheckCircle, Clock, Calendar,
 } from 'lucide-react';
 
 // Dev-mode fixtures (never written to the DB).
@@ -83,6 +83,8 @@ export default function MySalary({ variant = 'salary' }) {
 
   const isSalaryView   = variant === 'salary';
   const interactive    = variant === 'payslips';
+
+  const summary = calculateStaffSalarySummary(staffProfile, payments, thisMonthKey());
 
   const StructureRow = ({ icon: Icon, label, value, color }) => (
     <div style={{
@@ -172,6 +174,36 @@ export default function MySalary({ variant = 'salary' }) {
           <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {err}
         </div>
       )}
+
+      {/* Overview Cards: Months Worked vs Months Paid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 18px' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>📅</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: C.cyan }}>{summary?.monthsWorkedCount || 1} Months</div>
+          <div style={{ fontSize: 11, color: C.muted }}>Months with SMART</div>
+        </div>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 18px' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>💰</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: C.green }}>{summary?.monthsPaidCount || 0} Months</div>
+          <div style={{ fontSize: 11, color: C.muted }}>Salaries Received</div>
+        </div>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 18px' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>⏳</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: (summary?.monthsPendingCount || 0) > 0 ? C.amber : C.green }}>
+            {summary?.monthsPendingCount || 0} Pending
+          </div>
+          <div style={{ fontSize: 11, color: C.muted }}>
+            {(summary?.pendingMonths || []).length > 0
+              ? summary.pendingMonths.map(m => monthLabel(m)).join(', ')
+              : 'All up to date'}
+          </div>
+        </div>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 18px' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>💵</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: C.green }}>{formatLKR(summary?.totalPaid || 0)}</div>
+          <div style={{ fontSize: 11, color: C.muted }}>Total Paid to Date</div>
+        </div>
+      </div>
 
       {/* Salary structure — the Salary menu item */}
       {isSalaryView && (
