@@ -1,0 +1,18 @@
+{
+  "name": "smart-whatsapp-daily-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sends today's SMART Pvt Ltd Work Report PDFs (Mobile + A4) to Sir's WhatsApp daily at 6:00 PM.",
+  "scripts": {
+    "start": "node index.js",
+    "test-now": "node index.js --test-now"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
