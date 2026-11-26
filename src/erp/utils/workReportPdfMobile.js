@@ -104,15 +104,90 @@ const groupWeeks = days => {
   return Object.entries(weeks).sort(([a],[b]) => a.localeCompare(b));
 };
 
+const fmtTimeColombo = ms => {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return new Date(n).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Colombo',
+  }).toUpperCase();
+};
+
+const normAttendance = (records = [], staffRecords = []) => {
+  // Build checked-in rows (has checkInMs or explicit non-holiday status)
+  const checkedIn = records
+    .filter(r => r && Number(r.checkInMs || 0) > 0)
+    .map(r => {
+      const uid = r.authUid || r.staffId || '';
+      const sr = staffRecords.find(s => s.id === uid || s.authUid === uid || s.name === r.staffName);
+      const inMs = Number(r.checkInMs || 0);
+      const outMs = Number(r.checkOutMs || 0);
+      const hrs = (inMs > 0 && outMs > inMs) ? ((outMs - inMs) / 3600000) : 0;
+      const breaks = Array.isArray(r.breaks)
+        ? r.breaks.filter(Boolean).map(b => ({
+            typeLabel: b.type === 'office' ? 'Official' : 'Personal',
+            reason: String(b.reason || 'Out of office').trim(),
+            outStr: b.outTime || fmtTimeColombo(b.outMs),
+            inStr: b.inTime || (b.inMs ? fmtTimeColombo(b.inMs) : 'Still out'),
+          }))
+        : [];
+      return {
+        name: sr?.name || r.staffName || uid || 'Staff',
+        role: sr?.role || sr?.position || '',
+        inTime: fmtTimeColombo(inMs),
+        outTime: outMs > 0 ? `${fmtTimeColombo(outMs)}${r.autoClosed ? ' (Auto)' : ''}` : '—',
+        hours: hrs,
+        status: r.status || 'Present',
+        breaks,
+        checkedIn: true,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Build leave / absent rows from attendance records with status but no check-in
+  const leaveRows = records
+    .filter(r => r && Number(r.checkInMs || 0) <= 0 && r.status && r.status !== 'Present')
+    .map(r => {
+      const uid = r.authUid || r.staffId || '';
+      const sr = staffRecords.find(s => s.id === uid || s.authUid === uid || s.name === r.staffName);
+      return {
+        name: sr?.name || r.staffName || uid || 'Staff',
+        role: sr?.role || sr?.position || '',
+        status: r.status,
+        checkedIn: false,
+        breaks: [],
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Find staff who have no attendance record at all for the day (absent, not on leave)
+  const recordedIds = new Set(
+    records.map(r => r.authUid || r.staffId || '').filter(Boolean)
+  );
+  const noRecordStaff = staffRecords
+    .filter(s => !recordedIds.has(s.id) && !s.deleted)
+    .map(s => ({
+      name: s.name || s.id,
+      role: s.role || s.position || '',
+      status: 'Absent',
+      checkedIn: false,
+      breaks: [],
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { checkedIn, absent: [...leaveRows, ...noRecordStaff] };
+};
+
 // ── Main builder ─────────────────────────────────────────────────
 export function buildWorkReportPdfMobile(updates, {
   staffRecords = [],
+  attendanceRecords = [],
   kind         = 'STAFF WORK REPORT',
   period       = '',
   generatedBy  = '',
 } = {}) {
   const doc = new jsPDF({ unit: 'pt', format: [PW, PH] });
   const groups    = groupByStaff(updates, staffRecords);
+  const { checkedIn: attRows, absent: absentRows } = normAttendance(attendanceRecords, staffRecords);
   const allDays   = groups.flatMap(g => g.days);
   const totHours  = allDays.reduce((s, d) => s + d.hours, 0);
   const totTasks  = allDays.reduce((s, d) => s + d.tasks.length, 0);
@@ -179,8 +254,79 @@ export function buildWorkReportPdfMobile(updates, {
   // At-a-glance line
   const avgHrs = allDays.length ? (totHours / allDays.length) : 0;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); ink(doc, C.ink);
-  const glanceTxt = `${avgHrs.toFixed(1)} hrs/day avg  |  ${nDone} of ${allDays.length} days completed`;
+  const glanceTxt = attRows.length
+    ? `${attRows.length} checked in  |  ${avgHrs.toFixed(1)} hrs/day avg  |  ${nDone} of ${allDays.length} reports`
+    : `${avgHrs.toFixed(1)} hrs/day avg  |  ${nDone} of ${allDays.length} days completed`;
   doc.text(glanceTxt, PW / 2, y + 5, { align: 'center' }); y += 12;
+
+  // ── Daily Attendance section (Check-in / Check-out times, no selfies) ──
+  if (attRows.length > 0) {
+    needPage(30);
+    fill(doc, C.teal, MG, y, W, 16);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); ink(doc, C.white);
+    doc.text(`DAILY ATTENDANCE (${attRows.length})`, MG + 6, y + 11);
+    y += 19;
+
+    attRows.forEach(a => {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      const breakLines = a.breaks.flatMap(b =>
+        doc.splitTextToSize(`• ${b.typeLabel}: ${pdfSafe(b.reason)} (${b.outStr} - ${b.inStr})`, W - 14)
+      );
+      const rowH = 26 + (breakLines.length > 0 ? 4 + breakLines.length * 8 : 0);
+      needPage(rowH + 4);
+      fill(doc, C.light, MG, y, W, rowH);
+      ln(doc, C.line, 0.5); doc.rect(MG, y, W, rowH);
+      fill(doc, C.teal, MG, y, 2.5, rowH);
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); ink(doc, C.ink);
+      doc.text(pdfSafe(a.name), MG + 6, y + 10);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); ink(doc, C.green);
+      doc.text(pdfSafe(a.status), PW - MG - 5, y + 10, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); ink(doc, C.grey);
+      const hrsPart = a.hours > 0 ? `  |  ${a.hours.toFixed(1)} hrs` : '';
+      doc.text(`In: ${a.inTime}  |  Out: ${a.outTime}${hrsPart}`, MG + 6, y + 20);
+
+      if (breakLines.length > 0) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); ink(doc, C.amber);
+        breakLines.forEach((bl, bi) => {
+          doc.text(bl, MG + 6, y + 29 + bi * 8);
+        });
+      }
+      y += rowH + 3;
+    });
+    y += 6;
+  }
+
+  // ── Absent / Leave section ────────────────────────────────────
+  if (absentRows.length > 0) {
+    needPage(30);
+    fill(doc, C.amber, MG, y, W, 16);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); ink(doc, C.white);
+    doc.text(`NOT CHECKED IN (${absentRows.length})`, MG + 6, y + 11);
+    y += 19;
+
+    absentRows.forEach(a => {
+      const rowH = 22;
+      needPage(rowH + 3);
+      fill(doc, C.pendBg, MG, y, W, rowH);
+      ln(doc, C.line, 0.5); doc.rect(MG, y, W, rowH);
+      fill(doc, C.amber, MG, y, 2.5, rowH);
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); ink(doc, C.ink);
+      doc.text(pdfSafe(a.name), MG + 6, y + 9);
+      if (a.role) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); ink(doc, C.grey);
+        doc.text(pdfSafe(a.role), MG + 6, y + 17);
+      }
+
+      const statusColor = a.status === 'Leave' ? C.teal : (a.status === 'Holiday' ? C.navy : C.amber);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); ink(doc, statusColor);
+      doc.text(pdfSafe(a.status), PW - MG - 5, y + 13, { align: 'right' });
+      y += rowH + 3;
+    });
+    y += 6;
+  }
 
   // ── Per-staff block ───────────────────────────────────────────
   groups.forEach((g, gi) => {
