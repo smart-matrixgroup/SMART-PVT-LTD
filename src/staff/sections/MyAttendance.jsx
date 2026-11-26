@@ -16,7 +16,7 @@ import StaffEmpty from '../components/StaffEmpty';
 import SelfieModal from '../components/SelfieModal';
 import {
   todayKey, thisMonthKey, fmtTime, fmtHours, minutesBetween,
-  attendanceStatus, AUTOCLOSE_TIME,
+  attendanceStatus, AUTOCLOSE_TIME, sameStaffName,
 } from '../staffUtils';
 import { saveTablePdf } from '../../erp/utils/reportPdf.js';
 import { OFFICIAL_ATTENDANCE_RECORDS } from '../../erp/data/officialAttendance.js';
