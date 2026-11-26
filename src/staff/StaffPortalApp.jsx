@@ -67,19 +67,62 @@ const MENU = [
 
 const TITLES = Object.fromEntries(MENU.flatMap(g => g.items.map(i => [i.id, i.label])));
 
+// Bottom nav items for mobile (most-used 5)
+const BOTTOM_NAV = [
+  { id: 'dashboard',  label: 'Home',      icon: LayoutDashboard },
+  { id: 'checkout',   label: 'Check-In',  icon: Timer },
+  { id: 'daily',      label: 'Update',    icon: ClipboardList },
+  { id: 'attendance', label: 'Attend.',   icon: CalendarCheck },
+  { id: 'profile',    label: 'Profile',   icon: User },
+];
+
 const PORTAL_CSS = `
   .sp-main { margin-left: 230px; min-height: 100vh; }
   .sp-overlay { display: none; }
   .sp-hamburger { display: none; }
+  .sp-bottomnav { display: none; }
   @media (max-width: 900px) {
     .sp-sidebar { transform: translateX(-105%); transition: transform 0.2s ease; }
     .sp-sidebar.sp-open { transform: translateX(0); box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
     .sp-overlay { display: block; position: fixed; inset: 0; background: rgba(2,8,23,0.6); z-index: 30; }
-    .sp-main { margin-left: 0; }
+    .sp-main { margin-left: 0; padding-bottom: 68px; }
     .sp-hamburger { display: inline-flex; }
+    .sp-bottomnav { display: flex; }
   }
   @media (max-width: 640px) {
     .sp-usermeta { display: none !important; }
+    .sp-main main { padding: 14px 12px 84px !important; }
+  }
+  /* Bottom nav styles */
+  .sp-bottomnav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+    background: rgba(6,15,38,0.97);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    height: 64px;
+    align-items: stretch;
+    justify-content: space-around;
+    padding: 0 4px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .sp-bn-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 3px; border: none; background: none;
+    cursor: pointer; padding: 6px 2px; border-radius: 12px;
+    transition: all 0.15s ease; position: relative; color: rgba(255,255,255,0.45);
+  }
+  .sp-bn-btn.active { color: #0066FF; }
+  .sp-bn-btn.active::before {
+    content: ''; position: absolute; top: 6px; left: 50%;
+    transform: translateX(-50%); width: 32px; height: 3px;
+    border-radius: 2px; background: #0066FF;
+  }
+  .sp-bn-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.2px; }
+  /* More button badge */
+  .sp-bn-more-dot {
+    position: absolute; top: 8px; right: calc(50% - 18px);
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #8B5CF6;
   }
 `;
 
@@ -401,6 +444,33 @@ export default function StaffPortalApp() {
           </div>
         </main>
       </div>
+
+      {/* ── Mobile Bottom Navigation Bar ───────────────────────── */}
+      <nav className="sp-bottomnav">
+        {BOTTOM_NAV.map(item => {
+          const Icon = item.icon;
+          const active = page === item.id;
+          return (
+            <button
+              key={item.id}
+              className={`sp-bn-btn${active ? ' active' : ''}`}
+              onClick={() => setPage(item.id)}
+            >
+              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
+              <span className="sp-bn-label">{item.label}</span>
+            </button>
+          );
+        })}
+        {/* "More" button opens sidebar drawer */}
+        <button
+          className={`sp-bn-btn`}
+          onClick={() => setNavOpen(true)}
+        >
+          <span className="sp-bn-more-dot" />
+          <Menu size={22} strokeWidth={1.8} />
+          <span className="sp-bn-label">More</span>
+        </button>
+      </nav>
 
     </div>
   );

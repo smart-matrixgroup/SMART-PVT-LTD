@@ -20,7 +20,21 @@ import { fmtDate } from '../../erp/money';
 import {
   Briefcase, AlertTriangle, Clock, CheckCircle2, ClipboardList,
   ArrowRight, CalendarDays, Play, FileText, ShieldCheck,
+  Timer, CalendarCheck, CalendarOff, User, Wallet, MessageSquare,
+  FolderKanban, Activity,
 } from 'lucide-react';
+
+// Mobile quick-access module grid
+const QUICK_MODULES = [
+  { id: 'checkout',   label: 'Check In',    icon: Timer,         color: '#18C77A', bg: 'rgba(24,199,122,0.15)' },
+  { id: 'daily',      label: 'Work Update', icon: ClipboardList, color: '#0066FF', bg: 'rgba(0,102,255,0.15)' },
+  { id: 'attendance', label: 'Attendance',  icon: CalendarCheck, color: '#00D9FF', bg: 'rgba(0,217,255,0.15)' },
+  { id: 'work',       label: 'My Tasks',    icon: Briefcase,     color: '#F5B942', bg: 'rgba(245,185,66,0.15)' },
+  { id: 'leave',      label: 'Leave',       icon: CalendarOff,   color: '#F05A67', bg: 'rgba(240,90,103,0.15)' },
+  { id: 'salary',     label: 'Salary',      icon: Wallet,        color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)' },
+  { id: 'messages',   label: 'Messages',    icon: MessageSquare, color: '#FF9500', bg: 'rgba(255,149,0,0.15)' },
+  { id: 'profile',    label: 'Profile',     icon: User,          color: '#00D9FF', bg: 'rgba(0,217,255,0.12)' },
+];
 
 const inDays = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 
@@ -204,6 +218,49 @@ export default function MyDashboard({ onNavigate = () => {} }) {
         <Stat icon={Play}          label="In progress"        value={inProg} tone="green"       riseDelay={0.18} />
         <Stat icon={AlertTriangle} label="Overdue"            value={overdue.length} tone={overdue.length ? 'red' : 'blue'} riseDelay={0.24} />
         <Stat icon={CalendarDays}  label="Due within 7 days"  value={dueSoon.length} tone={dueSoon.length ? 'amber' : 'blue'} riseDelay={0.30} />
+      </div>
+
+      {/* ── Mobile Quick Actions Grid (phone app-like) ───────── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 10,
+      }} className="sp-mobile-grid">
+        <style>{`
+          @media (min-width: 901px) { .sp-mobile-grid { display: none !important; } }
+          .sp-qbtn {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 7px; padding: 14px 6px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04); cursor: pointer;
+            transition: transform 0.13s, box-shadow 0.13s;
+            -webkit-tap-highlight-color: transparent;
+          }
+          .sp-qbtn:active { transform: scale(0.93); }
+          .sp-qbtn-icon {
+            width: 46px; height: 46px; border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+          }
+          .sp-qbtn-label {
+            font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.75);
+            text-align: center; line-height: 1.2;
+          }
+        `}</style>
+        {QUICK_MODULES.map(m => {
+          const Icon = m.icon;
+          return (
+            <button
+              key={m.id}
+              className="sp-qbtn"
+              onClick={() => onNavigate(m.id)}
+              style={{ boxShadow: `0 4px 16px -6px ${m.color}44` }}
+            >
+              <div className="sp-qbtn-icon" style={{ background: m.bg, border: `1px solid ${m.color}44` }}>
+                <Icon size={22} color={m.color} strokeWidth={2} />
+              </div>
+              <span className="sp-qbtn-label">{m.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* My KYC / certificate documents — same list the admin reviews */}
