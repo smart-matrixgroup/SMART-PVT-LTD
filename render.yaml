@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: smart-whatsapp-bot
+    runtime: node
+    region: singapore
+    rootDir: whatsapp-bot
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SIR_PHONE
+        sync: false
+      - key: CC_PHONE
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CRON_SCHEDULE
+        value: "0 18 * * 1-6"
+      - key: AUTO_CHECKOUT_CRON
+        value: "30 17 * * 1-6"
+      - key: TIME_ZONE
+        value: Asia/Colombo
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false
